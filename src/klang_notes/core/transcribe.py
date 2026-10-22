@@ -16,13 +16,13 @@ from platformdirs import user_cache_path
 from klang_notes.core.errors import NoSpeechError, SourceError, UnknownTranscriptError
 from klang_notes.core.model import Recognize, load_recognizer
 from klang_notes.core.segments import Segment, merge_fragments
+from klang_notes.core.stamps import format_stamp
 
 _APP_NAME = "klang-notes"
 _ID_LENGTH = 12
 _ID_PATTERN = re.compile(f"[0-9a-f]{{{_ID_LENGTH}}}")
 _SAMPLE_RATE_HZ = 16000
 _MONO = 1
-_SECONDS_PER_MINUTE = 60
 
 
 @dataclass(frozen=True)
@@ -99,7 +99,7 @@ def get_transcript(transcript_id: str, *, cache_dir: Path | None = None) -> str:
     Raises `UnknownTranscriptError` when no cached Transcript has this ID.
     """
     segments = _cached_entry(transcript_id, cache_dir).segments
-    return "\n".join(f"[{_stamp(s.start)}] {s.text}" for s in segments)
+    return "\n".join(f"[{format_stamp(s.start)}] {s.text}" for s in segments)
 
 
 def get_source(transcript_id: str, *, cache_dir: Path | None = None) -> Path:
@@ -166,11 +166,6 @@ def _last_line(text: str) -> str:
 def _duration_s(wav: Path) -> float:
     with wave.open(str(wav)) as audio:
         return audio.getnframes() / audio.getframerate()
-
-
-def _stamp(seconds: float) -> str:
-    minutes, secs = divmod(int(seconds), _SECONDS_PER_MINUTE)
-    return f"{minutes}:{secs:02d}"
 
 
 def _read_entry(entry_path: Path) -> _CacheEntry:

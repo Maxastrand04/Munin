@@ -4,11 +4,11 @@ import json
 import re
 from pathlib import Path
 
+from klang_notes.core.stamps import STAMP, format_stamp, stamp_seconds
 from klang_notes.core.transcribe import get_source
 
-_DEFAULT_OUTPUT_DIR = Path(__file__).resolve().parents[3] / "mindmaps"
-_STAMP = re.compile(r"\[(\d+):([0-5]\d)\]")
-_SECONDS_PER_MINUTE = 60
+_REPO_ROOT = Path(__file__).resolve().parents[3]
+_DEFAULT_OUTPUT_DIR = _REPO_ROOT / "mindmaps"
 
 _PAGE = """<!doctype html>
 <html>
@@ -69,17 +69,19 @@ def link_stamps(outline: str, source: Path) -> str:
     """Replace each `[m:ss]` stamp with an `<a>` linking to `source` at that second.
 
     Minutes may count past 59, so `[75:03]` links to 4503 s. The link text is the
-    stamp without its brackets.
+    stamp written as `m:ss`.
     """
 
     def link(stamp: re.Match[str]) -> str:
-        minutes, seconds = int(stamp[1]), int(stamp[2])
-        offset_s = minutes * _SECONDS_PER_MINUTE + seconds
-        return f'<a href="{source.as_uri()}#t={offset_s}">{minutes}:{seconds:02d}</a>'
+        offset_s = stamp_seconds(stamp)
+        return f'<a href="{source.as_uri()}#t={offset_s}">{format_stamp(offset_s)}</a>'
 
-    return _STAMP.sub(link, outline)
+    return STAMP.sub(link, outline)
 
 
 def _page_html(transcript_id: str, outline: str) -> str:
-    outline_json = json.dumps(outline, ensure_ascii=False).replace("<", "\\u003c")
-    return _PAGE.format(transcript_id=transcript_id, outline_json=outline_json)
+    return _PAGE.format(transcript_id=transcript_id, outline_json=_script_safe_json(outline))
+
+
+def _script_safe_json(text: str) -> str:
+    return json.dumps(text, ensure_ascii=False).replace("<", "\\u003c")
