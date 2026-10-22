@@ -6,7 +6,7 @@ Klang's [Pianissimo](https://huggingface.co/KlangAI/pianissimo-sv) model does th
 
 ## Status
 
-`transcribe` and `get_transcript` work on local files. YouTube URLs, Vocabulary and `render_mindmap` are still planned. The MVP target is the 7:11 clip [SF1624, Föreläsning 4: Matriser](https://www.youtube.com/watch?v=sZipb-R1hfg).
+`transcribe`, `get_transcript` and `render_mindmap` work on local files. YouTube URLs and Vocabulary are still planned. The MVP target is the 7:11 clip [SF1624, Föreläsning 4: Matriser](https://www.youtube.com/watch?v=sZipb-R1hfg).
 
 ## Planned tools
 
@@ -44,7 +44,7 @@ The MCP server runs over stdio. Point your MCP client at this command:
 uv run klang-notes-mcp
 ```
 
-The first transcription downloads the Pianissimo weights, and the loaded model takes about 2.4 GB of RAM. Transcripts are cached in the per-user cache folder.
+The first transcription downloads the Pianissimo weights, and the loaded model takes about 2.4 GB of RAM. Transcripts are cached in the per-user cache folder. Mindmap pages land in `mindmaps/` at the repo root, which git ignores. Open one straight from disk in Chrome or Safari. Timestamp links work for mp4 and m4a in both.
 
 Run the tests with `uv run pytest`. Add `-m "not slow"` to skip the one test that loads the real model.
 

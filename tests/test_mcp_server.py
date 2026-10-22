@@ -20,15 +20,15 @@ def call(server, tool: str, arguments: dict):
     return asyncio.run(run())
 
 
-def test_mcp_lists_both_tools(cache_dir: Path):
-    """The server exposes `transcribe` and `get_transcript`."""
+def test_mcp_lists_all_tools(cache_dir: Path):
+    """The server exposes `transcribe`, `get_transcript` and `render_mindmap`."""
 
     async def run():
         async with Client(create_server(cache_dir=cache_dir, recognize=two_sentences)) as client:
             return await client.list_tools()
 
     names = {tool.name for tool in asyncio.run(run()).tools}
-    assert names == {"transcribe", "get_transcript"}
+    assert names == {"transcribe", "get_transcript", "render_mindmap"}
 
 
 def test_mcp_transcribe_returns_result_fields(source: Path, cache_dir: Path):
@@ -64,3 +64,21 @@ def test_mcp_tool_error_carries_core_message(tmp_path: Path, cache_dir: Path):
     server = create_server(cache_dir=cache_dir, recognize=two_sentences)
     result = call(server, "transcribe", {"path": str(tmp_path / "nope.m4a")})
     assert "nope.m4a" in result.content[0].text
+
+
+def test_mcp_render_mindmap_returns_page_path(source: Path, cache_dir: Path, tmp_path: Path):
+    """The render_mindmap tool writes the page and returns its absolute path."""
+    output_dir = tmp_path / "out"
+    server = create_server(cache_dir=cache_dir, recognize=two_sentences, output_dir=output_dir)
+    transcript_id = call(server, "transcribe", {"path": str(source)}).structured_content["transcript_id"]
+    result = call(server, "render_mindmap", {"transcript_id": transcript_id, "outline": "# Matriser [0:01]"})
+    assert result.content[0].text == str(output_dir / f"{transcript_id}.html")
+    assert (output_dir / f"{transcript_id}.html").is_file()
+
+
+def test_mcp_render_mindmap_unknown_id_is_tool_error(cache_dir: Path, tmp_path: Path):
+    """An unknown ID given to render_mindmap comes back as an MCP tool error naming it."""
+    server = create_server(cache_dir=cache_dir, recognize=two_sentences, output_dir=tmp_path / "out")
+    result = call(server, "render_mindmap", {"transcript_id": "deadbeef0000", "outline": "# Matriser"})
+    assert result.is_error is True
+    assert "deadbeef0000" in result.content[0].text
