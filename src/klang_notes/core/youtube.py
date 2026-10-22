@@ -1,12 +1,18 @@
 """YouTube videos as a Source: telling their URLs apart, linking into them, and downloading their audio."""
 
+import re
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
-import re
 from urllib.parse import parse_qs, urlsplit
 
 from klang_notes.core.errors import SourceError
+
+_SCHEMES = {"http", "https"}
+_SHORT_HOST = "youtu.be"
+_WATCH_HOSTS = {"youtube.com", "www.youtube.com", "m.youtube.com"}
+_WATCH_PATH = "/watch"
+_VIDEO_ID = re.compile(r"[A-Za-z0-9_-]{11}")
 
 
 @dataclass(frozen=True)
@@ -56,17 +62,16 @@ def parse_youtube_url(text: str) -> YouTubeSource | None:
         parsed = urlsplit(text if "://" in text else f"https://{text}")
     except ValueError:
         return None
-    if parsed.scheme not in {"http", "https"} or parsed.netloc.lower() not in {
-        "youtube.com", "www.youtube.com", "m.youtube.com", "youtu.be"
-    }:
+    if parsed.scheme not in _SCHEMES:
         return None
-    if parsed.netloc.lower() == "youtu.be":
+    host = parsed.netloc.lower()
+    if host == _SHORT_HOST:
         video_id = parsed.path.removeprefix("/")
-    elif parsed.path == "/watch":
+    elif host in _WATCH_HOSTS and parsed.path == _WATCH_PATH:
         video_id = parse_qs(parsed.query).get("v", [""])[0]
     else:
         return None
-    return YouTubeSource(video_id) if re.fullmatch(r"[A-Za-z0-9_-]{11}", video_id) else None
+    return YouTubeSource(video_id) if _VIDEO_ID.fullmatch(video_id) else None
 
 
 def download_audio(video: YouTubeSource, workdir: Path) -> Path:

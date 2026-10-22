@@ -6,7 +6,7 @@ Klang's [Pianissimo](https://huggingface.co/KlangAI/pianissimo-sv) model does th
 
 ## Status
 
-`transcribe`, `get_transcript` and `render_mindmap` work on local files. YouTube URLs and Vocabulary are still planned. The MVP target is the 7:11 clip [SF1624, Föreläsning 4: Matriser](https://www.youtube.com/watch?v=sZipb-R1hfg).
+`transcribe`, `get_transcript` and `render_mindmap` work on local files and YouTube URLs. Vocabulary is still planned. The MVP target is the 7:11 clip [SF1624, Föreläsning 4: Matriser](https://www.youtube.com/watch?v=sZipb-R1hfg).
 
 ## Planned tools
 
@@ -28,10 +28,10 @@ Leaving ONNX Runtime on its default CoreML provider was about 30x slower. See [A
 
 ## Setup
 
-Needs Python 3.12, [uv](https://docs.astral.sh/uv/) and ffmpeg. yt-dlp comes in with YouTube support.
+Needs Python 3.12, [uv](https://docs.astral.sh/uv/) and ffmpeg. `uv sync` installs yt-dlp as a Python dependency.
 
 ```bash
-brew install uv ffmpeg yt-dlp
+brew install uv ffmpeg
 ```
 
 ```bash
@@ -46,7 +46,7 @@ uv run klang-notes-mcp
 
 The first transcription downloads the Pianissimo weights, and the loaded model takes about 2.4 GB of RAM. Transcripts are cached in the per-user cache folder. Mindmap pages land in `mindmaps/` at the repo root, which git ignores. Open one straight from disk in Chrome or Safari. Timestamp links work for mp4 and m4a in both.
 
-Run the tests with `uv run pytest`. Add `-m "not slow"` to skip the one test that loads the real model.
+Run the tests with `uv run pytest`. Add `-m "not slow and not network"` to skip the test that loads the real model and the two that download from YouTube.
 
 ## Docs
 

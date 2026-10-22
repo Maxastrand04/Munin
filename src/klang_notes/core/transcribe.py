@@ -4,14 +4,14 @@ import hashlib
 import json
 import os
 import re
-import subprocess
 import tempfile
 import time
 import wave
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
 from pathlib import Path
 
 from klang_notes.core.cache_paths import default_cache_dir
+from klang_notes.core.decode import decode_to_wav
 from klang_notes.core.errors import NoSpeechError, SourceError, UnknownTranscriptError
 from klang_notes.core.model import Recognize, load_recognizer
 from klang_notes.core.segments import Segment, merge_fragments
@@ -21,8 +21,6 @@ from klang_notes.core.youtube import Download, YouTubeSource, download_audio
 
 _ID_LENGTH = 12
 _ID_PATTERN = re.compile(f"[0-9a-f]{{{_ID_LENGTH}}}")
-_SAMPLE_RATE_HZ = 16000
-_MONO = 1
 
 
 @dataclass(frozen=True)
@@ -92,18 +90,12 @@ def transcribe(
     """
     parsed = parse_source(source)
     resolved = parsed.expanduser().resolve() if isinstance(parsed, Path) else parsed
-    key = resolved.url if isinstance(resolved, YouTubeSource) else str(resolved)
-    transcript_id = _transcript_id(key)
+    transcript_id = _transcript_id(_source_key(resolved))
     entry_path = _entry_path(cache_dir, transcript_id)
     if entry_path.is_file():
         return _read_entry(entry_path).result(transcript_id, cached=True)
     if isinstance(resolved, YouTubeSource):
-        folder = entry_path.parent
-        folder.mkdir(parents=True, exist_ok=True)
-        with tempfile.TemporaryDirectory(dir=folder) as workdir:
-            audio = (download or download_audio)(resolved, Path(workdir))
-            fresh = _transcribe_fresh(resolved.url, audio, recognize)
-            entry = _CacheEntry(resolved, fresh.duration_s, fresh.transcription_s, fresh.segments)
+        entry = _transcribe_video(resolved, entry_path.parent, download, recognize)
     else:
         entry = _transcribe_fresh(source, resolved, recognize)
     _write_entry(entry_path, entry)
@@ -145,12 +137,25 @@ def _cached_entry(transcript_id: str, cache_dir: Path | None) -> _CacheEntry:
     return _read_entry(entry_path)
 
 
-def _transcript_id(resolved: str | Path) -> str:
-    return hashlib.sha256(str(resolved).encode()).hexdigest()[:_ID_LENGTH]
+def _source_key(source: Source) -> str:
+    return source.url if isinstance(source, YouTubeSource) else str(source)
+
+
+def _transcript_id(key: str) -> str:
+    return hashlib.sha256(key.encode()).hexdigest()[:_ID_LENGTH]
 
 
 def _entry_path(cache_dir: Path | None, transcript_id: str) -> Path:
     return (cache_dir or default_cache_dir()) / f"{transcript_id}.json"
+
+
+def _transcribe_video(
+    video: YouTubeSource, cache_folder: Path, download: Download | None, recognize: Recognize | None
+) -> _CacheEntry:
+    cache_folder.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(dir=cache_folder) as workdir:
+        audio = (download or download_audio)(video, Path(workdir))
+        return replace(_transcribe_fresh(video.url, audio, recognize), source=video)
 
 
 def _transcribe_fresh(
@@ -160,7 +165,7 @@ def _transcribe_fresh(
         raise SourceError(given, "not a file or a YouTube URL")
     with tempfile.TemporaryDirectory() as workdir:
         wav = Path(workdir, "audio.wav")
-        _decode_to_wav(given, resolved, wav)
+        decode_to_wav(given, resolved, wav)
         duration_s = _duration_s(wav)
         recognize = recognize or load_recognizer()
         started = time.perf_counter()
@@ -169,24 +174,6 @@ def _transcribe_fresh(
     if not segments:
         raise NoSpeechError(given)
     return _CacheEntry(resolved, duration_s, transcription_s, tuple(segments))
-
-
-def _decode_to_wav(given: str | os.PathLike[str], resolved: Path, wav: Path) -> None:
-    command = [
-        "ffmpeg", "-nostdin", "-v", "error", "-i", str(resolved), "-vn",
-        "-ac", str(_MONO), "-ar", str(_SAMPLE_RATE_HZ), "-f", "wav", str(wav),
-    ]
-    try:
-        ffmpeg = subprocess.run(command, capture_output=True, text=True)
-    except FileNotFoundError:
-        raise SourceError(given, "ffmpeg is not installed") from None
-    if ffmpeg.returncode != 0 or not wav.is_file():
-        raise SourceError(given, _last_line(ffmpeg.stderr) or "ffmpeg could not decode it")
-
-
-def _last_line(text: str) -> str:
-    lines = text.strip().splitlines()
-    return lines[-1] if lines else ""
 
 
 def _duration_s(wav: Path) -> float:
@@ -206,7 +193,7 @@ def _read_entry(entry_path: Path) -> _CacheEntry:
 
 def _write_entry(entry_path: Path, entry: _CacheEntry) -> None:
     stored = {
-        "source": entry.source.url if isinstance(entry.source, YouTubeSource) else str(entry.source),
+        "source": _source_key(entry.source),
         "duration_s": entry.duration_s,
         "transcription_s": entry.transcription_s,
         "segments": [asdict(s) for s in entry.segments],

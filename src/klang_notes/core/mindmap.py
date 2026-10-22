@@ -5,9 +5,9 @@ import re
 from pathlib import Path
 
 from klang_notes.core.sources import Source
-from klang_notes.core.youtube import YouTubeSource
 from klang_notes.core.stamps import STAMP, format_stamp, stamp_seconds
 from klang_notes.core.transcribe import get_source
+from klang_notes.core.youtube import YouTubeSource
 
 _REPO_ROOT = Path(__file__).resolve().parents[3]
 _DEFAULT_OUTPUT_DIR = _REPO_ROOT / "mindmaps"
@@ -80,10 +80,15 @@ def link_stamps(outline: str, source: Source) -> str:
 
     def link(stamp: re.Match[str]) -> str:
         offset_s = stamp_seconds(stamp)
-        url = source.timestamp_url(offset_s) if isinstance(source, YouTubeSource) else f"{source.as_uri()}#t={offset_s}"
-        return f'<a href="{url}">{format_stamp(offset_s)}</a>'
+        return f'<a href="{_timestamp_url(source, offset_s)}">{format_stamp(offset_s)}</a>'
 
     return STAMP.sub(link, outline)
+
+
+def _timestamp_url(source: Source, offset_s: int) -> str:
+    if isinstance(source, YouTubeSource):
+        return source.timestamp_url(offset_s)
+    return f"{source.as_uri()}#t={offset_s}"
 
 
 def _page_html(transcript_id: str, outline: str) -> str:

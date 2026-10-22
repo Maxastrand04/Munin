@@ -8,6 +8,7 @@ from mcp.server import MCPServer
 from mcp.server.mcpserver.exceptions import ToolError
 
 from klang_notes.core import (
+    Download,
     KlangError,
     Recognize,
     TranscribeResult,
@@ -15,7 +16,6 @@ from klang_notes.core import (
     render_mindmap,
     transcribe,
 )
-from klang_notes.core.youtube import Download
 
 
 def create_server(
@@ -27,7 +27,8 @@ def create_server(
 ) -> MCPServer:
     """Build the MCP server with three tools, passing its arguments to the core.
 
-    `transcribe(source: str)` takes a local file path or a YouTube URL and returns the `TranscribeResult` fields as an object.
+    `transcribe(source: str)` takes a local file path or a YouTube URL and
+    returns the `TranscribeResult` fields as an object.
     `get_transcript(transcript_id: str)` returns the `[m:ss] text` lines.
     `render_mindmap(transcript_id: str, outline: str)` returns the page's absolute path.
     A `KlangError` comes back as an MCP tool error carrying its message.
