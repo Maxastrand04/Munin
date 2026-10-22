@@ -3,8 +3,9 @@
 from pathlib import Path
 
 from mcp.server import MCPServer
+from mcp.server.mcpserver.exceptions import ToolError
 
-from klang_notes.core import Recognize
+from klang_notes.core import KlangError, Recognize, TranscribeResult, get_transcript, transcribe
 
 
 def create_server(
@@ -18,9 +19,27 @@ def create_server(
     `get_transcript(transcript_id: str)` returns the `[m:ss] text` lines.
     A `KlangError` comes back as an MCP tool error carrying its message.
     """
-    raise NotImplementedError
+    server = MCPServer("klang-notes")
+
+    @server.tool(name="transcribe")
+    def transcribe_tool(path: str) -> TranscribeResult:
+        """Transcribe a local audio or video file and return its Transcript ID and stats."""
+        try:
+            return transcribe(path, cache_dir=cache_dir, recognize=recognize)
+        except KlangError as error:
+            raise ToolError(str(error)) from error
+
+    @server.tool(name="get_transcript")
+    def get_transcript_tool(transcript_id: str) -> str:
+        """Read a Transcript back as one `[m:ss] text` line per Segment."""
+        try:
+            return get_transcript(transcript_id, cache_dir=cache_dir)
+        except KlangError as error:
+            raise ToolError(str(error)) from error
+
+    return server
 
 
 def main() -> None:
     """Run the server over stdio with the default cache folder and recognizer."""
-    raise NotImplementedError
+    create_server().run()

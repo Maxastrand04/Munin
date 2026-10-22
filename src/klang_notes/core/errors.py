@@ -14,7 +14,9 @@ class SourceError(KlangError):
     """
 
     def __init__(self, path: str | Path, reason: str) -> None:
-        raise NotImplementedError
+        self.path = str(path)
+        self.reason = reason
+        super().__init__(f"Cannot read {self.path}: {reason}")
 
 
 class NoSpeechError(KlangError):
@@ -24,7 +26,8 @@ class NoSpeechError(KlangError):
     """
 
     def __init__(self, path: str | Path) -> None:
-        raise NotImplementedError
+        self.path = str(path)
+        super().__init__(f"No speech found in {self.path}")
 
 
 class UnknownTranscriptError(KlangError):
@@ -34,4 +37,5 @@ class UnknownTranscriptError(KlangError):
     """
 
     def __init__(self, transcript_id: str) -> None:
-        raise NotImplementedError
+        self.transcript_id = transcript_id
+        super().__init__(f"No Transcript with ID {transcript_id}")
