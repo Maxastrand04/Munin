@@ -34,7 +34,7 @@ def test_mcp_lists_all_tools(cache_dir: Path):
 def test_mcp_transcribe_returns_result_fields(source: Path, cache_dir: Path):
     """The transcribe tool returns the five TranscribeResult fields."""
     server = create_server(cache_dir=cache_dir, recognize=two_sentences)
-    result = call(server, "transcribe", {"path": str(source)})
+    result = call(server, "transcribe", {"source": str(source)})
     assert set(result.structured_content) == {
         "transcript_id",
         "duration_s",
@@ -47,7 +47,7 @@ def test_mcp_transcribe_returns_result_fields(source: Path, cache_dir: Path):
 def test_mcp_get_transcript_returns_lines(source: Path, cache_dir: Path):
     """The get_transcript tool returns the same lines as the core."""
     server = create_server(cache_dir=cache_dir, recognize=two_sentences)
-    transcript_id = call(server, "transcribe", {"path": str(source)}).structured_content["transcript_id"]
+    transcript_id = call(server, "transcribe", {"source": str(source)}).structured_content["transcript_id"]
     result = call(server, "get_transcript", {"transcript_id": transcript_id})
     assert result.content[0].text == get_transcript(transcript_id, cache_dir=cache_dir)
 
@@ -62,7 +62,7 @@ def test_mcp_unknown_id_is_tool_error(cache_dir: Path):
 def test_mcp_tool_error_carries_core_message(tmp_path: Path, cache_dir: Path):
     """A core error's message reaches the LLM in the tool error."""
     server = create_server(cache_dir=cache_dir, recognize=two_sentences)
-    result = call(server, "transcribe", {"path": str(tmp_path / "nope.m4a")})
+    result = call(server, "transcribe", {"source": str(tmp_path / "nope.m4a")})
     assert "nope.m4a" in result.content[0].text
 
 
@@ -70,7 +70,7 @@ def test_mcp_render_mindmap_returns_page_path(source: Path, cache_dir: Path, tmp
     """The render_mindmap tool writes the page and returns its absolute path."""
     output_dir = tmp_path / "out"
     server = create_server(cache_dir=cache_dir, recognize=two_sentences, output_dir=output_dir)
-    transcript_id = call(server, "transcribe", {"path": str(source)}).structured_content["transcript_id"]
+    transcript_id = call(server, "transcribe", {"source": str(source)}).structured_content["transcript_id"]
     result = call(server, "render_mindmap", {"transcript_id": transcript_id, "outline": "# Matriser [0:01]"})
     assert result.content[0].text == str(output_dir / f"{transcript_id}.html")
     assert (output_dir / f"{transcript_id}.html").is_file()

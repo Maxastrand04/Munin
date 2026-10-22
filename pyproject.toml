@@ -8,6 +8,7 @@ dependencies = [
     "mcp>=1.0",
     "onnx-asr[cpu,hub]>=0.12.0",
     "platformdirs>=4.0",
+    "yt-dlp>=2026.10.21",
 ]
 
 [project.scripts]
@@ -25,4 +26,7 @@ packages = ["src/klang_notes"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-markers = ["slow: loads the real Pianissimo model"]
+markers = [
+    "slow: loads the real Pianissimo model",
+    "network: downloads from YouTube with the real downloader",
+]

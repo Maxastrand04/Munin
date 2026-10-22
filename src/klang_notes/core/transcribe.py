@@ -1,4 +1,4 @@
-"""Transcribing a local Source and reading its Transcript back."""
+"""Transcribing a Source and reading its Transcript back."""
 
 import hashlib
 import json
@@ -16,7 +16,9 @@ from platformdirs import user_cache_path
 from klang_notes.core.errors import NoSpeechError, SourceError, UnknownTranscriptError
 from klang_notes.core.model import Recognize, load_recognizer
 from klang_notes.core.segments import Segment, merge_fragments
+from klang_notes.core.sources import Source
 from klang_notes.core.stamps import format_stamp
+from klang_notes.core.youtube import Download
 
 _APP_NAME = "klang-notes"
 _ID_LENGTH = 12
@@ -57,25 +59,38 @@ def transcribe(
     *,
     cache_dir: Path | None = None,
     recognize: Recognize | None = None,
+    download: Download | None = None,
 ) -> TranscribeResult:
-    """Transcribe a local audio or video file, or return its cached Transcript.
+    """Transcribe a local audio or video file or a YouTube video, or return its cached Transcript.
 
-    The path has `~` expanded and is resolved to an absolute path. That resolved
-    path is the cache key, so relative, `~` and absolute forms of one file share
-    one Transcript. The Transcript ID is the first 12 hex characters of the
-    SHA-256 of the resolved path. A cached Transcript is returned as is, even if
-    the file changed since, and no recognizer is loaded or called.
+    `source` goes through `parse_source`, so a YouTube video URL is a YouTube
+    Source and anything else is a local path.
 
-    On a miss, the file is decoded with ffmpeg to 16 kHz mono and passed to
-    `recognize`, whose fragments go through `merge_fragments`. The Transcript and
-    its Source are then written to the cache.
+    A local path has `~` expanded and is resolved to an absolute path. That
+    resolved path is the cache key, so relative, `~` and absolute forms of one
+    file share one Transcript. A YouTube Source's key is its canonical `url`, so
+    every accepted URL form of one video shares one Transcript. The Transcript ID
+    is the first 12 hex characters of the SHA-256 of the key. A cached Transcript
+    is returned as is, even if the file changed since, and nothing is downloaded,
+    and no recognizer is loaded or called.
+
+    On a miss, a YouTube Source's audio is first fetched with `download` into a
+    temporary work folder. The file, or the downloaded audio, is decoded with
+    ffmpeg to 16 kHz mono and passed to `recognize`, whose fragments go through
+    `merge_fragments`. The Transcript and its Source are then written to the
+    cache. For YouTube the cached Source is the video, not the downloaded file,
+    and the work folder and the audio in it are deleted before returning.
+    `transcription_s` never includes download time.
 
     `cache_dir` defaults to the per-user cache folder for klang-notes.
     `recognize` defaults to `load_recognizer()`, called only on a miss.
+    `download` defaults to `download_audio`, called only on a YouTube miss.
 
-    Raises `SourceError` when the path does not exist, is not a file, or ffmpeg
-    cannot decode it. Raises `NoSpeechError` when no non-empty Segment comes out.
-    Neither writes anything to the cache.
+    Raises `SourceError` when `source` is neither an existing file nor a YouTube
+    video URL, with the reason "not a file or a YouTube URL", when ffmpeg cannot
+    decode it, or when `download` cannot fetch the video. Raises `NoSpeechError`
+    when no non-empty Segment comes out. None of these writes anything to the
+    cache.
     """
     resolved = Path(os.fspath(source)).expanduser().resolve()
     transcript_id = _transcript_id(resolved)
@@ -102,8 +117,11 @@ def get_transcript(transcript_id: str, *, cache_dir: Path | None = None) -> str:
     return "\n".join(f"[{format_stamp(s.start)}] {s.text}" for s in segments)
 
 
-def get_source(transcript_id: str, *, cache_dir: Path | None = None) -> Path:
-    """Return the resolved absolute path of a cached Transcript's Source.
+def get_source(transcript_id: str, *, cache_dir: Path | None = None) -> Source:
+    """Return a cached Transcript's Source.
+
+    A local Source is its resolved absolute path. A YouTube Source is the video,
+    never the audio file downloaded to transcribe it.
 
     `cache_dir` defaults to the per-user cache folder for klang-notes.
 

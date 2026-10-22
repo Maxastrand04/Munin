@@ -1,0 +1,64 @@
+"""YouTube videos as a Source: telling their URLs apart, linking into them, and downloading their audio."""
+
+from collections.abc import Callable
+from dataclasses import dataclass
+from pathlib import Path
+
+
+@dataclass(frozen=True)
+class YouTubeSource:
+    """A YouTube video, identified by its 11-character video ID."""
+
+    video_id: str
+
+    @property
+    def url(self) -> str:
+        """The canonical watch URL, `https://www.youtube.com/watch?v=<video_id>`.
+
+        Every accepted URL form of one video gives this same string, so it is the
+        cache key for the video's Transcript.
+        """
+        raise NotImplementedError
+
+    def timestamp_url(self, offset_s: int) -> str:
+        """Return the Timestamp link that opens the video at `offset_s` seconds.
+
+        The link is `https://www.youtube.com/watch?v=<video_id>&t=<offset_s>s`.
+        """
+        raise NotImplementedError
+
+
+Download = Callable[[YouTubeSource, Path], Path]
+"""Takes a video and a work folder, writes the video's audio track into the folder, and returns that file's path.
+
+Raises `SourceError` naming the video's `url` when the audio cannot be fetched.
+"""
+
+
+def parse_youtube_url(text: str) -> YouTubeSource | None:
+    """Return the video `text` points at, or None when `text` is not a YouTube video URL.
+
+    Accepted forms, with `http://`, `https://` or no scheme:
+
+    - `youtube.com/watch?v=<id>`, `www.youtube.com/watch?v=<id>` and
+      `m.youtube.com/watch?v=<id>`, with any other query parameters, such as
+      `list` or `t`, in any order and ignored,
+    - `youtu.be/<id>`, with any query parameters ignored.
+
+    The ID must be 11 characters from `A-Z`, `a-z`, `0-9`, `_` and `-`.
+    Shorts, embeds, live streams, bare playlists and other hosts return None.
+    """
+    raise NotImplementedError
+
+
+def download_audio(video: YouTubeSource, workdir: Path) -> Path:
+    """Download only the audio track of `video` with yt-dlp into `workdir` and return the file's path.
+
+    This is the default `Download`. It imports yt-dlp on call, so parsing URLs
+    never loads it.
+
+    Raises `SourceError` naming `video.url`, with yt-dlp's reason, when the video
+    is private, removed, or unreachable, for example because the machine is
+    offline.
+    """
+    raise NotImplementedError

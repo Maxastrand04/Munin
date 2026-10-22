@@ -15,6 +15,7 @@ from klang_notes.core import (
     render_mindmap,
     transcribe,
 )
+from klang_notes.core.youtube import Download
 
 
 def create_server(
@@ -22,10 +23,11 @@ def create_server(
     cache_dir: Path | None = None,
     recognize: Recognize | None = None,
     output_dir: Path | None = None,
+    download: Download | None = None,
 ) -> MCPServer:
     """Build the MCP server with three tools, passing its arguments to the core.
 
-    `transcribe(path: str)` returns the `TranscribeResult` fields as an object.
+    `transcribe(source: str)` takes a local file path or a YouTube URL and returns the `TranscribeResult` fields as an object.
     `get_transcript(transcript_id: str)` returns the `[m:ss] text` lines.
     `render_mindmap(transcript_id: str, outline: str)` returns the page's absolute path.
     A `KlangError` comes back as an MCP tool error carrying its message.
@@ -33,10 +35,10 @@ def create_server(
     server = MCPServer("klang-notes")
 
     @server.tool(name="transcribe")
-    def transcribe_tool(path: str) -> TranscribeResult:
-        """Transcribe a local audio or video file and return its Transcript ID and stats."""
+    def transcribe_tool(source: str) -> TranscribeResult:
+        """Transcribe a local audio or video file, or a YouTube video URL, and return its Transcript ID and stats."""
         with _core_errors_as_tool_errors():
-            return transcribe(path, cache_dir=cache_dir, recognize=recognize)
+            return transcribe(source, cache_dir=cache_dir, recognize=recognize, download=download)
 
     @server.tool(name="get_transcript")
     def get_transcript_tool(transcript_id: str) -> str:
