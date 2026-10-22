@@ -98,11 +98,25 @@ def get_transcript(transcript_id: str, *, cache_dir: Path | None = None) -> str:
 
     Raises `UnknownTranscriptError` when no cached Transcript has this ID.
     """
+    segments = _cached_entry(transcript_id, cache_dir).segments
+    return "\n".join(f"[{_stamp(s.start)}] {s.text}" for s in segments)
+
+
+def get_source(transcript_id: str, *, cache_dir: Path | None = None) -> Path:
+    """Return the resolved absolute path of a cached Transcript's Source.
+
+    `cache_dir` defaults to the per-user cache folder for klang-notes.
+
+    Raises `UnknownTranscriptError` when no cached Transcript has this ID.
+    """
+    return _cached_entry(transcript_id, cache_dir).source
+
+
+def _cached_entry(transcript_id: str, cache_dir: Path | None) -> _CacheEntry:
     entry_path = _entry_path(cache_dir, transcript_id)
     if not _ID_PATTERN.fullmatch(transcript_id) or not entry_path.is_file():
         raise UnknownTranscriptError(transcript_id)
-    segments = _read_entry(entry_path).segments
-    return "\n".join(f"[{_stamp(s.start)}] {s.text}" for s in segments)
+    return _read_entry(entry_path)
 
 
 def _transcript_id(resolved: Path) -> str:
