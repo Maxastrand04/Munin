@@ -78,7 +78,8 @@ def download_audio(video: YouTubeSource, workdir: Path) -> Path:
     """Download only the audio track of `video` with yt-dlp into `workdir` and return the file's path.
 
     This is the default `Download`. It imports yt-dlp on call, so parsing URLs
-    never loads it.
+    never loads it. It writes nothing to stdout, which the stdio MCP server
+    uses for its messages.
 
     Raises `SourceError` naming `video.url`, with yt-dlp's reason, when the video
     is private, removed, or unreachable, for example because the machine is
@@ -92,6 +93,7 @@ def download_audio(video: YouTubeSource, workdir: Path) -> Path:
         "outtmpl": str(workdir / "download.%(ext)s"),
         "noplaylist": True,
         "quiet": True,
+        "noprogress": True,
         "cachedir": False,
     }
     try:

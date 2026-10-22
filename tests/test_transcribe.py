@@ -502,6 +502,13 @@ def test_real_downloader_fetches_youtube_audio(cache_dir: Path):
 
 
 @pytest.mark.network
+def test_real_downloader_writes_nothing_to_stdout(cache_dir: Path, capfd: pytest.CaptureFixture[str]):
+    """The default downloader keeps stdout empty, since the stdio MCP server sends its messages there."""
+    transcribe(ZOO_VIDEO_URL, cache_dir=cache_dir, recognize=TWO_SENTENCES)
+    assert capfd.readouterr().out == ""
+
+
+@pytest.mark.network
 def test_real_downloader_unavailable_video_raises_source_error_naming_url(cache_dir: Path):
     """The default downloader turns a video YouTube can't serve into SourceError naming its canonical URL."""
     with pytest.raises(SourceError, match=re.escape(f"https://www.youtube.com/watch?v={MISSING_VIDEO_ID}")):
