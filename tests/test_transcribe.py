@@ -1,6 +1,3 @@
-"""Acceptance tests for #4: transcribe a local file and read it back through MCP."""
-
-import asyncio
 import hashlib
 import shutil
 import time
@@ -9,20 +6,15 @@ from pathlib import Path
 
 import onnx_asr
 import pytest
-from mcp import Client
 
 from klang_notes.core import (
     Fragment,
     NoSpeechError,
-    Segment,
     SourceError,
     UnknownTranscriptError,
     get_transcript,
-    load_recognizer,
-    merge_fragments,
     transcribe,
 )
-from klang_notes.mcp_server import create_server
 
 FIXTURES = Path(__file__).parent / "fixtures"
 SPEECH = FIXTURES / "sv_short.m4a"
@@ -49,90 +41,7 @@ TWO_SENTENCES = fake(
 )
 
 
-@pytest.fixture
-def source(tmp_path: Path) -> Path:
-    """A copy of the speech fixture in a temp folder, so a test may change it."""
-    path = tmp_path / "media" / "lecture.m4a"
-    path.parent.mkdir()
-    shutil.copy(SPEECH, path)
-    return path
-
-
-@pytest.fixture
-def cache_dir(tmp_path: Path) -> Path:
-    return tmp_path / "cache"
-
-
-# merge_fragments
-
-
-def test_merge_drops_fragments_with_only_whitespace():
-    """A fragment whose text is empty after strip() produces no Segment."""
-    segments = merge_fragments([Fragment(0.0, 1.0, "Hej."), Fragment(5.0, 6.0, "   ")])
-    assert segments == [Segment(0.0, 1.0, "Hej.")]
-
-
-def test_merge_joins_fragment_after_text_without_end_punctuation():
-    """A fragment joins the previous one, with one space, when the previous text has no end punctuation."""
-    segments = merge_fragments([Fragment(0.0, 2.0, "Det första är"), Fragment(2.5, 4.0, "Matrisens storlek.")])
-    assert segments == [Segment(0.0, 4.0, "Det första är Matrisens storlek.")]
-
-
-def test_merge_joins_lowercase_fragment_after_period():
-    """A fragment starting lowercase joins the previous one even when that ends in a period."""
-    segments = merge_fragments([Fragment(0.0, 2.0, "Då säger man."), Fragment(2.5, 4.0, "att den är kvadratisk.")])
-    assert segments == [Segment(0.0, 4.0, "Då säger man. att den är kvadratisk.")]
-
-
-@pytest.mark.parametrize("end", [".", "?", "!"])
-def test_merge_starts_new_segment_after_sentence_end(end: str):
-    """An uppercase fragment after `.`, `?` or `!` starts a new Segment."""
-    segments = merge_fragments([Fragment(0.0, 2.0, f"Det är bra{end}"), Fragment(2.5, 4.0, "Nästa sak.")])
-    assert segments == [Segment(0.0, 2.0, f"Det är bra{end}"), Segment(2.5, 4.0, "Nästa sak.")]
-
-
-def test_merge_joins_continuing_sentence_after_pause_just_under_limit():
-    """A continuing fragment joins across a pause just under 1.5 s."""
-    segments = merge_fragments([Fragment(0.0, 2.0, "Det första är"), Fragment(3.49, 5.0, "storleken.")])
-    assert len(segments) == 1
-
-
-def test_merge_splits_continuing_sentence_at_pause_of_1_5_s():
-    """A continuing fragment after a pause of 1.5 s or more starts a new Segment."""
-    segments = merge_fragments([Fragment(0.0, 2.0, "Det första är"), Fragment(3.5, 5.0, "storleken.")])
-    assert len(segments) == 2
-
-
-def test_merge_joins_when_result_is_exactly_20_s():
-    """A continuing fragment joins when the joined Segment is exactly 20 s long."""
-    segments = merge_fragments([Fragment(0.0, 10.0, "Det första är"), Fragment(10.5, 20.0, "storleken.")])
-    assert segments == [Segment(0.0, 20.0, "Det första är storleken.")]
-
-
-def test_merge_splits_when_result_would_exceed_20_s():
-    """A continuing fragment starts a new Segment when joining would pass 20 s."""
-    segments = merge_fragments([Fragment(0.0, 10.0, "Det första är"), Fragment(10.5, 20.5, "storleken.")])
-    assert len(segments) == 2
-
-
-def test_merge_keeps_single_long_fragment_whole():
-    """A single fragment over 20 s becomes one Segment with its own times."""
-    segments = merge_fragments([Fragment(3.0, 33.0, "En väldigt lång mening utan paus.")])
-    assert segments == [Segment(3.0, 33.0, "En väldigt lång mening utan paus.")]
-
-
-def test_merge_strips_segment_text():
-    """Segment text carries no leading or trailing whitespace."""
-    segments = merge_fragments([Fragment(0.0, 1.0, "  Hej.  ")])
-    assert segments == [Segment(0.0, 1.0, "Hej.")]
-
-
-def test_merge_of_no_fragments_is_empty():
-    """An empty fragment list gives an empty Segment list."""
-    assert merge_fragments([]) == []
-
-
-# transcribe, fresh run
+# Fresh run
 
 
 def test_transcribe_counts_merged_segments(source: Path, cache_dir: Path):
@@ -202,7 +111,7 @@ def test_recognizer_gets_mono_audio(source: Path, cache_dir: Path):
     assert channels == [1]
 
 
-# transcribe, cache hits
+# Cache hits
 
 
 def test_cache_hit_does_not_run_recognizer(source: Path, cache_dir: Path):
@@ -284,7 +193,7 @@ def test_changed_file_keeps_cached_transcript(source: Path, cache_dir: Path):
     assert get_transcript(first.transcript_id, cache_dir=cache_dir) == before
 
 
-# transcribe, failures
+# Failures
 
 
 def test_missing_path_raises_source_error_naming_it(tmp_path: Path, cache_dir: Path):
@@ -352,6 +261,24 @@ def test_no_speech_source_is_not_cached(source: Path, cache_dir: Path):
     assert transcribe(source, cache_dir=cache_dir, recognize=TWO_SENTENCES).cached is False
 
 
+def test_source_error_names_path_as_given(tmp_path: Path, cache_dir: Path, monkeypatch: pytest.MonkeyPatch):
+    """A SourceError names the path the caller passed, not its resolved form."""
+    monkeypatch.setenv("HOME", str(tmp_path))
+    with pytest.raises(SourceError, match="~/nope.m4a"):
+        transcribe("~/nope.m4a", cache_dir=cache_dir, recognize=TWO_SENTENCES)
+
+
+def test_missing_ffmpeg_raises_source_error(
+    source: Path, tmp_path: Path, cache_dir: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """With no ffmpeg on PATH, transcribe raises SourceError saying so."""
+    empty = tmp_path / "empty_bin"
+    empty.mkdir()
+    monkeypatch.setenv("PATH", str(empty))
+    with pytest.raises(SourceError, match="ffmpeg is not installed"):
+        transcribe(source, cache_dir=cache_dir, recognize=TWO_SENTENCES)
+
+
 # get_transcript
 
 
@@ -381,97 +308,12 @@ def test_get_transcript_unknown_id_raises(cache_dir: Path):
         get_transcript("deadbeef0000", cache_dir=cache_dir)
 
 
-# MCP adapter
-
-
-def call(server, tool: str, arguments: dict):
-    async def run():
-        async with Client(server) as client:
-            return await client.call_tool(tool, arguments)
-
-    return asyncio.run(run())
-
-
-def test_mcp_lists_both_tools(cache_dir: Path):
-    """The server exposes `transcribe` and `get_transcript`."""
-
-    async def run():
-        async with Client(create_server(cache_dir=cache_dir, recognize=TWO_SENTENCES)) as client:
-            return await client.list_tools()
-
-    names = {tool.name for tool in asyncio.run(run()).tools}
-    assert names == {"transcribe", "get_transcript"}
-
-
-def test_mcp_transcribe_returns_result_fields(source: Path, cache_dir: Path):
-    """The transcribe tool returns the five TranscribeResult fields."""
-    server = create_server(cache_dir=cache_dir, recognize=TWO_SENTENCES)
-    result = call(server, "transcribe", {"path": str(source)})
-    assert set(result.structured_content) == {
-        "transcript_id",
-        "duration_s",
-        "segment_count",
-        "transcription_s",
-        "cached",
-    }
-
-
-def test_mcp_get_transcript_returns_lines(source: Path, cache_dir: Path):
-    """The get_transcript tool returns the same lines as the core."""
-    server = create_server(cache_dir=cache_dir, recognize=TWO_SENTENCES)
-    transcript_id = call(server, "transcribe", {"path": str(source)}).structured_content["transcript_id"]
-    result = call(server, "get_transcript", {"transcript_id": transcript_id})
-    assert result.content[0].text == get_transcript(transcript_id, cache_dir=cache_dir)
-
-
-def test_mcp_unknown_id_is_tool_error(cache_dir: Path):
-    """An unknown ID comes back as an MCP tool error."""
-    server = create_server(cache_dir=cache_dir, recognize=TWO_SENTENCES)
-    result = call(server, "get_transcript", {"transcript_id": "deadbeef0000"})
-    assert result.is_error is True
-
-
-def test_mcp_tool_error_carries_core_message(tmp_path: Path, cache_dir: Path):
-    """A core error's message reaches the LLM in the tool error."""
-    server = create_server(cache_dir=cache_dir, recognize=TWO_SENTENCES)
-    result = call(server, "transcribe", {"path": str(tmp_path / "nope.m4a")})
-    assert "nope.m4a" in result.content[0].text
-
-
-# Model loader
-
-
-@pytest.fixture
-def loaded_providers(monkeypatch: pytest.MonkeyPatch) -> dict:
-    """Fakes onnx-asr's loaders and records the providers each one was given."""
-    providers = {}
-
-    class FakeAsr:
-        def with_vad(self, vad, **kwargs):
-            return self
-
-    def load_model(repo, **kwargs):
-        providers["model"] = kwargs.get("providers")
-        return FakeAsr()
-
-    def load_vad(name, **kwargs):
-        providers["vad"] = kwargs.get("providers")
-        return object()
-
-    monkeypatch.setattr(onnx_asr, "load_model", load_model)
-    monkeypatch.setattr(onnx_asr, "load_vad", load_vad)
-    load_recognizer()
-    return providers
-
-
-def test_loader_forces_cpu_provider_for_model(loaded_providers: dict):
-    """Pianissimo loads with only ONNX Runtime's CPU provider."""
-    assert loaded_providers["model"] == ["CPUExecutionProvider"]
-
-
-def test_loader_forces_cpu_provider_for_vad(loaded_providers: dict):
-    """Silero VAD loads with only ONNX Runtime's CPU provider."""
-    assert loaded_providers["vad"] == ["CPUExecutionProvider"]
+def test_get_transcript_rejects_id_that_is_not_12_hex(tmp_path: Path, cache_dir: Path):
+    """An ID outside the 12-hex form raises UnknownTranscriptError, even if a file sits at that name."""
+    cache_dir.mkdir()
+    (tmp_path / "outside.json").write_text("{}")
+    with pytest.raises(UnknownTranscriptError):
+        get_transcript("../outside", cache_dir=cache_dir)
 
 
 # Real model
