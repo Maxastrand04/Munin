@@ -13,8 +13,12 @@ The cached text of one Source, made of Segments and identified by a Transcript I
 _Avoid_: transcription (for the stored result), text, captions
 
 **Segment**:
-One span of speech in a Transcript with a start time, an end time and its text, after fragments are merged and empty spans dropped.
+One span of speech in a Transcript with a start time, an end time and its text, after Fragments are merged and empty spans dropped.
 _Avoid_: chunk, line, utterance
+
+**Fragment**:
+One raw span of speech as VAD and Pianissimo return it, before merging into Segments.
+_Avoid_: chunk, piece
 
 **Vocabulary**:
 A list of terms, plus a boost strength (alpha), that steers Pianissimo toward spelling those terms correctly.
@@ -36,6 +40,7 @@ _Avoid_: jump link, deep link, seek link
 
 - A **Source** has at most one cached **Transcript**
 - A **Transcript** contains one or more **Segments**
+- A **Segment** is merged from one or more **Fragments**
 - A **Vocabulary** is optional and applies to one transcription of a **Source**
 - An **Outline** is written from exactly one **Transcript**
 - A **Mindmap** renders exactly one **Outline** and resolves its stamps against that **Transcript**'s **Source**

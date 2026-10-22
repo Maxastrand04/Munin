@@ -6,7 +6,7 @@ Klang's [Pianissimo](https://huggingface.co/KlangAI/pianissimo-sv) model does th
 
 ## Status
 
-Planning done, no code yet. The MVP target is the 7:11 clip [SF1624, Föreläsning 4: Matriser](https://www.youtube.com/watch?v=sZipb-R1hfg).
+`transcribe` and `get_transcript` work on local files. YouTube URLs, Vocabulary and `render_mindmap` are still planned. The MVP target is the 7:11 clip [SF1624, Föreläsning 4: Matriser](https://www.youtube.com/watch?v=sZipb-R1hfg).
 
 ## Planned tools
 
@@ -26,13 +26,27 @@ Planning done, no code yet. The MVP target is the 7:11 clip [SF1624, Föreläsni
 
 Leaving ONNX Runtime on its default CoreML provider was about 30x slower. See [ADR-0003](docs/adr/0003-onnx-cpu-provider.md).
 
-## Setup (planned)
+## Setup
 
-Needs Python 3.12, [uv](https://docs.astral.sh/uv/), ffmpeg and yt-dlp.
+Needs Python 3.12, [uv](https://docs.astral.sh/uv/) and ffmpeg. yt-dlp comes in with YouTube support.
 
 ```bash
 brew install uv ffmpeg yt-dlp
 ```
+
+```bash
+uv sync
+```
+
+The MCP server runs over stdio. Point your MCP client at this command:
+
+```bash
+uv run klang-notes-mcp
+```
+
+The first transcription downloads the Pianissimo weights, and the loaded model takes about 2.4 GB of RAM. Transcripts are cached in the per-user cache folder.
+
+Run the tests with `uv run pytest`. Add `-m "not slow"` to skip the one test that loads the real model.
 
 ## Docs
 

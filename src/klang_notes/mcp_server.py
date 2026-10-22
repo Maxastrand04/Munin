@@ -1,5 +1,7 @@
 """MCP adapter. Maps tool calls onto the core and holds no logic of its own."""
 
+from collections.abc import Iterator
+from contextlib import contextmanager
 from pathlib import Path
 
 from mcp.server import MCPServer
@@ -24,18 +26,14 @@ def create_server(
     @server.tool(name="transcribe")
     def transcribe_tool(path: str) -> TranscribeResult:
         """Transcribe a local audio or video file and return its Transcript ID and stats."""
-        try:
+        with _core_errors_as_tool_errors():
             return transcribe(path, cache_dir=cache_dir, recognize=recognize)
-        except KlangError as error:
-            raise ToolError(str(error)) from error
 
     @server.tool(name="get_transcript")
     def get_transcript_tool(transcript_id: str) -> str:
         """Read a Transcript back as one `[m:ss] text` line per Segment."""
-        try:
+        with _core_errors_as_tool_errors():
             return get_transcript(transcript_id, cache_dir=cache_dir)
-        except KlangError as error:
-            raise ToolError(str(error)) from error
 
     return server
 
@@ -43,3 +41,11 @@ def create_server(
 def main() -> None:
     """Run the server over stdio with the default cache folder and recognizer."""
     create_server().run()
+
+
+@contextmanager
+def _core_errors_as_tool_errors() -> Iterator[None]:
+    try:
+        yield
+    except KlangError as error:
+        raise ToolError(str(error)) from error

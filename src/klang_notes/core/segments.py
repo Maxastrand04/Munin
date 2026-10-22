@@ -1,6 +1,11 @@
 """Turning raw VAD fragments into Segments, with the merge rule from #2."""
 
+from collections.abc import Iterable, Iterator
 from dataclasses import dataclass
+
+_SENTENCE_ENDS = (".", "?", "!")
+_MAX_PAUSE_S = 1.5
+_MAX_SEGMENT_S = 20.0
 
 
 @dataclass(frozen=True)
@@ -37,31 +42,26 @@ def merge_fragments(fragments: list[Fragment]) -> list[Segment]:
     An empty input, or one with only empty fragments, returns an empty list.
     """
     segments: list[Segment] = []
-    current: Segment | None = None
-    for fragment in fragments:
-        text = fragment.text.strip()
-        if not text:
-            continue
-        if current is not None and _continues(current, fragment.start, fragment.end, text):
-            current = Segment(current.start, fragment.end, f"{current.text} {text}")
-            continue
-        if current is not None:
-            segments.append(current)
-        current = Segment(fragment.start, fragment.end, text)
-    if current is not None:
-        segments.append(current)
+    for fragment in _stripped_non_empty(fragments):
+        if segments and _continues(segments[-1], fragment):
+            last = segments[-1]
+            segments[-1] = Segment(last.start, fragment.end, f"{last.text} {fragment.text}")
+        else:
+            segments.append(Segment(fragment.start, fragment.end, fragment.text))
     return segments
 
 
-_SENTENCE_ENDS = (".", "?", "!")
-_MAX_PAUSE_S = 1.5
-_MAX_SEGMENT_S = 20.0
+def _stripped_non_empty(fragments: Iterable[Fragment]) -> Iterator[Fragment]:
+    for fragment in fragments:
+        text = fragment.text.strip()
+        if text:
+            yield Fragment(fragment.start, fragment.end, text)
 
 
-def _continues(current: Segment, start: float, end: float, text: str) -> bool:
-    sentence_continues = not current.text.endswith(_SENTENCE_ENDS) or text[0].islower()
+def _continues(segment: Segment, fragment: Fragment) -> bool:
+    sentence_continues = not segment.text.endswith(_SENTENCE_ENDS) or fragment.text[0].islower()
     return (
         sentence_continues
-        and start - current.end < _MAX_PAUSE_S
-        and end - current.start <= _MAX_SEGMENT_S
+        and fragment.start - segment.end < _MAX_PAUSE_S
+        and fragment.end - segment.start <= _MAX_SEGMENT_S
     )
