@@ -3,9 +3,11 @@
 import asyncio
 import hashlib
 import shutil
+import time
 import wave
 from pathlib import Path
 
+import onnx_asr
 import pytest
 from mcp import Client
 
@@ -16,6 +18,7 @@ from klang_notes.core import (
     SourceError,
     UnknownTranscriptError,
     get_transcript,
+    load_recognizer,
     merge_fragments,
     transcribe,
 )
@@ -150,10 +153,15 @@ def test_transcribe_reports_source_duration(source: Path, cache_dir: Path):
     assert result.duration_s == pytest.approx(SPEECH_DURATION_S, abs=0.1)
 
 
-def test_transcribe_reports_non_negative_transcription_time(source: Path, cache_dir: Path):
-    """transcription_s on a fresh run is a measured time, zero or more."""
-    result = transcribe(source, cache_dir=cache_dir, recognize=TWO_SENTENCES)
-    assert result.transcription_s >= 0.0
+def test_transcribe_reports_measured_transcription_time(source: Path, cache_dir: Path):
+    """transcription_s on a fresh run covers the time the recognizer took."""
+
+    def slow_recognize(wav: Path):
+        time.sleep(0.05)
+        return [Fragment(0.0, 1.0, "Hej.")]
+
+    result = transcribe(source, cache_dir=cache_dir, recognize=slow_recognize)
+    assert result.transcription_s >= 0.05
 
 
 def test_transcribe_fresh_run_is_not_cached(source: Path, cache_dir: Path):
@@ -201,6 +209,29 @@ def test_cache_hit_does_not_run_recognizer(source: Path, cache_dir: Path):
     """A second call for the same Source never calls the recognizer."""
     transcribe(source, cache_dir=cache_dir, recognize=TWO_SENTENCES)
     transcribe(source, cache_dir=cache_dir, recognize=never_called)
+
+
+def test_cache_hit_does_not_load_model(source: Path, cache_dir: Path, monkeypatch: pytest.MonkeyPatch):
+    """A cache hit with the default recognizer never loads Pianissimo."""
+
+    def no_loading(*args, **kwargs):
+        raise AssertionError("the model loaded on what should be a cache hit")
+
+    transcribe(source, cache_dir=cache_dir, recognize=TWO_SENTENCES)
+    monkeypatch.setattr(onnx_asr, "load_model", no_loading)
+    transcribe(source, cache_dir=cache_dir)
+
+
+def test_default_cache_is_a_per_user_klang_notes_folder(
+    source: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """With no cache_dir, the Transcript lands in a klang-notes folder under the user's home."""
+    home = tmp_path / "home"
+    home.mkdir()
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.delenv("XDG_CACHE_HOME", raising=False)
+    transcribe(source, recognize=TWO_SENTENCES)
+    assert any(path.is_dir() for path in home.rglob("klang-notes"))
 
 
 def test_cache_hit_returns_same_id(source: Path, cache_dir: Path):
@@ -405,6 +436,42 @@ def test_mcp_tool_error_carries_core_message(tmp_path: Path, cache_dir: Path):
     server = create_server(cache_dir=cache_dir, recognize=TWO_SENTENCES)
     result = call(server, "transcribe", {"path": str(tmp_path / "nope.m4a")})
     assert "nope.m4a" in result.content[0].text
+
+
+# Model loader
+
+
+@pytest.fixture
+def loaded_providers(monkeypatch: pytest.MonkeyPatch) -> dict:
+    """Fakes onnx-asr's loaders and records the providers each one was given."""
+    providers = {}
+
+    class FakeAsr:
+        def with_vad(self, vad, **kwargs):
+            return self
+
+    def load_model(repo, **kwargs):
+        providers["model"] = kwargs.get("providers")
+        return FakeAsr()
+
+    def load_vad(name, **kwargs):
+        providers["vad"] = kwargs.get("providers")
+        return object()
+
+    monkeypatch.setattr(onnx_asr, "load_model", load_model)
+    monkeypatch.setattr(onnx_asr, "load_vad", load_vad)
+    load_recognizer()
+    return providers
+
+
+def test_loader_forces_cpu_provider_for_model(loaded_providers: dict):
+    """Pianissimo loads with only ONNX Runtime's CPU provider."""
+    assert loaded_providers["model"] == ["CPUExecutionProvider"]
+
+
+def test_loader_forces_cpu_provider_for_vad(loaded_providers: dict):
+    """Silero VAD loads with only ONNX Runtime's CPU provider."""
+    assert loaded_providers["vad"] == ["CPUExecutionProvider"]
 
 
 # Real model
