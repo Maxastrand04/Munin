@@ -8,9 +8,10 @@ class KlangError(Exception):
 
 
 class SourceError(KlangError):
-    """The Source path does not exist, is not a file, or ffmpeg cannot decode it.
+    """The Source is neither a file nor a YouTube URL, ffmpeg cannot decode it, or its video cannot be downloaded.
 
-    `path` is the path as the caller gave it, and the message names it.
+    `path` is the path or URL as the caller gave it, or a video's canonical URL
+    for a failed download, and the message names it.
     """
 
     def __init__(self, path: str | Path, reason: str) -> None:

@@ -1,28 +1,26 @@
-"""Transcribing a local Source and reading its Transcript back."""
+"""Transcribing a Source and reading its Transcript back."""
 
 import hashlib
 import json
 import os
 import re
-import subprocess
 import tempfile
 import time
 import wave
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
 from pathlib import Path
 
-from platformdirs import user_cache_path
-
+from klang_notes.core.cache_paths import default_cache_dir
+from klang_notes.core.decode import decode_to_wav
 from klang_notes.core.errors import NoSpeechError, SourceError, UnknownTranscriptError
 from klang_notes.core.model import Recognize, load_recognizer
 from klang_notes.core.segments import Segment, merge_fragments
+from klang_notes.core.sources import Source, parse_source
 from klang_notes.core.stamps import format_stamp
+from klang_notes.core.youtube import Download, YouTubeSource, download_audio
 
-_APP_NAME = "klang-notes"
 _ID_LENGTH = 12
 _ID_PATTERN = re.compile(f"[0-9a-f]{{{_ID_LENGTH}}}")
-_SAMPLE_RATE_HZ = 16000
-_MONO = 1
 
 
 @dataclass(frozen=True)
@@ -43,7 +41,7 @@ class TranscribeResult:
 
 @dataclass(frozen=True)
 class _CacheEntry:
-    source: Path
+    source: Source
     duration_s: float
     transcription_s: float
     segments: tuple[Segment, ...]
@@ -57,32 +55,49 @@ def transcribe(
     *,
     cache_dir: Path | None = None,
     recognize: Recognize | None = None,
+    download: Download | None = None,
 ) -> TranscribeResult:
-    """Transcribe a local audio or video file, or return its cached Transcript.
+    """Transcribe a local audio or video file or a YouTube video, or return its cached Transcript.
 
-    The path has `~` expanded and is resolved to an absolute path. That resolved
-    path is the cache key, so relative, `~` and absolute forms of one file share
-    one Transcript. The Transcript ID is the first 12 hex characters of the
-    SHA-256 of the resolved path. A cached Transcript is returned as is, even if
-    the file changed since, and no recognizer is loaded or called.
+    `source` goes through `parse_source`, so a YouTube video URL is a YouTube
+    Source and anything else is a local path.
 
-    On a miss, the file is decoded with ffmpeg to 16 kHz mono and passed to
-    `recognize`, whose fragments go through `merge_fragments`. The Transcript and
-    its Source are then written to the cache.
+    A local path has `~` expanded and is resolved to an absolute path. That
+    resolved path is the cache key, so relative, `~` and absolute forms of one
+    file share one Transcript. A YouTube Source's key is its canonical `url`, so
+    every accepted URL form of one video shares one Transcript. The Transcript ID
+    is the first 12 hex characters of the SHA-256 of the key. A cached Transcript
+    is returned as is, even if the file changed since, and nothing is downloaded,
+    and no recognizer is loaded or called.
+
+    On a miss, a YouTube Source's audio is first fetched with `download` into a
+    temporary work folder. The file, or the downloaded audio, is decoded with
+    ffmpeg to 16 kHz mono and passed to `recognize`, whose fragments go through
+    `merge_fragments`. The Transcript and its Source are then written to the
+    cache. For YouTube the cached Source is the video, not the downloaded file,
+    and the work folder and the audio in it are deleted before returning.
+    `transcription_s` never includes download time.
 
     `cache_dir` defaults to the per-user cache folder for klang-notes.
     `recognize` defaults to `load_recognizer()`, called only on a miss.
+    `download` defaults to `download_audio`, called only on a YouTube miss.
 
-    Raises `SourceError` when the path does not exist, is not a file, or ffmpeg
-    cannot decode it. Raises `NoSpeechError` when no non-empty Segment comes out.
-    Neither writes anything to the cache.
+    Raises `SourceError` when `source` is neither an existing file nor a YouTube
+    video URL, with the reason "not a file or a YouTube URL", when ffmpeg cannot
+    decode it, or when `download` cannot fetch the video. Raises `NoSpeechError`
+    when no non-empty Segment comes out. None of these writes anything to the
+    cache.
     """
-    resolved = Path(os.fspath(source)).expanduser().resolve()
-    transcript_id = _transcript_id(resolved)
+    parsed = parse_source(source)
+    resolved = parsed.expanduser().resolve() if isinstance(parsed, Path) else parsed
+    transcript_id = _transcript_id(_source_key(resolved))
     entry_path = _entry_path(cache_dir, transcript_id)
     if entry_path.is_file():
         return _read_entry(entry_path).result(transcript_id, cached=True)
-    entry = _transcribe_fresh(source, resolved, recognize)
+    if isinstance(resolved, YouTubeSource):
+        entry = _transcribe_video(resolved, entry_path.parent, download, recognize)
+    else:
+        entry = _transcribe_fresh(source, resolved, recognize)
     _write_entry(entry_path, entry)
     return entry.result(transcript_id, cached=False)
 
@@ -102,8 +117,11 @@ def get_transcript(transcript_id: str, *, cache_dir: Path | None = None) -> str:
     return "\n".join(f"[{format_stamp(s.start)}] {s.text}" for s in segments)
 
 
-def get_source(transcript_id: str, *, cache_dir: Path | None = None) -> Path:
-    """Return the resolved absolute path of a cached Transcript's Source.
+def get_source(transcript_id: str, *, cache_dir: Path | None = None) -> Source:
+    """Return a cached Transcript's Source.
+
+    A local Source is its resolved absolute path. A YouTube Source is the video,
+    never the audio file downloaded to transcribe it.
 
     `cache_dir` defaults to the per-user cache folder for klang-notes.
 
@@ -119,22 +137,35 @@ def _cached_entry(transcript_id: str, cache_dir: Path | None) -> _CacheEntry:
     return _read_entry(entry_path)
 
 
-def _transcript_id(resolved: Path) -> str:
-    return hashlib.sha256(str(resolved).encode()).hexdigest()[:_ID_LENGTH]
+def _source_key(source: Source) -> str:
+    return source.url if isinstance(source, YouTubeSource) else str(source)
+
+
+def _transcript_id(key: str) -> str:
+    return hashlib.sha256(key.encode()).hexdigest()[:_ID_LENGTH]
 
 
 def _entry_path(cache_dir: Path | None, transcript_id: str) -> Path:
-    return (cache_dir or user_cache_path(_APP_NAME)) / f"{transcript_id}.json"
+    return (cache_dir or default_cache_dir()) / f"{transcript_id}.json"
+
+
+def _transcribe_video(
+    video: YouTubeSource, cache_folder: Path, download: Download | None, recognize: Recognize | None
+) -> _CacheEntry:
+    cache_folder.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(dir=cache_folder) as workdir:
+        audio = (download or download_audio)(video, Path(workdir))
+        return replace(_transcribe_fresh(video.url, audio, recognize), source=video)
 
 
 def _transcribe_fresh(
     given: str | os.PathLike[str], resolved: Path, recognize: Recognize | None
 ) -> _CacheEntry:
     if not resolved.is_file():
-        raise SourceError(given, "no such file")
+        raise SourceError(given, "not a file or a YouTube URL")
     with tempfile.TemporaryDirectory() as workdir:
         wav = Path(workdir, "audio.wav")
-        _decode_to_wav(given, resolved, wav)
+        decode_to_wav(given, resolved, wav)
         duration_s = _duration_s(wav)
         recognize = recognize or load_recognizer()
         started = time.perf_counter()
@@ -145,24 +176,6 @@ def _transcribe_fresh(
     return _CacheEntry(resolved, duration_s, transcription_s, tuple(segments))
 
 
-def _decode_to_wav(given: str | os.PathLike[str], resolved: Path, wav: Path) -> None:
-    command = [
-        "ffmpeg", "-nostdin", "-v", "error", "-i", str(resolved), "-vn",
-        "-ac", str(_MONO), "-ar", str(_SAMPLE_RATE_HZ), "-f", "wav", str(wav),
-    ]
-    try:
-        ffmpeg = subprocess.run(command, capture_output=True, text=True)
-    except FileNotFoundError:
-        raise SourceError(given, "ffmpeg is not installed") from None
-    if ffmpeg.returncode != 0 or not wav.is_file():
-        raise SourceError(given, _last_line(ffmpeg.stderr) or "ffmpeg could not decode it")
-
-
-def _last_line(text: str) -> str:
-    lines = text.strip().splitlines()
-    return lines[-1] if lines else ""
-
-
 def _duration_s(wav: Path) -> float:
     with wave.open(str(wav)) as audio:
         return audio.getnframes() / audio.getframerate()
@@ -171,7 +184,7 @@ def _duration_s(wav: Path) -> float:
 def _read_entry(entry_path: Path) -> _CacheEntry:
     stored = json.loads(entry_path.read_text(encoding="utf-8"))
     return _CacheEntry(
-        source=Path(stored["source"]),
+        source=parse_source(stored["source"]),
         duration_s=stored["duration_s"],
         transcription_s=stored["transcription_s"],
         segments=tuple(Segment(s["start"], s["end"], s["text"]) for s in stored["segments"]),
@@ -180,7 +193,7 @@ def _read_entry(entry_path: Path) -> _CacheEntry:
 
 def _write_entry(entry_path: Path, entry: _CacheEntry) -> None:
     stored = {
-        "source": str(entry.source),
+        "source": _source_key(entry.source),
         "duration_s": entry.duration_s,
         "transcription_s": entry.transcription_s,
         "segments": [asdict(s) for s in entry.segments],

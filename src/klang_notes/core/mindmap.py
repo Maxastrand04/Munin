@@ -4,8 +4,10 @@ import json
 import re
 from pathlib import Path
 
+from klang_notes.core.sources import Source
 from klang_notes.core.stamps import STAMP, format_stamp, stamp_seconds
 from klang_notes.core.transcribe import get_source
+from klang_notes.core.youtube import YouTubeSource
 
 _REPO_ROOT = Path(__file__).resolve().parents[3]
 _DEFAULT_OUTPUT_DIR = _REPO_ROOT / "mindmaps"
@@ -42,9 +44,9 @@ def render_mindmap(
     """Write the Mindmap page for an Outline and return the page's absolute path.
 
     Each `[m:ss]` stamp in the Outline becomes a Timestamp link to the
-    Transcript's Source, `file://<path>#t=<s>`, with the path percent-encoded.
-    The link is inline HTML, since Markmap's Markdown parser drops `file:`
-    links. Text without a stamp stays as written.
+    Transcript's Source, per `link_stamps`. The link is inline HTML, since
+    Markmap's Markdown parser drops `file:` links. Text without a stamp stays as
+    written.
 
     The page is `<transcript_id>.html` in `output_dir`, replacing any earlier
     page for the same Transcript. It loads Markmap from a CDN and embeds the
@@ -65,8 +67,12 @@ def render_mindmap(
     return page
 
 
-def link_stamps(outline: str, source: Path) -> str:
+def link_stamps(outline: str, source: Source) -> str:
     """Replace each `[m:ss]` stamp with an `<a>` linking to `source` at that second.
+
+    A local Source links to `file://<path>#t=<s>`, with the path percent-encoded.
+    A YouTube Source links to its `timestamp_url`,
+    `https://www.youtube.com/watch?v=<id>&t=<s>s`.
 
     Minutes may count past 59, so `[75:03]` links to 4503 s. The link text is the
     stamp written as `m:ss`.
@@ -74,9 +80,15 @@ def link_stamps(outline: str, source: Path) -> str:
 
     def link(stamp: re.Match[str]) -> str:
         offset_s = stamp_seconds(stamp)
-        return f'<a href="{source.as_uri()}#t={offset_s}">{format_stamp(offset_s)}</a>'
+        return f'<a href="{_timestamp_url(source, offset_s)}">{format_stamp(offset_s)}</a>'
 
     return STAMP.sub(link, outline)
+
+
+def _timestamp_url(source: Source, offset_s: int) -> str:
+    if isinstance(source, YouTubeSource):
+        return source.timestamp_url(offset_s)
+    return f"{source.as_uri()}#t={offset_s}"
 
 
 def _page_html(transcript_id: str, outline: str) -> str:
