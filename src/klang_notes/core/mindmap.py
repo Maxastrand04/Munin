@@ -5,6 +5,7 @@ import re
 from pathlib import Path
 
 from klang_notes.core.sources import Source
+from klang_notes.core.youtube import YouTubeSource
 from klang_notes.core.stamps import STAMP, format_stamp, stamp_seconds
 from klang_notes.core.transcribe import get_source
 
@@ -79,7 +80,8 @@ def link_stamps(outline: str, source: Source) -> str:
 
     def link(stamp: re.Match[str]) -> str:
         offset_s = stamp_seconds(stamp)
-        return f'<a href="{source.as_uri()}#t={offset_s}">{format_stamp(offset_s)}</a>'
+        url = source.timestamp_url(offset_s) if isinstance(source, YouTubeSource) else f"{source.as_uri()}#t={offset_s}"
+        return f'<a href="{url}">{format_stamp(offset_s)}</a>'
 
     return STAMP.sub(link, outline)
 

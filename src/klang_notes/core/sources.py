@@ -3,7 +3,7 @@
 import os
 from pathlib import Path
 
-from klang_notes.core.youtube import YouTubeSource
+from klang_notes.core.youtube import YouTubeSource, parse_youtube_url
 
 Source = Path | YouTubeSource
 """A local audio or video file, or a YouTube video."""
@@ -15,4 +15,4 @@ def parse_source(text: str | os.PathLike[str]) -> Source:
     The YouTube check runs first, per `parse_youtube_url`. The Path is returned
     as given, with no `~` expansion, resolving, or check that it exists.
     """
-    raise NotImplementedError
+    return parse_youtube_url(os.fspath(text)) or Path(text)

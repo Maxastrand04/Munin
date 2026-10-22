@@ -11,16 +11,14 @@ import wave
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
-from platformdirs import user_cache_path
-
+from klang_notes.core.cache_paths import default_cache_dir
 from klang_notes.core.errors import NoSpeechError, SourceError, UnknownTranscriptError
 from klang_notes.core.model import Recognize, load_recognizer
 from klang_notes.core.segments import Segment, merge_fragments
-from klang_notes.core.sources import Source
+from klang_notes.core.sources import Source, parse_source
 from klang_notes.core.stamps import format_stamp
-from klang_notes.core.youtube import Download
+from klang_notes.core.youtube import Download, YouTubeSource, download_audio
 
-_APP_NAME = "klang-notes"
 _ID_LENGTH = 12
 _ID_PATTERN = re.compile(f"[0-9a-f]{{{_ID_LENGTH}}}")
 _SAMPLE_RATE_HZ = 16000
@@ -45,7 +43,7 @@ class TranscribeResult:
 
 @dataclass(frozen=True)
 class _CacheEntry:
-    source: Path
+    source: Source
     duration_s: float
     transcription_s: float
     segments: tuple[Segment, ...]
@@ -92,12 +90,22 @@ def transcribe(
     when no non-empty Segment comes out. None of these writes anything to the
     cache.
     """
-    resolved = Path(os.fspath(source)).expanduser().resolve()
-    transcript_id = _transcript_id(resolved)
+    parsed = parse_source(source)
+    resolved = parsed.expanduser().resolve() if isinstance(parsed, Path) else parsed
+    key = resolved.url if isinstance(resolved, YouTubeSource) else str(resolved)
+    transcript_id = _transcript_id(key)
     entry_path = _entry_path(cache_dir, transcript_id)
     if entry_path.is_file():
         return _read_entry(entry_path).result(transcript_id, cached=True)
-    entry = _transcribe_fresh(source, resolved, recognize)
+    if isinstance(resolved, YouTubeSource):
+        folder = entry_path.parent
+        folder.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(dir=folder) as workdir:
+            audio = (download or download_audio)(resolved, Path(workdir))
+            fresh = _transcribe_fresh(resolved.url, audio, recognize)
+            entry = _CacheEntry(resolved, fresh.duration_s, fresh.transcription_s, fresh.segments)
+    else:
+        entry = _transcribe_fresh(source, resolved, recognize)
     _write_entry(entry_path, entry)
     return entry.result(transcript_id, cached=False)
 
@@ -137,19 +145,19 @@ def _cached_entry(transcript_id: str, cache_dir: Path | None) -> _CacheEntry:
     return _read_entry(entry_path)
 
 
-def _transcript_id(resolved: Path) -> str:
+def _transcript_id(resolved: str | Path) -> str:
     return hashlib.sha256(str(resolved).encode()).hexdigest()[:_ID_LENGTH]
 
 
 def _entry_path(cache_dir: Path | None, transcript_id: str) -> Path:
-    return (cache_dir or user_cache_path(_APP_NAME)) / f"{transcript_id}.json"
+    return (cache_dir or default_cache_dir()) / f"{transcript_id}.json"
 
 
 def _transcribe_fresh(
     given: str | os.PathLike[str], resolved: Path, recognize: Recognize | None
 ) -> _CacheEntry:
     if not resolved.is_file():
-        raise SourceError(given, "no such file")
+        raise SourceError(given, "not a file or a YouTube URL")
     with tempfile.TemporaryDirectory() as workdir:
         wav = Path(workdir, "audio.wav")
         _decode_to_wav(given, resolved, wav)
@@ -189,7 +197,7 @@ def _duration_s(wav: Path) -> float:
 def _read_entry(entry_path: Path) -> _CacheEntry:
     stored = json.loads(entry_path.read_text(encoding="utf-8"))
     return _CacheEntry(
-        source=Path(stored["source"]),
+        source=parse_source(stored["source"]),
         duration_s=stored["duration_s"],
         transcription_s=stored["transcription_s"],
         segments=tuple(Segment(s["start"], s["end"], s["text"]) for s in stored["segments"]),
@@ -198,7 +206,7 @@ def _read_entry(entry_path: Path) -> _CacheEntry:
 
 def _write_entry(entry_path: Path, entry: _CacheEntry) -> None:
     stored = {
-        "source": str(entry.source),
+        "source": entry.source.url if isinstance(entry.source, YouTubeSource) else str(entry.source),
         "duration_s": entry.duration_s,
         "transcription_s": entry.transcription_s,
         "segments": [asdict(s) for s in entry.segments],

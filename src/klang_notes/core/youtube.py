@@ -3,6 +3,10 @@
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
+import re
+from urllib.parse import parse_qs, urlsplit
+
+from klang_notes.core.errors import SourceError
 
 
 @dataclass(frozen=True)
@@ -18,14 +22,14 @@ class YouTubeSource:
         Every accepted URL form of one video gives this same string, so it is the
         cache key for the video's Transcript.
         """
-        raise NotImplementedError
+        return f"https://www.youtube.com/watch?v={self.video_id}"
 
     def timestamp_url(self, offset_s: int) -> str:
         """Return the Timestamp link that opens the video at `offset_s` seconds.
 
         The link is `https://www.youtube.com/watch?v=<video_id>&t=<offset_s>s`.
         """
-        raise NotImplementedError
+        return f"{self.url}&t={offset_s}s"
 
 
 Download = Callable[[YouTubeSource, Path], Path]
@@ -48,7 +52,21 @@ def parse_youtube_url(text: str) -> YouTubeSource | None:
     The ID must be 11 characters from `A-Z`, `a-z`, `0-9`, `_` and `-`.
     Shorts, embeds, live streams, bare playlists and other hosts return None.
     """
-    raise NotImplementedError
+    try:
+        parsed = urlsplit(text if "://" in text else f"https://{text}")
+    except ValueError:
+        return None
+    if parsed.scheme not in {"http", "https"} or parsed.netloc.lower() not in {
+        "youtube.com", "www.youtube.com", "m.youtube.com", "youtu.be"
+    }:
+        return None
+    if parsed.netloc.lower() == "youtu.be":
+        video_id = parsed.path.removeprefix("/")
+    elif parsed.path == "/watch":
+        video_id = parse_qs(parsed.query).get("v", [""])[0]
+    else:
+        return None
+    return YouTubeSource(video_id) if re.fullmatch(r"[A-Za-z0-9_-]{11}", video_id) else None
 
 
 def download_audio(video: YouTubeSource, workdir: Path) -> Path:
@@ -61,4 +79,19 @@ def download_audio(video: YouTubeSource, workdir: Path) -> Path:
     is private, removed, or unreachable, for example because the machine is
     offline.
     """
-    raise NotImplementedError
+    from yt_dlp import YoutubeDL
+    from yt_dlp.utils import DownloadError
+
+    options = {
+        "format": "bestaudio",
+        "outtmpl": str(workdir / "download.%(ext)s"),
+        "noplaylist": True,
+        "quiet": True,
+        "cachedir": False,
+    }
+    try:
+        with YoutubeDL(options) as downloader:
+            info = downloader.extract_info(video.url, download=True)
+            return Path(downloader.prepare_filename(info))
+    except DownloadError as error:
+        raise SourceError(video.url, str(error)) from error
