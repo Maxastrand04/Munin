@@ -13,6 +13,7 @@ from munin.core import (
     Recognize,
     RenderResult,
     TranscribeResult,
+    Vocabulary,
     get_transcript,
     render_mindmap,
     transcribe,
@@ -28,8 +29,15 @@ def create_server(
 ) -> MCPServer:
     """Build the MCP server with three tools and one prompt, passing its arguments to the core.
 
-    `transcribe(source: str)` takes a local file path or a YouTube URL and
-    returns the `TranscribeResult` fields as an object.
+    `transcribe(source: str, vocabulary: list[str] | None = None, alpha: float = 1.0)`
+    takes a local file path or a YouTube URL, plus optional Vocabulary terms and
+    boost strength, and returns the `TranscribeResult` fields as an object, with
+    `vocabulary` as `terms` and `alpha` or null. The tool always builds a
+    `Vocabulary` from `vocabulary` and `alpha`, so an `alpha` outside 0 to 2 is
+    a tool error even without terms, and nothing is transcribed or cached.
+    Its description tells the LLM that terms are case sensitive, and that it can
+    build a Vocabulary from the misspellings it spots in a first pass, then call
+    again to replace the cached Transcript under the same ID.
     `get_transcript(transcript_id: str)` returns the `[m:ss] text` lines.
     `render_mindmap(transcript_id: str, outline: str)` returns the `RenderResult`
     fields as an object, `page` as an absolute path string and `unlinked` as a
@@ -41,10 +49,21 @@ def create_server(
     server = MCPServer("munin")
 
     @server.tool(name="transcribe")
-    def transcribe_tool(source: str) -> TranscribeResult:
-        """Transcribe a local audio or video file, or a YouTube video URL, and return its Transcript ID and stats."""
+    def transcribe_tool(source: str, vocabulary: list[str] | None = None, alpha: float = 1.0) -> TranscribeResult:
+        """Transcribe a local audio or video file, or a YouTube video URL, and return its Transcript ID and stats.
+
+        `vocabulary` is an optional list of course terms to spell correctly, and
+        `alpha` is the boost strength from 0 to 2, default 1.0. Terms are
+        case sensitive, so give each exactly as it should be written. To build a
+        Vocabulary, transcribe once without one, spot the misspelled terms in a
+        first pass, then call again with the correct spellings. That call
+        replaces the cached Transcript under the same Transcript ID. A call
+        without a `vocabulary` returns the cached Transcript, boosted or not.
+        `vocabulary` in the result is the terms and alpha used, or null.
+        """
         with _core_errors_as_tool_errors():
-            return transcribe(source, cache_dir=cache_dir, recognize=recognize, download=download)
+            boost = Vocabulary(vocabulary or [], alpha)
+            return transcribe(source, vocabulary=boost, cache_dir=cache_dir, recognize=recognize, download=download)
 
     @server.tool(name="get_transcript")
     def get_transcript_tool(transcript_id: str) -> str:

@@ -7,12 +7,14 @@ from munin.core.errors import (
     OutlineError,
     SourceError,
     UnknownTranscriptError,
+    VocabularyError,
 )
 from munin.core.mindmap import RenderResult, UnlinkedStamp, render_mindmap
 from munin.core.model import Recognize, load_recognizer
 from munin.core.segments import Fragment, Segment, merge_fragments
 from munin.core.sources import Source, parse_source
 from munin.core.transcribe import TranscribeResult, get_transcript, transcribe
+from munin.core.vocabulary import Vocabulary
 from munin.core.youtube import Download, YouTubeSource, download_audio, parse_youtube_url
 
 __all__ = [
@@ -30,6 +32,8 @@ __all__ = [
     "TranscribeResult",
     "UnknownTranscriptError",
     "UnlinkedStamp",
+    "Vocabulary",
+    "VocabularyError",
     "YouTubeSource",
     "download_audio",
     "get_transcript",

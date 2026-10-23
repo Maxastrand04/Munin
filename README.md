@@ -6,13 +6,13 @@ Klang's [Pianissimo](https://huggingface.co/KlangAI/pianissimo-sv) model does th
 
 ## Status
 
-`transcribe`, `get_transcript` and `render_mindmap` work on local files and YouTube URLs. Vocabulary is still planned. The MVP target is the 7:11 clip [SF1624, Föreläsning 4: Matriser](https://www.youtube.com/watch?v=sZipb-R1hfg).
+`transcribe`, `get_transcript` and `render_mindmap` work on local files and YouTube URLs, and `transcribe` takes an optional Vocabulary of course terms to spell correctly. The MVP target is the 7:11 clip [SF1624, Föreläsning 4: Matriser](https://www.youtube.com/watch?v=sZipb-R1hfg).
 
-## Planned tools
+## Tools
 
 | Tool | Does |
 |---|---|
-| `transcribe(source, vocabulary?)` | Takes a YouTube URL or local file, runs Pianissimo with VAD, caches the Transcript, returns its ID and stats |
+| `transcribe(source, vocabulary?, alpha?)` | Takes a YouTube URL or local file, runs Pianissimo with VAD, caches the Transcript, returns its ID and stats. Vocabulary terms are case sensitive and boosted at `alpha`, 0 to 2, default 1.0. A call with terms reruns the Source and replaces its cached Transcript under the same ID |
 | `get_transcript(id)` | Returns `[m:ss] text` lines for the LLM |
 | `render_mindmap(id, outline)` | Writes an interactive HTML Mindmap with Topic circles and Radial rings, turning each `[m:ss]` or `[h:mm:ss]` into a link to the Source. Returns the page path and the stamps it left unlinked, each malformed or past the Source's end |
 

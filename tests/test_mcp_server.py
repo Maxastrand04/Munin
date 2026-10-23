@@ -3,9 +3,11 @@ import hashlib
 import shutil
 from pathlib import Path
 
+import pytest
 from mcp import Client
+from mcp.server import MCPServer
 
-from munin.core import Fragment, YouTubeSource, get_transcript
+from munin.core import Fragment, Vocabulary, YouTubeSource, get_transcript, transcribe
 from munin import mcp_server
 from munin.mcp_server import create_server
 
@@ -13,9 +15,24 @@ SPEECH = Path(__file__).parent / "fixtures" / "sv_short.m4a"
 WATCH_URL = "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
 
 
-def two_sentences(wav: Path):
+def two_sentences(wav: Path, vocabulary: Vocabulary | None):
     """A recognizer that ignores the audio and yields two sentences."""
     return [Fragment(1.2, 3.0, "Idag ska vi prata om matriser."), Fragment(65.7, 68.0, "En matris är en tabell.")]
+
+
+def gauss_sentence(wav: Path, vocabulary: Vocabulary | None):
+    """A recognizer that ignores the audio and yields one sentence spelling Gausselimination."""
+    return [Fragment(1.2, 3.0, "Idag ska vi prata om Gausselimination.")]
+
+
+def recording(received: list):
+    """A recognizer that records each Vocabulary it gets in `received` and yields two sentences."""
+
+    def recognize(wav: Path, vocabulary: Vocabulary | None):
+        received.append(vocabulary)
+        return two_sentences(wav, vocabulary)
+
+    return recognize
 
 
 def fake_download(video: YouTubeSource, workdir: Path) -> Path:
@@ -41,12 +58,12 @@ def prompt_text(server, source: str) -> str:
     return asyncio.run(run()).messages[0].content.text
 
 
-def render_tool_description(server) -> str:
+def tool_description(server, name: str) -> str:
     async def run():
         async with Client(server) as client:
             return await client.list_tools()
 
-    return next(tool.description for tool in asyncio.run(run()).tools if tool.name == "render_mindmap")
+    return next(tool.description for tool in asyncio.run(run()).tools if tool.name == name)
 
 
 def test_mcp_lists_all_tools(cache_dir: Path):
@@ -61,7 +78,7 @@ def test_mcp_lists_all_tools(cache_dir: Path):
 
 
 def test_mcp_transcribe_returns_result_fields(source: Path, cache_dir: Path):
-    """The transcribe tool returns the five TranscribeResult fields."""
+    """The transcribe tool returns the TranscribeResult fields."""
     server = create_server(cache_dir=cache_dir, recognize=two_sentences)
     result = call(server, "transcribe", {"source": str(source)})
     assert set(result.structured_content) == {
@@ -70,7 +87,68 @@ def test_mcp_transcribe_returns_result_fields(source: Path, cache_dir: Path):
         "segment_count",
         "transcription_s",
         "cached",
+        "vocabulary",
     }
+
+
+def test_mcp_transcribe_passes_vocabulary_terms_to_recognizer(source: Path, cache_dir: Path):
+    """The transcribe tool's vocabulary terms reach the recognizer unchanged."""
+    received = []
+    server = create_server(cache_dir=cache_dir, recognize=recording(received))
+    call(server, "transcribe", {"source": str(source), "vocabulary": ["SF1624", "Gausselimination"]})
+    assert received[0].terms == ("SF1624", "Gausselimination")
+
+
+def test_mcp_transcribe_passes_alpha_to_recognizer(source: Path, cache_dir: Path):
+    """The transcribe tool's alpha reaches the recognizer as the boost strength."""
+    received = []
+    server = create_server(cache_dir=cache_dir, recognize=recording(received))
+    call(server, "transcribe", {"source": str(source), "vocabulary": ["Gausselimination"], "alpha": 1.5})
+    assert received[0].alpha == 1.5
+
+
+def test_mcp_transcribe_reports_vocabulary_as_terms_and_alpha(source: Path, cache_dir: Path):
+    """The transcribe tool reports the Vocabulary used as an object with terms and alpha."""
+    server = create_server(cache_dir=cache_dir, recognize=gauss_sentence)
+    result = call(server, "transcribe", {"source": str(source), "vocabulary": ["Gausselimination"], "alpha": 1.5})
+    assert result.structured_content["vocabulary"] == {"terms": ["Gausselimination"], "alpha": 1.5}
+
+
+def test_mcp_transcribe_reports_null_vocabulary_without_terms(source: Path, cache_dir: Path):
+    """The transcribe tool reports vocabulary null for a run without terms."""
+    server = create_server(cache_dir=cache_dir, recognize=two_sentences)
+    result = call(server, "transcribe", {"source": str(source)})
+    assert result.structured_content["vocabulary"] is None
+
+
+@pytest.mark.parametrize("arguments", [{"vocabulary": ["Gausselimination"], "alpha": 2.5}, {"alpha": -1.0}])
+def test_mcp_alpha_out_of_range_is_tool_error(arguments: dict, source: Path, cache_dir: Path):
+    """An alpha outside 0 to 2 comes back as a tool error carrying the VocabularyError message, with or without terms."""
+    server = create_server(cache_dir=cache_dir, recognize=gauss_sentence)
+    result = call(server, "transcribe", {"source": str(source), **arguments})
+    assert "outside 0 to 2" in result.content[0].text
+
+
+def test_mcp_alpha_out_of_range_leaves_cache_unchanged(source: Path, cache_dir: Path):
+    """A call rejected for its alpha caches nothing, so the next plain call transcribes fresh."""
+    server = create_server(cache_dir=cache_dir, recognize=gauss_sentence)
+    call(server, "transcribe", {"source": str(source), "vocabulary": ["Gausselimination"], "alpha": 2.5})
+    assert call(server, "transcribe", {"source": str(source)}).structured_content["cached"] is False
+
+
+def test_mcp_transcribe_description_says_terms_are_case_sensitive(cache_dir: Path):
+    """The transcribe tool's description tells the LLM that Vocabulary terms are case sensitive."""
+    assert "case sensitive" in tool_description(create_server(cache_dir=cache_dir), "transcribe").lower()
+
+
+def test_mcp_transcribe_description_suggests_a_first_pass(cache_dir: Path):
+    """The transcribe tool's description tells the LLM it can build a Vocabulary in a first pass."""
+    assert "first pass" in tool_description(create_server(cache_dir=cache_dir), "transcribe").lower()
+
+
+def test_mcp_transcribe_description_suggests_terms_from_misspellings(cache_dir: Path):
+    """The transcribe tool's description tells the LLM to build the Vocabulary from misspellings it spots."""
+    assert "misspel" in tool_description(create_server(cache_dir=cache_dir), "transcribe").lower()
 
 
 def test_mcp_transcribe_accepts_youtube_url(cache_dir: Path):
@@ -86,6 +164,15 @@ def test_mcp_get_transcript_returns_lines(source: Path, cache_dir: Path):
     transcript_id = call(server, "transcribe", {"source": str(source)}).structured_content["transcript_id"]
     result = call(server, "get_transcript", {"transcript_id": transcript_id})
     assert result.content[0].text == get_transcript(transcript_id, cache_dir=cache_dir)
+
+
+def test_mcp_get_transcript_returns_boosted_lines(source: Path, cache_dir: Path):
+    """After a boosted transcribe call, the get_transcript tool returns the boosted Transcript's lines."""
+    call(create_server(cache_dir=cache_dir, recognize=two_sentences), "transcribe", {"source": str(source)})
+    server = create_server(cache_dir=cache_dir, recognize=gauss_sentence)
+    transcribed = call(server, "transcribe", {"source": str(source), "vocabulary": ["Gausselimination"]})
+    result = call(server, "get_transcript", {"transcript_id": transcribed.structured_content["transcript_id"]})
+    assert result.content[0].text == "[0:01] Idag ska vi prata om Gausselimination."
 
 
 def test_mcp_unknown_id_is_tool_error(cache_dir: Path):
@@ -172,35 +259,35 @@ def test_mcp_lecture_prompt_asks_for_only_a_file_link(cache_dir: Path):
 
 
 def test_mcp_lecture_prompt_leaves_format_to_render_tool(cache_dir: Path):
-    """The prompt points at render_mindmap for the Outline format and carries no stamp of its own."""
-    text = prompt_text(create_server(cache_dir=cache_dir), WATCH_URL)
-    assert "format the `render_mindmap` tool describes" in text
-    assert "[m:ss]" not in text
+    """The prompt points at render_mindmap for the Outline format."""
+    assert "format the `render_mindmap` tool describes" in prompt_text(create_server(cache_dir=cache_dir), WATCH_URL)
+
+
+def test_mcp_lecture_prompt_carries_no_stamp(cache_dir: Path):
+    """The prompt carries no stamp format of its own."""
+    assert "[m:ss]" not in prompt_text(create_server(cache_dir=cache_dir), WATCH_URL)
 
 
 def test_mcp_render_description_puts_stamp_at_label_end(cache_dir: Path):
     """The render tool's description asks for one stamp at the end of each node label."""
-    assert "One stamp at the end of each node label" in render_tool_description(create_server(cache_dir=cache_dir))
+    assert "One stamp at the end of each node label" in tool_description(create_server(cache_dir=cache_dir), "render_mindmap")
 
 
 def test_mcp_render_description_asks_for_two_or_three_levels(cache_dir: Path):
     """The render tool's description asks for an Outline two or three levels deep."""
-    assert "two or three levels deep" in render_tool_description(create_server(cache_dir=cache_dir))
+    assert "two or three levels deep" in tool_description(create_server(cache_dir=cache_dir), "render_mindmap")
 
 
-def test_mcp_main_writes_pages_to_mindmaps_in_working_folder(tmp_path: Path, monkeypatch):
-    """`main` points the server's output at `mindmaps/` in the folder it starts in."""
-    started = {}
-
-    class FakeServer:
-        def run(self):
-            pass
-
-    def fake_create_server(**kwargs):
-        started.update(kwargs)
-        return FakeServer()
-
+def test_mcp_main_writes_pages_to_mindmaps_in_working_folder(source: Path, tmp_path: Path, monkeypatch):
+    """The server `main` starts writes Mindmap pages into `mindmaps/` in the folder it starts in."""
+    home = tmp_path / "home"
+    home.mkdir()
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.delenv("XDG_CACHE_HOME", raising=False)
+    transcript_id = transcribe(source, recognize=two_sentences).transcript_id
+    started = []
+    monkeypatch.setattr(MCPServer, "run", lambda server, *args, **kwargs: started.append(server))
     monkeypatch.chdir(tmp_path)
-    monkeypatch.setattr(mcp_server, "create_server", fake_create_server)
     mcp_server.main()
-    assert started["output_dir"] == tmp_path / "mindmaps"
+    call(started[0], "render_mindmap", {"transcript_id": transcript_id, "outline": "# Matriser [0:01]"})
+    assert (tmp_path / "mindmaps" / f"{transcript_id}.html").is_file()

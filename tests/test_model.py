@@ -1,7 +1,11 @@
+from pathlib import Path
+
 import onnx_asr
 import pytest
 
-from munin.core import load_recognizer
+from munin.core import Vocabulary, get_transcript, load_recognizer, transcribe
+
+SPEECH = Path(__file__).parent / "fixtures" / "sv_short.m4a"
 
 
 @pytest.fixture
@@ -35,3 +39,12 @@ def test_loader_forces_cpu_provider_for_model(loaded_providers: dict):
 def test_loader_forces_cpu_provider_for_vad(loaded_providers: dict):
     """Silero VAD loads with only ONNX Runtime's CPU provider."""
     assert loaded_providers["vad"] == ["CPUExecutionProvider"]
+
+
+@pytest.mark.slow
+def test_recognizer_call_without_vocabulary_drops_the_previous_boost(tmp_path: Path):
+    """A recognizer called with None after a boosted call runs unboosted, so "matrix" turns back into "matris"."""
+    recognize = load_recognizer()
+    transcribe(SPEECH, vocabulary=Vocabulary(["matrix"], 2.0), cache_dir=tmp_path / "boosted", recognize=recognize)
+    plain = transcribe(SPEECH, cache_dir=tmp_path / "plain", recognize=recognize)
+    assert "matrix" not in get_transcript(plain.transcript_id, cache_dir=tmp_path / "plain")

@@ -46,7 +46,7 @@ def mindmap_url(source: Path, cache_dir: Path, tmp_path: Path, outline):
     transcript = transcribe(
         source,
         cache_dir=cache_dir,
-        recognize=lambda wav: [Fragment(0, 1, "En föreläsning.")],
+        recognize=lambda wav, vocabulary: [Fragment(0, 1, "En föreläsning.")],
     )
     return render_mindmap(
         transcript.transcript_id,

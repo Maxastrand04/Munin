@@ -21,7 +21,7 @@ One raw span of speech as VAD and Pianissimo return it, before merging into Segm
 _Avoid_: chunk, piece
 
 **Vocabulary**:
-A list of terms, plus a boost strength (alpha), that steers Pianissimo toward spelling those terms correctly.
+A list of terms, plus a boost strength (alpha) from 0 to 2, that steers Pianissimo toward spelling those terms correctly. Terms are case sensitive. A Vocabulary whose terms are all blank counts as none.
 _Avoid_: glossary, keywords, hotwords
 
 **Outline**:
@@ -42,6 +42,7 @@ _Avoid_: jump link, deep link, seek link
 - A **Transcript** contains one or more **Segments**
 - A **Segment** is merged from one or more **Fragments**
 - A **Vocabulary** is optional and applies to one transcription of a **Source**
+- A cached **Transcript** records the **Vocabulary** it was made with, or none. Transcribing with a **Vocabulary** replaces the cached **Transcript** and keeps its ID
 - An **Outline** is written from exactly one **Transcript**
 - A **Mindmap** renders exactly one **Outline** and resolves its stamps against that **Transcript**'s **Source** and the Source's duration
 

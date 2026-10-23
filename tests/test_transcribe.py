@@ -13,6 +13,7 @@ from munin.core import (
     NoSpeechError,
     SourceError,
     UnknownTranscriptError,
+    Vocabulary,
     YouTubeSource,
     get_transcript,
     transcribe,
@@ -31,16 +32,18 @@ MISSING_VIDEO_ID = "zzzzzzzzzz0"
 MISSING_VIDEO_URL = f"https://youtu.be/{MISSING_VIDEO_ID}"
 
 
-def fake(*fragments: Fragment):
-    """A recognizer that ignores the audio and yields the given fragments."""
+def fake(*fragments: Fragment, received: list | None = None):
+    """A recognizer that ignores the audio, records each Vocabulary it gets in `received`, and yields the given fragments."""
 
-    def recognize(wav: Path):
+    def recognize(wav: Path, vocabulary: Vocabulary | None):
+        if received is not None:
+            received.append(vocabulary)
         return list(fragments)
 
     return recognize
 
 
-def never_called(wav: Path):
+def never_called(wav: Path, vocabulary: Vocabulary | None):
     raise AssertionError("the recognizer ran on what should be a cache hit")
 
 
@@ -48,6 +51,10 @@ TWO_SENTENCES = fake(
     Fragment(1.2, 3.0, "Idag ska vi prata om matriser."),
     Fragment(65.7, 68.0, "En matris är en tabell."),
 )
+
+GAUSS = Vocabulary(["Gausselimination"])
+PLAIN_GAUSS = Fragment(1.2, 3.0, "Idag ska vi prata om gauss elimination.")
+BOOSTED_GAUSS = Fragment(1.2, 3.0, "Idag ska vi prata om Gausselimination.")
 
 
 def fake_download(calls: list | None = None, written: list | None = None):
@@ -101,7 +108,7 @@ def test_transcribe_reports_source_duration(source: Path, cache_dir: Path):
 def test_transcribe_reports_measured_transcription_time(source: Path, cache_dir: Path):
     """transcription_s on a fresh run covers the time the recognizer took."""
 
-    def slow_recognize(wav: Path):
+    def slow_recognize(wav: Path, vocabulary: Vocabulary | None):
         time.sleep(0.05)
         return [Fragment(0.0, 1.0, "Hej.")]
 
@@ -125,7 +132,7 @@ def test_recognizer_gets_16_khz_audio(source: Path, cache_dir: Path):
     """The recognizer receives a wav sampled at 16 kHz."""
     rates = []
 
-    def recognize(wav: Path):
+    def recognize(wav: Path, vocabulary: Vocabulary | None):
         with wave.open(str(wav)) as w:
             rates.append(w.getframerate())
         return [Fragment(0.0, 1.0, "Hej.")]
@@ -138,7 +145,7 @@ def test_recognizer_gets_mono_audio(source: Path, cache_dir: Path):
     """The recognizer receives a wav with one channel."""
     channels = []
 
-    def recognize(wav: Path):
+    def recognize(wav: Path, vocabulary: Vocabulary | None):
         with wave.open(str(wav)) as w:
             channels.append(w.getnchannels())
         return [Fragment(0.0, 1.0, "Hej.")]
@@ -229,6 +236,102 @@ def test_changed_file_keeps_cached_transcript(source: Path, cache_dir: Path):
     assert get_transcript(first.transcript_id, cache_dir=cache_dir) == before
 
 
+# Vocabulary
+
+
+def test_recognizer_gets_vocabulary_terms_unchanged(source: Path, cache_dir: Path):
+    """The recognizer receives the Vocabulary's terms with their capitalisation unchanged."""
+    received = []
+    vocabulary = Vocabulary(["SF1624", "Gausselimination"])
+    transcribe(source, vocabulary=vocabulary, cache_dir=cache_dir, recognize=fake(BOOSTED_GAUSS, received=received))
+    assert received[0].terms == ("SF1624", "Gausselimination")
+
+
+def test_recognizer_gets_vocabulary_alpha(source: Path, cache_dir: Path):
+    """The recognizer receives the Vocabulary's boost strength."""
+    received = []
+    vocabulary = Vocabulary(["Gauss"], 1.7)
+    transcribe(source, vocabulary=vocabulary, cache_dir=cache_dir, recognize=fake(BOOSTED_GAUSS, received=received))
+    assert received[0].alpha == 1.7
+
+
+def test_recognizer_gets_none_without_vocabulary(source: Path, cache_dir: Path):
+    """A fresh run without a Vocabulary passes None to the recognizer."""
+    received = []
+    transcribe(source, cache_dir=cache_dir, recognize=fake(PLAIN_GAUSS, received=received))
+    assert received == [None]
+
+
+def test_blank_vocabulary_reaches_recognizer_as_none(source: Path, cache_dir: Path):
+    """A Vocabulary whose terms are all blank counts as none, so the recognizer gets None."""
+    received = []
+    vocabulary = Vocabulary(["  ", ""])
+    transcribe(source, vocabulary=vocabulary, cache_dir=cache_dir, recognize=fake(PLAIN_GAUSS, received=received))
+    assert received == [None]
+
+
+def test_vocabulary_reruns_cached_source(source: Path, cache_dir: Path):
+    """A call with a Vocabulary runs the recognizer even when the Source is cached."""
+    received = []
+    transcribe(source, cache_dir=cache_dir, recognize=fake(PLAIN_GAUSS))
+    transcribe(source, vocabulary=GAUSS, cache_dir=cache_dir, recognize=fake(BOOSTED_GAUSS, received=received))
+    assert received == [GAUSS]
+
+
+def test_vocabulary_run_keeps_transcript_id(source: Path, cache_dir: Path):
+    """A boosted rerun of a cached Source returns the same Transcript ID."""
+    first = transcribe(source, cache_dir=cache_dir, recognize=fake(PLAIN_GAUSS))
+    second = transcribe(source, vocabulary=GAUSS, cache_dir=cache_dir, recognize=fake(BOOSTED_GAUSS))
+    assert second.transcript_id == first.transcript_id
+
+
+def test_vocabulary_run_reports_not_cached(source: Path, cache_dir: Path):
+    """A boosted rerun of a cached Source reports cached=False."""
+    transcribe(source, cache_dir=cache_dir, recognize=fake(PLAIN_GAUSS))
+    result = transcribe(source, vocabulary=GAUSS, cache_dir=cache_dir, recognize=fake(BOOSTED_GAUSS))
+    assert result.cached is False
+
+
+def test_vocabulary_run_replaces_cached_transcript(source: Path, cache_dir: Path):
+    """After a boosted rerun, the read-back returns the boosted Transcript's lines."""
+    transcribe(source, cache_dir=cache_dir, recognize=fake(PLAIN_GAUSS))
+    result = transcribe(source, vocabulary=GAUSS, cache_dir=cache_dir, recognize=fake(BOOSTED_GAUSS))
+    assert get_transcript(result.transcript_id, cache_dir=cache_dir) == "[0:01] Idag ska vi prata om Gausselimination."
+
+
+def test_vocabulary_run_reports_vocabulary(source: Path, cache_dir: Path):
+    """A boosted run's stats include the Vocabulary it used."""
+    result = transcribe(source, vocabulary=GAUSS, cache_dir=cache_dir, recognize=fake(BOOSTED_GAUSS))
+    assert result.vocabulary == GAUSS
+
+
+def test_plain_run_reports_no_vocabulary(source: Path, cache_dir: Path):
+    """A run without a Vocabulary reports vocabulary None."""
+    result = transcribe(source, cache_dir=cache_dir, recognize=fake(PLAIN_GAUSS))
+    assert result.vocabulary is None
+
+
+def test_call_without_vocabulary_returns_boosted_transcript_without_running_model(source: Path, cache_dir: Path):
+    """After a boosted run, a call without a Vocabulary is a cache hit that never runs the recognizer."""
+    transcribe(source, vocabulary=GAUSS, cache_dir=cache_dir, recognize=fake(BOOSTED_GAUSS))
+    result = transcribe(source, cache_dir=cache_dir, recognize=never_called)
+    assert result.cached is True
+
+
+def test_cache_hit_after_vocabulary_run_reports_stored_vocabulary(source: Path, cache_dir: Path):
+    """A cache hit on a boosted Transcript reports the Vocabulary it was made with."""
+    transcribe(source, vocabulary=Vocabulary(["Gausselimination"], 0.5), cache_dir=cache_dir, recognize=fake(BOOSTED_GAUSS))
+    result = transcribe(source, cache_dir=cache_dir, recognize=never_called)
+    assert result.vocabulary == Vocabulary(["Gausselimination"], 0.5)
+
+
+def test_blank_vocabulary_on_cached_source_is_a_cache_hit(source: Path, cache_dir: Path):
+    """A Vocabulary with only blank terms on a cached Source returns the cached Transcript without running the recognizer."""
+    transcribe(source, cache_dir=cache_dir, recognize=fake(PLAIN_GAUSS))
+    result = transcribe(source, vocabulary=Vocabulary(["  "]), cache_dir=cache_dir, recognize=never_called)
+    assert result.cached is True
+
+
 # Failures
 
 
@@ -297,6 +400,14 @@ def test_no_speech_source_is_not_cached(source: Path, cache_dir: Path):
     assert transcribe(source, cache_dir=cache_dir, recognize=TWO_SENTENCES).cached is False
 
 
+def test_failed_vocabulary_run_keeps_previous_transcript(source: Path, cache_dir: Path):
+    """A boosted run that finds no speech leaves the previously cached Transcript in place."""
+    first = transcribe(source, cache_dir=cache_dir, recognize=fake(PLAIN_GAUSS))
+    with pytest.raises(NoSpeechError):
+        transcribe(source, vocabulary=GAUSS, cache_dir=cache_dir, recognize=fake())
+    assert get_transcript(first.transcript_id, cache_dir=cache_dir) == "[0:01] Idag ska vi prata om gauss elimination."
+
+
 def test_source_error_names_path_as_given(tmp_path: Path, cache_dir: Path, monkeypatch: pytest.MonkeyPatch):
     """A SourceError names the path the caller passed, not its resolved form."""
     monkeypatch.setenv("HOME", str(tmp_path))
@@ -350,6 +461,14 @@ def test_youtube_cache_hit_does_not_download(cache_dir: Path):
     """A second call for the same video returns without calling the downloader."""
     transcribe_url(WATCH_URL, cache_dir)
     assert transcribe_url(WATCH_URL, cache_dir, download=never_download).cached is True
+
+
+def test_youtube_vocabulary_reruns_cached_video(cache_dir: Path):
+    """A boosted call on a cached YouTube Source downloads the video again."""
+    calls: list = []
+    transcribe_url(WATCH_URL, cache_dir)
+    transcribe(WATCH_URL, vocabulary=GAUSS, cache_dir=cache_dir, recognize=TWO_SENTENCES, download=fake_download(calls=calls))
+    assert len(calls) == 1
 
 
 def test_youtube_cache_hit_returns_same_id(cache_dir: Path):
@@ -489,6 +608,13 @@ def test_real_model_transcribes_swedish_speech(cache_dir: Path):
     """Pianissimo transcribes the Alva clip, and the read-back mentions matriser."""
     result = transcribe(SPEECH, cache_dir=cache_dir)
     assert "matris" in get_transcript(result.transcript_id, cache_dir=cache_dir).lower()
+
+
+@pytest.mark.slow
+def test_real_model_transcribes_with_vocabulary(cache_dir: Path):
+    """Pianissimo spells the Alva clip's "matris" as "matrix" when that term is boosted at full strength, which it never writes unboosted."""
+    result = transcribe(SPEECH, vocabulary=Vocabulary(["matrix"], 2.0), cache_dir=cache_dir)
+    assert "matrix" in get_transcript(result.transcript_id, cache_dir=cache_dir)
 
 
 # Real downloader

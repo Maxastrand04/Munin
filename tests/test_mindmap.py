@@ -10,6 +10,7 @@ from munin.core import (
     OutlineError,
     UnknownTranscriptError,
     UnlinkedStamp,
+    Vocabulary,
     YouTubeSource,
     render_mindmap,
     transcribe,
@@ -23,7 +24,7 @@ VIDEO_ID = "dQw4w9WgXcQ"
 WATCH_URL = f"https://www.youtube.com/watch?v={VIDEO_ID}"
 
 
-def one_sentence(wav: Path):
+def one_sentence(wav: Path, vocabulary: Vocabulary | None):
     """A recognizer that ignores the audio and yields one sentence."""
     return [Fragment(1.2, 3.0, "Idag ska vi prata om matriser.")]
 
