@@ -50,10 +50,12 @@ def call(server, tool: str, arguments: dict):
     return asyncio.run(run())
 
 
-def prompt_text(server, source: str) -> str:
+def prompt_text(server, source: str, deck: str | None = None) -> str:
+    arguments = {"source": source} if deck is None else {"source": source, "deck": deck}
+
     async def run():
         async with Client(server) as client:
-            return await client.get_prompt("lecture_to_mindmap", {"source": source})
+            return await client.get_prompt("lecture_to_mindmap", arguments)
 
     return asyncio.run(run()).messages[0].content.text
 
@@ -229,6 +231,64 @@ def test_mcp_render_mindmap_reports_unlinked_stamps(source: Path, cache_dir: Pat
     assert result.structured_content["unlinked"] == [{"label": "Gauss [1:75]", "stamp": "[1:75]", "reason": "malformed"}]
 
 
+def test_mcp_render_mindmap_reports_unlinked_slides(source: Path, cache_dir: Path, tmp_path: Path):
+    """The render_mindmap tool returns each unlinked slide marker's label, slide and reason."""
+    server = create_server(cache_dir=cache_dir, recognize=two_sentences, output_dir=tmp_path / "out")
+    transcript_id = call(server, "transcribe", {"source": str(source)}).structured_content["transcript_id"]
+    result = call(server, "render_mindmap", {"transcript_id": transcript_id, "outline": "# Matriser\n- Gauss [slide 1]"})
+    assert result.structured_content["unlinked_slides"] == [
+        {"label": "Gauss [slide 1]", "slide": "[slide 1]", "reason": "no_deck"}
+    ]
+
+
+def test_mcp_read_slides_returns_a_text_then_an_image_block_per_slide(source: Path, deck: Path, cache_dir: Path):
+    """The read_slides tool returns a text block then an image block for each Slide, in Slide order."""
+    server = create_server(cache_dir=cache_dir, recognize=two_sentences)
+    transcript_id = call(server, "transcribe", {"source": str(source)}).structured_content["transcript_id"]
+    result = call(server, "read_slides", {"transcript_id": transcript_id, "deck": str(deck)})
+    assert [block.type for block in result.content] == ["text", "image"] * 3
+
+
+def test_mcp_read_slides_text_block_names_the_slide_then_its_text(source: Path, deck: Path, cache_dir: Path):
+    """Each text block reads `Slide N:` with the Slide's text on the next line."""
+    server = create_server(cache_dir=cache_dir, recognize=two_sentences)
+    transcript_id = call(server, "transcribe", {"source": str(source)}).structured_content["transcript_id"]
+    result = call(server, "read_slides", {"transcript_id": transcript_id, "deck": str(deck)})
+    assert result.content[2].text.startswith("Slide 2:\nGausselimination")
+
+
+def test_mcp_read_slides_image_block_is_png(source: Path, deck: Path, cache_dir: Path):
+    """Each image block is a PNG."""
+    server = create_server(cache_dir=cache_dir, recognize=two_sentences)
+    transcript_id = call(server, "transcribe", {"source": str(source)}).structured_content["transcript_id"]
+    result = call(server, "read_slides", {"transcript_id": transcript_id, "deck": str(deck)})
+    assert result.content[1].mime_type == "image/png"
+
+
+def test_mcp_read_slides_bad_deck_is_tool_error(source: Path, cache_dir: Path, tmp_path: Path):
+    """A bad Deck comes back as an MCP tool error."""
+    server = create_server(cache_dir=cache_dir, recognize=two_sentences)
+    transcript_id = call(server, "transcribe", {"source": str(source)}).structured_content["transcript_id"]
+    result = call(server, "read_slides", {"transcript_id": transcript_id, "deck": str(tmp_path / "missing.pdf")})
+    assert result.is_error is True
+
+
+def test_mcp_read_slides_bad_deck_error_names_the_path(source: Path, cache_dir: Path, tmp_path: Path):
+    """A bad Deck comes back as a tool error that names the Deck path."""
+    server = create_server(cache_dir=cache_dir, recognize=two_sentences)
+    transcript_id = call(server, "transcribe", {"source": str(source)}).structured_content["transcript_id"]
+    missing = str(tmp_path / "missing.pdf")
+    result = call(server, "read_slides", {"transcript_id": transcript_id, "deck": missing})
+    assert missing in result.content[0].text
+
+
+def test_mcp_read_slides_unknown_id_is_tool_error(deck: Path, cache_dir: Path):
+    """An unknown ID given to read_slides comes back as an MCP tool error."""
+    server = create_server(cache_dir=cache_dir, recognize=two_sentences)
+    result = call(server, "read_slides", {"transcript_id": "deadbeef0000", "deck": str(deck)})
+    assert result.is_error is True
+
+
 def test_mcp_lists_lecture_prompt_with_required_source_and_optional_deck(cache_dir: Path):
     """The server lists `lecture_to_mindmap` with a required `source` and an optional `deck`."""
 
@@ -269,6 +329,45 @@ def test_mcp_lecture_prompt_leaves_format_to_render_tool(cache_dir: Path):
 def test_mcp_lecture_prompt_carries_no_stamp(cache_dir: Path):
     """The prompt carries no stamp format of its own."""
     assert "[m:ss]" not in prompt_text(create_server(cache_dir=cache_dir), WATCH_URL)
+
+
+def test_mcp_lecture_prompt_with_deck_carries_the_deck_path(cache_dir: Path):
+    """With a Deck, the prompt's text carries the Deck path."""
+    assert "/tmp/matriser.pdf" in prompt_text(create_server(cache_dir=cache_dir), WATCH_URL, "/tmp/matriser.pdf")
+
+
+def test_mcp_lecture_prompt_with_deck_reads_slides_between_transcript_and_render(cache_dir: Path):
+    """With a Deck, the prompt names read_slides after get_transcript and before render_mindmap."""
+    text = prompt_text(create_server(cache_dir=cache_dir), WATCH_URL, "/tmp/matriser.pdf")
+    positions = [text.index(f"`{tool}`") for tool in ("get_transcript", "read_slides", "render_mindmap")]
+    assert positions == sorted(positions)
+
+
+def test_mcp_lecture_prompt_with_deck_asks_to_match_slides(cache_dir: Path):
+    """With a Deck, the prompt asks the LLM to match Slides to the part of the Transcript covering them."""
+    text = prompt_text(create_server(cache_dir=cache_dir), WATCH_URL, "/tmp/matriser.pdf")
+    assert "Match each Slide to the part of the Transcript" in text
+
+
+def test_mcp_lecture_prompt_with_deck_asks_for_slide_numbers_on_nodes(cache_dir: Path):
+    """With a Deck, the prompt asks the LLM to put the matching Slide numbers on each node."""
+    text = prompt_text(create_server(cache_dir=cache_dir), WATCH_URL, "/tmp/matriser.pdf")
+    assert "Slide numbers on each node" in text
+
+
+def test_mcp_lecture_prompt_without_deck_skips_read_slides(cache_dir: Path):
+    """With no Deck, the prompt never names read_slides."""
+    assert "read_slides" not in prompt_text(create_server(cache_dir=cache_dir), WATCH_URL)
+
+
+def test_mcp_lecture_prompt_without_deck_asks_for_no_slide_numbers(cache_dir: Path):
+    """With no Deck, the prompt never mentions Slides."""
+    assert "Slide" not in prompt_text(create_server(cache_dir=cache_dir), WATCH_URL)
+
+
+def test_mcp_render_description_gives_the_slide_marker_format(cache_dir: Path):
+    """The render tool's description tells the LLM to write `[slide N]` markers."""
+    assert "[slide N]" in tool_description(create_server(cache_dir=cache_dir), "render_mindmap")
 
 
 def test_mcp_render_description_puts_stamp_at_label_end(cache_dir: Path):

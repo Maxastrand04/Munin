@@ -1,0 +1,156 @@
+import base64
+from pathlib import Path
+
+import pytest
+
+from munin.core import (
+    DeckError,
+    Fragment,
+    Slide,
+    UnknownTranscriptError,
+    UnlinkedSlide,
+    Vocabulary,
+    read_slides,
+    render_mindmap,
+    transcribe,
+)
+
+PNG_SIGNATURE = b"\x89PNG\r\n\x1a\n"
+
+
+def one_sentence(wav: Path, vocabulary: Vocabulary | None):
+    """A recognizer that ignores the audio and yields one sentence."""
+    return [Fragment(1.2, 3.0, "Idag ska vi prata om matriser.")]
+
+
+@pytest.fixture
+def transcript_id(source: Path, cache_dir: Path) -> str:
+    return transcribe(source, cache_dir=cache_dir, recognize=one_sentence).transcript_id
+
+
+def render(transcript_id: str, outline: str, cache_dir: Path, tmp_path: Path):
+    return render_mindmap(transcript_id, outline, cache_dir=cache_dir, output_dir=tmp_path / "out")
+
+
+def page_text(transcript_id: str, outline: str, cache_dir: Path, tmp_path: Path) -> str:
+    return render(transcript_id, outline, cache_dir, tmp_path).page.read_text(encoding="utf-8")
+
+
+def encoded(slide: Slide) -> str:
+    return base64.b64encode(slide.image).decode()
+
+
+# Reading a Deck
+
+
+def test_slides_are_numbered_from_one(transcript_id: str, deck: Path, cache_dir: Path):
+    """Slides are numbered from 1 in page order."""
+    slides = read_slides(transcript_id, deck, cache_dir=cache_dir)
+    assert [slide.number for slide in slides] == [1, 2, 3]
+
+
+def test_each_slide_carries_its_page_text(transcript_id: str, deck: Path, cache_dir: Path):
+    """Each Slide carries its page's extracted text."""
+    slides = read_slides(transcript_id, deck, cache_dir=cache_dir)
+    assert [slide.text.strip() for slide in slides] == ["Matriser", "Gausselimination", "Determinant"]
+
+
+def test_each_slide_image_is_png(transcript_id: str, deck: Path, cache_dir: Path):
+    """Each Slide's image is PNG bytes."""
+    slides = read_slides(transcript_id, deck, cache_dir=cache_dir)
+    assert [slide.image[:8] for slide in slides] == [PNG_SIGNATURE] * 3
+
+
+def test_deck_path_has_home_expanded(
+    transcript_id: str, cache_dir: Path, tmp_path: Path, write_deck, monkeypatch: pytest.MonkeyPatch
+):
+    """A Deck path starting with `~` is read from the home folder."""
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    write_deck(tmp_path / "home" / "matriser.pdf", ["Matriser"])
+    assert len(read_slides(transcript_id, "~/matriser.pdf", cache_dir=cache_dir)) == 1
+
+
+# Failures
+
+
+@pytest.mark.parametrize(
+    "contents, reason",
+    [(None, "not a file"), (b"not a pdf at all", "not a readable PDF"), ([], "has no pages")],
+    ids=["missing", "unreadable", "zero-pages"],
+)
+def test_bad_deck_raises_deck_error(
+    transcript_id: str, cache_dir: Path, tmp_path: Path, write_deck, contents, reason: str
+):
+    """A missing, unreadable or zero-page PDF raises `DeckError` with the matching reason."""
+    path = tmp_path / "bad.pdf"
+    if isinstance(contents, bytes):
+        path.write_bytes(contents)
+    elif contents is not None:
+        write_deck(path, contents)
+    with pytest.raises(DeckError) as error:
+        read_slides(transcript_id, path, cache_dir=cache_dir)
+    assert error.value.reason == reason
+
+
+def test_deck_error_names_the_path_as_given(transcript_id: str, cache_dir: Path, tmp_path: Path):
+    """`DeckError.path` is the Deck path as the caller gave it."""
+    given = str(tmp_path / "missing.pdf")
+    with pytest.raises(DeckError) as error:
+        read_slides(transcript_id, given, cache_dir=cache_dir)
+    assert error.value.path == given
+
+
+def test_deck_error_message_names_the_path_and_reason(transcript_id: str, cache_dir: Path, tmp_path: Path):
+    """The `DeckError` message reads `Cannot read <path>: <reason>`."""
+    given = str(tmp_path / "missing.pdf")
+    with pytest.raises(DeckError) as error:
+        read_slides(transcript_id, given, cache_dir=cache_dir)
+    assert str(error.value) == f"Cannot read {given}: not a file"
+
+
+def test_unknown_transcript_raises(deck: Path, cache_dir: Path):
+    """An unknown Transcript ID raises `UnknownTranscriptError`."""
+    with pytest.raises(UnknownTranscriptError):
+        read_slides("deadbeef0000", deck, cache_dir=cache_dir)
+
+
+def test_unknown_transcript_is_checked_before_the_deck(cache_dir: Path, tmp_path: Path):
+    """An unknown Transcript ID with a missing Deck raises `UnknownTranscriptError`, not `DeckError`."""
+    with pytest.raises(UnknownTranscriptError):
+        read_slides("deadbeef0000", tmp_path / "missing.pdf", cache_dir=cache_dir)
+
+
+# Attaching the Deck
+
+
+def test_failed_read_attaches_nothing(transcript_id: str, cache_dir: Path, tmp_path: Path):
+    """After a failed read on a Transcript with no Deck, its slide markers come back as `no_deck`."""
+    with pytest.raises(DeckError):
+        read_slides(transcript_id, tmp_path / "missing.pdf", cache_dir=cache_dir)
+    result = render(transcript_id, "# Matriser\n- Gauss [slide 1]", cache_dir, tmp_path)
+    assert [entry.reason for entry in result.unlinked_slides] == ["no_deck"]
+
+
+def test_failed_read_keeps_the_earlier_deck(transcript_id: str, deck: Path, cache_dir: Path, tmp_path: Path):
+    """A failed read leaves the Deck attached before, so its Slides still reach the page."""
+    slides = read_slides(transcript_id, deck, cache_dir=cache_dir)
+    with pytest.raises(DeckError):
+        read_slides(transcript_id, tmp_path / "missing.pdf", cache_dir=cache_dir)
+    assert encoded(slides[1]) in page_text(transcript_id, "# Matriser\n- Gauss [slide 2]", cache_dir, tmp_path)
+
+
+def test_reading_a_new_deck_replaces_the_old_one(
+    transcript_id: str, deck: Path, cache_dir: Path, tmp_path: Path, write_deck
+):
+    """After a two-page Deck replaces a three-page one, `[slide 3]` is past the end."""
+    read_slides(transcript_id, deck, cache_dir=cache_dir)
+    read_slides(transcript_id, write_deck(tmp_path / "short.pdf", ["Ett", "Två"]), cache_dir=cache_dir)
+    result = render(transcript_id, "# Matriser\n- Gauss [slide 3]", cache_dir, tmp_path)
+    assert result.unlinked_slides == (UnlinkedSlide("Gauss [slide 3]", "[slide 3]", "past_end"),)
+
+
+def test_attached_deck_survives_deleting_the_pdf(transcript_id: str, deck: Path, cache_dir: Path, tmp_path: Path):
+    """The page shows a Slide even after the PDF it was read from is deleted."""
+    slides = read_slides(transcript_id, deck, cache_dir=cache_dir)
+    deck.unlink()
+    assert encoded(slides[1]) in page_text(transcript_id, "# Matriser\n- Gauss [slide 2]", cache_dir, tmp_path)

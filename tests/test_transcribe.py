@@ -16,6 +16,8 @@ from munin.core import (
     Vocabulary,
     YouTubeSource,
     get_transcript,
+    read_slides,
+    render_mindmap,
     transcribe,
 )
 
@@ -330,6 +332,15 @@ def test_blank_vocabulary_on_cached_source_is_a_cache_hit(source: Path, cache_di
     transcribe(source, cache_dir=cache_dir, recognize=fake(PLAIN_GAUSS))
     result = transcribe(source, vocabulary=Vocabulary(["  "]), cache_dir=cache_dir, recognize=never_called)
     assert result.cached is True
+
+
+def test_vocabulary_run_keeps_the_deck(source: Path, deck: Path, cache_dir: Path, tmp_path: Path):
+    """A boosted rerun of a Source keeps its Transcript's Deck attached, so a slide marker still links."""
+    transcript_id = transcribe(source, cache_dir=cache_dir, recognize=fake(PLAIN_GAUSS)).transcript_id
+    read_slides(transcript_id, deck, cache_dir=cache_dir)
+    transcribe(source, vocabulary=GAUSS, cache_dir=cache_dir, recognize=fake(BOOSTED_GAUSS))
+    result = render_mindmap(transcript_id, "# Matriser\n- Gauss [slide 2]", cache_dir=cache_dir, output_dir=tmp_path / "out")
+    assert result.unlinked_slides == ()
 
 
 # Failures
