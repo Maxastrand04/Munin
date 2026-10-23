@@ -110,6 +110,12 @@ def test_stamp_past_source_end_is_reported(five_second_source: Path, cache_dir: 
     assert result.unlinked == (UnlinkedStamp("Slutet [0:06]", "[0:06]", "past_end"),)
 
 
+def test_past_end_stamp_stays_in_label_as_text(five_second_source: Path, cache_dir: Path, tmp_path: Path):
+    """A stamp after the Source's duration stays in its node's label on the page as plain text."""
+    result = render(five_second_source, cache_dir, tmp_path, "# Matriser\n- Slutet [0:06]")
+    assert "Slutet [0:06]" in labels(result)
+
+
 # Malformed stamps
 
 
@@ -149,10 +155,13 @@ def test_bracket_without_colon_is_not_reported(
     assert result.unlinked == ()
 
 
-def test_bracket_without_colon_stays_in_label(five_second_source: Path, cache_dir: Path, tmp_path: Path):
+@pytest.mark.parametrize("bracket", ["[se nedan]", "[12]"])
+def test_bracket_without_colon_stays_in_label(
+    five_second_source: Path, cache_dir: Path, tmp_path: Path, bracket: str
+):
     """Bracketed text that is not a stamp stays in its node's label."""
-    result = render(five_second_source, cache_dir, tmp_path, "# Matriser\n- Gauss [se nedan]")
-    assert "Gauss [se nedan]" in labels(result)
+    result = render(five_second_source, cache_dir, tmp_path, f"# Matriser\n- Gauss {bracket}")
+    assert f"Gauss {bracket}" in labels(result)
 
 
 # The report
