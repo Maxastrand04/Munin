@@ -54,7 +54,8 @@ class VocabularyError(MuninError):
     """
 
     def __init__(self, alpha: float) -> None:
-        raise NotImplementedError
+        self.alpha = alpha
+        super().__init__(f"Boost strength {alpha} is outside 0 to 2")
 
 
 class OutlineError(MuninError):

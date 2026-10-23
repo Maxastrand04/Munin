@@ -3,6 +3,7 @@
 from collections.abc import Callable, Iterable
 from pathlib import Path
 
+from munin.core.boosting import apply_vocabulary
 from munin.core.segments import Fragment
 from munin.core.vocabulary import Vocabulary
 
@@ -34,7 +35,8 @@ def load_recognizer() -> Recognize:
     vad = onnx_asr.load_vad("silero", providers=providers)
     pipeline = asr.with_vad(vad, min_silence_duration_ms=500)
 
-    def recognize(wav: Path) -> Iterable[Fragment]:
+    def recognize(wav: Path, vocabulary: Vocabulary | None) -> Iterable[Fragment]:
+        apply_vocabulary(asr, vocabulary)
         for result in pipeline.recognize(str(wav)):
             yield Fragment(result.start, result.end, result.text)
 

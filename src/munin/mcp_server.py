@@ -13,6 +13,7 @@ from munin.core import (
     Recognize,
     RenderResult,
     TranscribeResult,
+    Vocabulary,
     get_transcript,
     render_mindmap,
     transcribe,
@@ -49,9 +50,20 @@ def create_server(
 
     @server.tool(name="transcribe")
     def transcribe_tool(source: str, vocabulary: list[str] | None = None, alpha: float = 1.0) -> TranscribeResult:
-        """Transcribe a local audio or video file, or a YouTube video URL, and return its Transcript ID and stats."""
+        """Transcribe a local audio or video file, or a YouTube video URL, and return its Transcript ID and stats.
+
+        `vocabulary` is an optional list of course terms to spell correctly, and
+        `alpha` is the boost strength from 0 to 2, default 1.0. Terms are
+        case sensitive, so give each exactly as it should be written. To build a
+        Vocabulary, transcribe once without one, spot the misspelled terms in a
+        first pass, then call again with the correct spellings. That call
+        replaces the cached Transcript under the same Transcript ID. A call
+        without a `vocabulary` returns the cached Transcript, boosted or not.
+        `vocabulary` in the result is the terms and alpha used, or null.
+        """
         with _core_errors_as_tool_errors():
-            return transcribe(source, cache_dir=cache_dir, recognize=recognize, download=download)
+            boost = Vocabulary(vocabulary or [], alpha)
+            return transcribe(source, vocabulary=boost, cache_dir=cache_dir, recognize=recognize, download=download)
 
     @server.tool(name="get_transcript")
     def get_transcript_tool(transcript_id: str) -> str:

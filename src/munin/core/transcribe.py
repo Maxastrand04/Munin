@@ -41,6 +41,7 @@ class TranscribeResult:
     segment_count: int
     transcription_s: float
     cached: bool
+    vocabulary: Vocabulary | None = None
 
 
 @dataclass(frozen=True)
@@ -57,10 +58,13 @@ class CacheEntry:
     duration_s: float
     transcription_s: float
     segments: tuple[Segment, ...]
+    vocabulary: Vocabulary | None = None
 
     def result(self, transcript_id: str, *, cached: bool) -> TranscribeResult:
         """Return this entry as the `TranscribeResult` for `transcript_id`, marked `cached` or not."""
-        return TranscribeResult(transcript_id, self.duration_s, len(self.segments), self.transcription_s, cached)
+        return TranscribeResult(
+            transcript_id, self.duration_s, len(self.segments), self.transcription_s, cached, self.vocabulary
+        )
 
 
 def transcribe(
@@ -115,12 +119,13 @@ def transcribe(
     resolved = parsed.expanduser().resolve() if isinstance(parsed, Path) else parsed
     transcript_id = _transcript_id(_source_key(resolved))
     entry_path = _entry_path(cache_dir, transcript_id)
-    if entry_path.is_file():
+    vocabulary = vocabulary if vocabulary and vocabulary.terms else None
+    if vocabulary is None and entry_path.is_file():
         return _read_entry(entry_path).result(transcript_id, cached=True)
     if isinstance(resolved, YouTubeSource):
-        entry = _transcribe_video(resolved, entry_path.parent, download, recognize)
+        entry = _transcribe_video(resolved, entry_path.parent, download, recognize, vocabulary)
     else:
-        entry = _transcribe_fresh(source, resolved, recognize)
+        entry = _transcribe_fresh(source, resolved, recognize, vocabulary)
     _write_entry(entry_path, entry)
     return entry.result(transcript_id, cached=False)
 
@@ -166,16 +171,20 @@ def _entry_path(cache_dir: Path | None, transcript_id: str) -> Path:
 
 
 def _transcribe_video(
-    video: YouTubeSource, cache_folder: Path, download: Download | None, recognize: Recognize | None
+    video: YouTubeSource,
+    cache_folder: Path,
+    download: Download | None,
+    recognize: Recognize | None,
+    vocabulary: Vocabulary | None,
 ) -> CacheEntry:
     cache_folder.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(dir=cache_folder) as workdir:
         audio = (download or download_audio)(video, Path(workdir))
-        return replace(_transcribe_fresh(video.url, audio, recognize), source=video)
+        return replace(_transcribe_fresh(video.url, audio, recognize, vocabulary), source=video)
 
 
 def _transcribe_fresh(
-    given: str | os.PathLike[str], resolved: Path, recognize: Recognize | None
+    given: str | os.PathLike[str], resolved: Path, recognize: Recognize | None, vocabulary: Vocabulary | None
 ) -> CacheEntry:
     if not resolved.is_file():
         raise SourceError(given, "not a file or a YouTube URL")
@@ -185,11 +194,11 @@ def _transcribe_fresh(
         duration_s = _duration_s(wav)
         recognize = recognize or load_recognizer()
         started = time.perf_counter()
-        segments = merge_fragments(list(recognize(wav)))
+        segments = merge_fragments(list(recognize(wav, vocabulary)))
         transcription_s = time.perf_counter() - started
     if not segments:
         raise NoSpeechError(given)
-    return CacheEntry(resolved, duration_s, transcription_s, tuple(segments))
+    return CacheEntry(resolved, duration_s, transcription_s, tuple(segments), vocabulary)
 
 
 def _duration_s(wav: Path) -> float:
@@ -199,11 +208,13 @@ def _duration_s(wav: Path) -> float:
 
 def _read_entry(entry_path: Path) -> CacheEntry:
     stored = json.loads(entry_path.read_text(encoding="utf-8"))
+    boost = stored.get("vocabulary")
     return CacheEntry(
         source=parse_source(stored["source"]),
         duration_s=stored["duration_s"],
         transcription_s=stored["transcription_s"],
         segments=tuple(Segment(s["start"], s["end"], s["text"]) for s in stored["segments"]),
+        vocabulary=Vocabulary(boost["terms"], boost["alpha"]) if boost else None,
     )
 
 
@@ -213,6 +224,7 @@ def _write_entry(entry_path: Path, entry: CacheEntry) -> None:
         "duration_s": entry.duration_s,
         "transcription_s": entry.transcription_s,
         "segments": [asdict(s) for s in entry.segments],
+        "vocabulary": asdict(entry.vocabulary) if entry.vocabulary else None,
     }
     entry_path.parent.mkdir(parents=True, exist_ok=True)
     partial = entry_path.with_suffix(".json.part")
