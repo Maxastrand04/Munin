@@ -4,6 +4,9 @@ import re
 
 _SECONDS_PER_MINUTE = 60
 
+_MINUTES_STAMP = re.compile(r"\[(\d+):([0-5]\d)\]")
+_HOURS_STAMP = re.compile(r"\[(\d+):([0-5]\d):([0-5]\d)\]")
+
 STAMP = re.compile(r"\[[\d:]*:[\d:]*\]")
 """Matches one stamp candidate: a bracket holding only digits and at least one colon.
 
@@ -38,4 +41,10 @@ def stamp_seconds(stamp: str) -> int | None:
     `[1:75:00]`, `[1:5:00]`, `[1:2:3:4]`, `[:05]` or `[1:]`. The function knows
     nothing of any Source, so it never judges a stamp past the end.
     """
-    raise NotImplementedError
+    if match := _MINUTES_STAMP.fullmatch(stamp):
+        minutes, secs = match.groups()
+        return int(minutes) * _SECONDS_PER_MINUTE + int(secs)
+    if match := _HOURS_STAMP.fullmatch(stamp):
+        hours, minutes, secs = match.groups()
+        return (int(hours) * _SECONDS_PER_MINUTE + int(minutes)) * _SECONDS_PER_MINUTE + int(secs)
+    return None

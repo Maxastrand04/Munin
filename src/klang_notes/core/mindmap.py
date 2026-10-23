@@ -10,7 +10,7 @@ from typing import Literal
 from klang_notes.core.errors import OutlineError
 from klang_notes.core.sources import Source
 from klang_notes.core.stamps import STAMP, format_stamp, stamp_seconds
-from klang_notes.core.transcribe import get_source
+from klang_notes.core.transcribe import _cached_entry
 from klang_notes.core.youtube import YouTubeSource
 
 _REPO_ROOT = Path(__file__).resolve().parents[3]
@@ -84,7 +84,14 @@ def render_mindmap(
     `OutlineError` when the Outline has no headings or list items. Either way it
     writes nothing.
     """
-    raise NotImplementedError
+    entry = _cached_entry(transcript_id, cache_dir)
+    unlinked: list[UnlinkedStamp] = []
+    nodes = _outline_nodes(outline, entry.source, entry.duration_s, unlinked)
+    content = _page_html(transcript_id, nodes, entry.source)
+    page = (output_dir or _DEFAULT_OUTPUT_DIR).resolve() / f"{transcript_id}.html"
+    page.parent.mkdir(parents=True, exist_ok=True)
+    page.write_text(content, encoding="utf-8")
+    return RenderResult(page, tuple(unlinked))
 
 
 def _timestamp_url(source: Source, offset_s: int) -> str:
@@ -93,11 +100,14 @@ def _timestamp_url(source: Source, offset_s: int) -> str:
     return f"{source.as_uri()}#t={offset_s}"
 
 
-def _outline_nodes(outline: str, source: Source) -> list[dict]:
+def _outline_nodes(
+    outline: str, source: Source, duration_s: float, unlinked: list[UnlinkedStamp]
+) -> list[dict]:
     """Read heading/list hierarchy and optional prose without interpreting HTML.
 
     A single top-level node is the main topic. Multiple top-level nodes get a
     common main topic. All labels and explanations are displayed as plain text.
+    Bad stamps stay in their label and are appended to `unlinked`.
     """
     nodes: list[dict] = []
     headings: list[tuple[int, int]] = []
@@ -125,18 +135,21 @@ def _outline_nodes(outline: str, source: Source) -> list[dict]:
                 nodes[current]["explanation"] = f"{previous}\n{line.strip()}".strip()
             continue
         current = len(nodes)
+        shown, links = label, []
+        for stamp in STAMP.finditer(label):
+            offset = stamp_seconds(stamp[0])
+            if offset is None or offset > duration_s:
+                reason = "malformed" if offset is None else "past_end"
+                unlinked.append(UnlinkedStamp(label, stamp[0], reason))
+                continue
+            links.append({"text": format_stamp(offset), "url": _timestamp_url(source, offset)})
+            shown = shown.replace(stamp[0], "", 1)
         nodes.append(
             {
                 "id": current,
                 "parent": parent,
-                "label": STAMP.sub("", label).strip(),
-                "links": [
-                    {
-                        "text": format_stamp(stamp_seconds(stamp)),
-                        "url": _timestamp_url(source, stamp_seconds(stamp)),
-                    }
-                    for stamp in STAMP.finditer(label)
-                ],
+                "label": re.sub(r"\s{2,}", " ", shown).strip(),
+                "links": links,
                 "explanation": "",
             }
         )
@@ -160,8 +173,7 @@ def _outline_nodes(outline: str, source: Source) -> list[dict]:
     return nodes
 
 
-def _page_html(transcript_id: str, outline: str, source: Source) -> str:
-    nodes = _outline_nodes(outline, source)
+def _page_html(transcript_id: str, nodes: list[dict], source: Source) -> str:
     title = nodes[0]["label"] or "Mindmap"
     source_url = source.url if isinstance(source, YouTubeSource) else source.as_uri()
     replacements = {
