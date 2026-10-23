@@ -17,6 +17,7 @@ from munin.core.model import Recognize, load_recognizer
 from munin.core.segments import Segment, merge_fragments
 from munin.core.sources import Source, parse_source
 from munin.core.stamps import format_stamp
+from munin.core.vocabulary import Vocabulary
 from munin.core.youtube import Download, YouTubeSource, download_audio
 
 _ID_LENGTH = 12
@@ -30,6 +31,9 @@ class TranscribeResult:
     `duration_s` is the Source's audio length in seconds. `transcription_s` is how
     long the run that made the Transcript took, so a cache hit reports the original
     run's time. `cached` is True when no transcription ran for this call.
+
+    `vocabulary` is the Vocabulary the cached Transcript was made with, or None
+    when it was made without one. A cache hit reports the stored one.
     """
 
     transcript_id: str
@@ -62,6 +66,7 @@ class CacheEntry:
 def transcribe(
     source: str | os.PathLike[str],
     *,
+    vocabulary: Vocabulary | None = None,
     cache_dir: Path | None = None,
     recognize: Recognize | None = None,
     download: Download | None = None,
@@ -79,6 +84,14 @@ def transcribe(
     is returned as is, even if the file changed since, and nothing is downloaded,
     and no recognizer is loaded or called.
 
+    A `vocabulary` with terms always runs a fresh transcription, even when the
+    cache holds a Transcript for this Source, and reports `cached=False`. The
+    Vocabulary reaches `recognize` unchanged. On success the new Transcript
+    replaces the cached one under the same Transcript ID, stored with its
+    Vocabulary. A `vocabulary` with no terms counts as None. With no Vocabulary,
+    a cached Transcript is returned as is, whether it was boosted or not, and
+    `recognize` receives None on a miss.
+
     On a miss, a YouTube Source's audio is first fetched with `download` into a
     temporary work folder. The file, or the downloaded audio, is decoded with
     ffmpeg to 16 kHz mono and passed to `recognize`, whose fragments go through
@@ -95,7 +108,8 @@ def transcribe(
     video URL, with the reason "not a file or a YouTube URL", when ffmpeg cannot
     decode it, or when `download` cannot fetch the video. Raises `NoSpeechError`
     when no non-empty Segment comes out. None of these writes anything to the
-    cache.
+    cache, so a failed boosted run leaves the previously cached Transcript in
+    place.
     """
     parsed = parse_source(source)
     resolved = parsed.expanduser().resolve() if isinstance(parsed, Path) else parsed

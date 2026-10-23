@@ -46,6 +46,17 @@ class UnknownTranscriptError(MuninError):
         super().__init__(f"No Transcript with ID {transcript_id}")
 
 
+class VocabularyError(MuninError):
+    """A Vocabulary's boost strength is outside 0 to 2.
+
+    `alpha` is the strength the caller gave, and the message names it, as in
+    "Boost strength 2.5 is outside 0 to 2".
+    """
+
+    def __init__(self, alpha: float) -> None:
+        raise NotImplementedError
+
+
 class OutlineError(MuninError):
     """The Outline has no Markdown headings or list items, so it has no nodes to draw."""
 
