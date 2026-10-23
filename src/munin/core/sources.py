@@ -3,7 +3,7 @@
 import os
 from pathlib import Path
 
-from klang_notes.core.youtube import YouTubeSource, parse_youtube_url
+from munin.core.youtube import YouTubeSource, parse_youtube_url
 
 Source = Path | YouTubeSource
 """A local audio or video file, or a YouTube video."""

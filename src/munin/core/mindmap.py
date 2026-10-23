@@ -7,11 +7,11 @@ from html import escape
 from pathlib import Path
 from typing import Literal
 
-from klang_notes.core.errors import OutlineError
-from klang_notes.core.sources import Source
-from klang_notes.core.stamps import STAMP, display_stamp, stamp_seconds
-from klang_notes.core.transcribe import CacheEntry, cached_entry
-from klang_notes.core.youtube import YouTubeSource
+from munin.core.errors import OutlineError
+from munin.core.sources import Source
+from munin.core.stamps import STAMP, display_stamp, stamp_seconds
+from munin.core.transcribe import CacheEntry, cached_entry
+from munin.core.youtube import YouTubeSource
 
 _REPO_ROOT = Path(__file__).resolve().parents[3]
 _DEFAULT_OUTPUT_DIR = _REPO_ROOT / "mindmaps"
@@ -77,7 +77,7 @@ def render_mindmap(
     disk without network access. Radial rings is the default layout; settings
     also offers Topic circles.
 
-    `cache_dir` defaults to the per-user cache folder for klang-notes.
+    `cache_dir` defaults to the per-user cache folder for Munin.
     `output_dir` defaults to `mindmaps/` at the repo root, found from this
     file's location, so the server's working directory does not matter.
 

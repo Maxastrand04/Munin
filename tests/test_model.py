@@ -1,7 +1,7 @@
 import onnx_asr
 import pytest
 
-from klang_notes.core import load_recognizer
+from munin.core import load_recognizer
 
 
 @pytest.fixture

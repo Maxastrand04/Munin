@@ -1,6 +1,6 @@
 import pytest
 
-from klang_notes.core import Fragment, Segment, merge_fragments
+from munin.core import Fragment, Segment, merge_fragments
 
 
 def test_merge_drops_fragments_with_only_whitespace():

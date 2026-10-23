@@ -4,7 +4,7 @@ import os
 import subprocess
 from pathlib import Path
 
-from klang_notes.core.errors import SourceError
+from munin.core.errors import SourceError
 
 _SAMPLE_RATE_HZ = 16000
 _MONO = 1

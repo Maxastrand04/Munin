@@ -1,6 +1,6 @@
-# klang-notes
+# Munin
 
-Workspace for the Klang AI hackathon. A local MCP server turns a recorded Swedish lecture into a mindmap, and every node links back to the second in the lecture it came from.
+Munin is a local MCP server that turns a recorded Swedish lecture into a mindmap, and every node links back to the second in the lecture it came from. It is also the engine a planned hosted app will build on.
 
 Klang's [Pianissimo](https://huggingface.co/KlangAI/pianissimo-sv) model does the transcription. It's speech-to-text only, Swedish only, with word timestamps and phrase boosting. An LLM in your MCP client (Claude Code or Claude Desktop) reads the transcript and writes the outline. The tools handle everything with one right answer: downloading, cleaning segments, caching, and building links.
 
@@ -41,8 +41,10 @@ uv sync
 The MCP server runs over stdio. Point your MCP client at this command:
 
 ```bash
-uv run klang-notes-mcp
+uv run munin
 ```
+
+Earlier versions ran as `klang-notes-mcp` and cached Transcripts in a `klang-notes` cache folder. Munin ignores that folder, so you can delete it.
 
 The first transcription downloads the Pianissimo weights, and the loaded model takes about 2.4 GB of RAM. Transcripts are cached in the per-user cache folder. Mindmap pages land in `mindmaps/` at the repo root, which git ignores. Open one straight from disk in Chrome or Safari. Timestamp links work for mp4 and m4a in both.
 

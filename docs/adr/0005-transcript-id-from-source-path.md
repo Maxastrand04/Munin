@@ -6,6 +6,6 @@
 
 **Consequence:** Moving or renaming a file gives it a new Transcript. Changing the file in place does not, since the path is the key. Every accepted URL form of one video shares one Transcript, so adding a URL form must map it to the same canonical URL. Any change to how paths resolve, such as `~` expansion or symlink handling, or to the canonical URL's shape, changes IDs and orphans existing cache entries.
 
-**Scope:** `src/klang_notes/core/transcribe.py`, `transcribe`
+**Scope:** `src/munin/core/transcribe.py`, `transcribe`
 
 **Date:** 2026-10-22
