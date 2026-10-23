@@ -47,22 +47,26 @@ function coordinates(){
   }else{
     // Each topic is the centre of a complete local ring of its own children.
     // The same rule applies recursively to subtopics such as the exercise group.
-    const surround=(id,outward)=>{
-      const n=nodes[id],count=n.children.length;
+    const surround=id=>{
+      const n=nodes[id],p=nodes[n.parent],count=n.children.length;
       const radiusX=Math.max(n.children.some(c=>nodes[c].children.length)?560:350,count*70);
       const radiusY=Math.max(260,count*45);
+      // The edge from the parent arrives along `inward`. Rotating the ring so that
+      // direction falls midway between two children keeps the edge off them.
+      const inward=Math.atan2(p.y-n.y,p.x-n.x);
+      const start=Math.atan2(Math.sin(inward)*radiusX,Math.cos(inward)*radiusY)+Math.PI/count;
       n.children.forEach((cid,j)=>{
-        const angle=outward+j*Math.PI*2/count,c=nodes[cid];
+        const angle=start+j*Math.PI*2/count,c=nodes[cid];
         c.x=n.x+Math.cos(angle)*radiusX;c.y=n.y+Math.sin(angle)*radiusY;
-        surround(cid,angle);
+        surround(cid);
       });
     };
     nodes[0].children.forEach((id,i)=>{
       const angle=-Math.PI/2+i*Math.PI*2/nodes[0].children.length,n=nodes[id];
       const radius=Math.max(1200,nodes[0].children.length*200);
       n.x=Math.cos(angle)*radius;n.y=Math.sin(angle)*radius*.75;
-      // Use opposing positions for pairs, and a complete ring for larger groups.
-      surround(id,0);
+      // Pairs sit either side of the parent's edge; larger groups form a complete ring.
+      surround(id);
     });
   }
   separateNodes();

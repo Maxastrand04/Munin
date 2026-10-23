@@ -149,3 +149,36 @@ def test_main_topic_colour_differs_from_every_group(page, mindmap_url):
     colours = group_colours(page)
     main_topic = colours.pop("Lecture")
     assert main_topic not in colours.values()
+
+
+EDGES_CROSSING_NODES = """() => {
+  const cards = [...document.querySelectorAll('.node')].map(node => ({
+    label: node.querySelector('.node-label').textContent,
+    box: node.querySelector('.node-card').getBoundingClientRect(),
+  }));
+  const inside = ({box}, x, y) => {
+    const rx = box.width / 2, ry = box.height / 2;
+    return ((x - box.x - rx) / rx) ** 2 + ((y - box.y - ry) / ry) ** 2 < 1;
+  };
+  const crossings = [];
+  document.querySelectorAll('.edge').forEach(edge => {
+    const matrix = edge.getScreenCTM(), length = edge.getTotalLength();
+    const points = Array.from({length: 101}, (_, i) =>
+      edge.getPointAtLength(length * i / 100).matrixTransform(matrix));
+    const ends = cards.filter(card =>
+      inside(card, points[0].x, points[0].y) || inside(card, points[100].x, points[100].y));
+    cards.filter(card => !ends.includes(card)).forEach(card => {
+      if (points.some(point => inside(card, point.x, point.y)))
+        crossings.push(`${ends.map(end => end.label).join(' to ')} crosses ${card.label}`);
+    });
+  });
+  return crossings;
+}"""
+
+
+@pytest.mark.parametrize("style", ["C", "A"], ids=["topic-circles", "radial-rings"])
+@pytest.mark.parametrize("outline", [NESTED_OUTLINE, DEMO_OUTLINE], ids=["nested", "demo"])
+def test_edges_do_not_pass_through_other_nodes(page, mindmap_url, style):
+    page.goto(f"{mindmap_url}?variant={style}")
+    page.get_by_role("button", name="Show whole Mindmap", exact=True).click()
+    assert page.evaluate(EDGES_CROSSING_NODES) == []
