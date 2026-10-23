@@ -5,9 +5,9 @@ from pathlib import Path
 
 from mcp import Client
 
-from klang_notes.core import Fragment, YouTubeSource, get_transcript
-from klang_notes import mcp_server
-from klang_notes.mcp_server import create_server
+from munin.core import Fragment, YouTubeSource, get_transcript
+from munin import mcp_server
+from munin.mcp_server import create_server
 
 SPEECH = Path(__file__).parent / "fixtures" / "sv_short.m4a"
 WATCH_URL = "https://www.youtube.com/watch?v=dQw4w9WgXcQ"

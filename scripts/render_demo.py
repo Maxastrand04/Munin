@@ -3,7 +3,7 @@
 import argparse
 from pathlib import Path
 
-from klang_notes.core import render_mindmap
+from munin.core import render_mindmap
 
 
 def main() -> None:

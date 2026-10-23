@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 from playwright.sync_api import sync_playwright
 
-from klang_notes.core import Fragment, render_mindmap, transcribe
+from munin.core import Fragment, render_mindmap, transcribe
 
 
 NESTED_OUTLINE = """# Lecture

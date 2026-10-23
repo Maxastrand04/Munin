@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from klang_notes.core import (
+from munin.core import (
     Fragment,
     OutlineError,
     UnknownTranscriptError,
@@ -512,7 +512,7 @@ def fresh_page(source: Path, cache_dir: Path, tmp_path: Path) -> Path:
 
 
 def test_new_page_uses_outline_title(fresh_page: Path):
-    assert "<title>En annan föreläsning · Klang notes</title>" in fresh_page.read_text()
+    assert "<title>En annan föreläsning · Munin</title>" in fresh_page.read_text()
 
 
 @pytest.mark.parametrize(

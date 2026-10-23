@@ -8,7 +8,7 @@ from pathlib import Path
 import onnx_asr
 import pytest
 
-from klang_notes.core import (
+from munin.core import (
     Fragment,
     NoSpeechError,
     SourceError,
@@ -167,16 +167,16 @@ def test_cache_hit_does_not_load_model(source: Path, cache_dir: Path, monkeypatc
     transcribe(source, cache_dir=cache_dir)
 
 
-def test_default_cache_is_a_per_user_klang_notes_folder(
+def test_default_cache_is_a_per_user_munin_folder(
     source: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ):
-    """With no cache_dir, the Transcript lands in a klang-notes folder under the user's home."""
+    """With no cache_dir, the Transcript lands in a munin folder under the user's home."""
     home = tmp_path / "home"
     home.mkdir()
     monkeypatch.setenv("HOME", str(home))
     monkeypatch.delenv("XDG_CACHE_HOME", raising=False)
     transcribe(source, recognize=TWO_SENTENCES)
-    assert any(path.is_dir() for path in home.rglob("klang-notes"))
+    assert any(path.is_dir() for path in home.rglob("munin"))
 
 
 def test_cache_hit_returns_same_id(source: Path, cache_dir: Path):

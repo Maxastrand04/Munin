@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from urllib.parse import parse_qs, urlsplit
 
-from klang_notes.core.errors import SourceError
+from munin.core.errors import SourceError
 
 _SCHEMES = {"http", "https"}
 _SHORT_HOST = "youtu.be"

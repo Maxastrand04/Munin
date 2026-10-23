@@ -1,6 +1,6 @@
-# Klang notes
+# Munin
 
-Turns a recorded Swedish lecture into a mindmap whose nodes link back to the moment in the lecture they summarize. Klang's Pianissimo model transcribes, an LLM structures the notes, and deterministic tools do everything else.
+Munin turns a recorded Swedish lecture into a mindmap whose nodes link back to the moment in the lecture they summarize. Klang's Pianissimo model transcribes. Munin does the deterministic work, and the LLM writes the Outline. See [ADR-0001](docs/adr/0001-tools-own-deterministic-work.md).
 
 ## Language
 

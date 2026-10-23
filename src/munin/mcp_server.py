@@ -7,9 +7,9 @@ from pathlib import Path
 from mcp.server import MCPServer
 from mcp.server.mcpserver.exceptions import ToolError
 
-from klang_notes.core import (
+from munin.core import (
     Download,
-    KlangError,
+    MuninError,
     Recognize,
     RenderResult,
     TranscribeResult,
@@ -36,9 +36,9 @@ def create_server(
     list of `label`, `stamp` and `reason` objects.
     The `lecture_to_mindmap(source: str)` prompt lists the run's steps for one
     Source and leaves the Outline format to `render_mindmap`'s description.
-    A `KlangError` comes back as an MCP tool error carrying its message.
+    A `MuninError` comes back as an MCP tool error carrying its message.
     """
-    server = MCPServer("klang-notes")
+    server = MCPServer("munin")
 
     @server.tool(name="transcribe")
     def transcribe_tool(source: str) -> TranscribeResult:
@@ -108,5 +108,5 @@ def main() -> None:
 def _core_errors_as_tool_errors() -> Iterator[None]:
     try:
         yield
-    except KlangError as error:
+    except MuninError as error:
         raise ToolError(str(error)) from error

@@ -3,7 +3,7 @@
 from collections.abc import Callable, Iterable
 from pathlib import Path
 
-from klang_notes.core.segments import Fragment
+from munin.core.segments import Fragment
 
 _MODEL_REPO = "KlangAI/pianissimo-sv-onnx"
 

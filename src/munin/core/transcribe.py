@@ -10,14 +10,14 @@ import wave
 from dataclasses import asdict, dataclass, replace
 from pathlib import Path
 
-from klang_notes.core.cache_paths import default_cache_dir
-from klang_notes.core.decode import decode_to_wav
-from klang_notes.core.errors import NoSpeechError, SourceError, UnknownTranscriptError
-from klang_notes.core.model import Recognize, load_recognizer
-from klang_notes.core.segments import Segment, merge_fragments
-from klang_notes.core.sources import Source, parse_source
-from klang_notes.core.stamps import format_stamp
-from klang_notes.core.youtube import Download, YouTubeSource, download_audio
+from munin.core.cache_paths import default_cache_dir
+from munin.core.decode import decode_to_wav
+from munin.core.errors import NoSpeechError, SourceError, UnknownTranscriptError
+from munin.core.model import Recognize, load_recognizer
+from munin.core.segments import Segment, merge_fragments
+from munin.core.sources import Source, parse_source
+from munin.core.stamps import format_stamp
+from munin.core.youtube import Download, YouTubeSource, download_audio
 
 _ID_LENGTH = 12
 _ID_PATTERN = re.compile(f"[0-9a-f]{{{_ID_LENGTH}}}")
@@ -87,7 +87,7 @@ def transcribe(
     and the work folder and the audio in it are deleted before returning.
     `transcription_s` never includes download time.
 
-    `cache_dir` defaults to the per-user cache folder for klang-notes.
+    `cache_dir` defaults to the per-user cache folder for Munin.
     `recognize` defaults to `load_recognizer()`, called only on a miss.
     `download` defaults to `download_audio`, called only on a YouTube miss.
 
@@ -118,7 +118,7 @@ def get_transcript(transcript_id: str, *, cache_dir: Path | None = None) -> str:
     start rounded down to the whole second, with minutes counting past 59, so
     4503.9 s reads `[75:03]`.
 
-    `cache_dir` defaults to the per-user cache folder for klang-notes.
+    `cache_dir` defaults to the per-user cache folder for Munin.
 
     Raises `UnknownTranscriptError` when no cached Transcript has this ID.
     """
@@ -129,7 +129,7 @@ def get_transcript(transcript_id: str, *, cache_dir: Path | None = None) -> str:
 def cached_entry(transcript_id: str, *, cache_dir: Path | None = None) -> CacheEntry:
     """Return the cached Transcript with this ID.
 
-    `cache_dir` defaults to the per-user cache folder for klang-notes.
+    `cache_dir` defaults to the per-user cache folder for Munin.
 
     Raises `UnknownTranscriptError` when no cached Transcript has this ID.
     """

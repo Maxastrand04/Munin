@@ -6,6 +6,6 @@
 
 **Consequence:** Loading the model or calling yt-dlp at import time, in a module-level global, or inside the MCP adapter breaks this record. Adapters pass `recognize` and `download` through and never call either themselves. A test may fake either, but at least one test must run the real loader and one the real downloader, so the true paths get exercised.
 
-**Scope:** `src/klang_notes/core/transcribe.py`, `transcribe`; `src/klang_notes/core/model.py`, `load_recognizer`; `src/klang_notes/core/youtube.py`, `download_audio`
+**Scope:** `src/munin/core/transcribe.py`, `transcribe`; `src/munin/core/model.py`, `load_recognizer`; `src/munin/core/youtube.py`, `download_audio`
 
 **Date:** 2026-10-22

@@ -3,11 +3,15 @@
 from pathlib import Path
 
 
-class KlangError(Exception):
+class MuninError(Exception):
     """Base for every error the core raises on purpose."""
 
 
-class SourceError(KlangError):
+class KlangError(MuninError):
+    """Base for errors that come from transcribing with Klang's Pianissimo model."""
+
+
+class SourceError(MuninError):
     """The Source is neither a file nor a YouTube URL, ffmpeg cannot decode it, or its video cannot be downloaded.
 
     `path` is the path or URL as the caller gave it, or a video's canonical URL
@@ -31,7 +35,7 @@ class NoSpeechError(KlangError):
         super().__init__(f"No speech found in {self.path}")
 
 
-class UnknownTranscriptError(KlangError):
+class UnknownTranscriptError(MuninError):
     """No cached Transcript has this ID.
 
     `transcript_id` is the ID the caller gave, and the message names it.
@@ -42,7 +46,7 @@ class UnknownTranscriptError(KlangError):
         super().__init__(f"No Transcript with ID {transcript_id}")
 
 
-class OutlineError(KlangError):
+class OutlineError(MuninError):
     """The Outline has no Markdown headings or list items, so it has no nodes to draw."""
 
     def __init__(self) -> None:

@@ -1,6 +1,6 @@
 import pytest
 
-from klang_notes.core.stamps import display_stamp, stamp_seconds
+from munin.core.stamps import display_stamp, stamp_seconds
 
 # Well-formed stamps
 
