@@ -319,6 +319,6 @@ def test_mcp_transcribe_description_suggests_vocabulary_from_first_pass(cache_di
 
 @pytest.mark.slow
 def test_real_model_transcribes_with_vocabulary(cache_dir: Path):
-    """Pianissimo transcribes the Alva clip with a boosted term, and the read-back still mentions matriser."""
-    result = transcribe(SPEECH, vocabulary=Vocabulary(["matriser"]), cache_dir=cache_dir)
-    assert "matris" in get_transcript(result.transcript_id, cache_dir=cache_dir).lower()
+    """Pianissimo spells the Alva clip's "matris" as "matrix" when that term is boosted at full strength, which it never writes unboosted."""
+    result = transcribe(SPEECH, vocabulary=Vocabulary(["matrix"], 2.0), cache_dir=cache_dir)
+    assert "matrix" in get_transcript(result.transcript_id, cache_dir=cache_dir)
