@@ -6,6 +6,7 @@ from pathlib import Path
 from mcp import Client
 
 from klang_notes.core import Fragment, YouTubeSource, get_transcript
+from klang_notes import mcp_server
 from klang_notes.mcp_server import create_server
 
 SPEECH = Path(__file__).parent / "fixtures" / "sv_short.m4a"
@@ -30,6 +31,22 @@ def call(server, tool: str, arguments: dict):
             return await client.call_tool(tool, arguments)
 
     return asyncio.run(run())
+
+
+def prompt_text(server, source: str) -> str:
+    async def run():
+        async with Client(server) as client:
+            return await client.get_prompt("lecture_to_mindmap", {"source": source})
+
+    return asyncio.run(run()).messages[0].content.text
+
+
+def render_tool_description(server) -> str:
+    async def run():
+        async with Client(server) as client:
+            return await client.list_tools()
+
+    return next(tool.description for tool in asyncio.run(run()).tools if tool.name == "render_mindmap")
 
 
 def test_mcp_lists_all_tools(cache_dir: Path):
@@ -123,3 +140,67 @@ def test_mcp_render_mindmap_reports_unlinked_stamps(source: Path, cache_dir: Pat
     transcript_id = call(server, "transcribe", {"source": str(source)}).structured_content["transcript_id"]
     result = call(server, "render_mindmap", {"transcript_id": transcript_id, "outline": "# Matriser\n- Gauss [1:75]"})
     assert result.structured_content["unlinked"] == [{"label": "Gauss [1:75]", "stamp": "[1:75]", "reason": "malformed"}]
+
+
+def test_mcp_lists_lecture_prompt_with_required_source(cache_dir: Path):
+    """The server lists `lecture_to_mindmap` with one required argument, `source`."""
+
+    async def run():
+        async with Client(create_server(cache_dir=cache_dir, recognize=two_sentences)) as client:
+            return await client.list_prompts()
+
+    prompts = {prompt.name: prompt for prompt in asyncio.run(run()).prompts}
+    assert [(arg.name, arg.required) for arg in prompts["lecture_to_mindmap"].arguments] == [("source", True)]
+
+
+def test_mcp_lecture_prompt_fills_in_source(cache_dir: Path):
+    """The prompt's text carries the Source it was given."""
+    assert WATCH_URL in prompt_text(create_server(cache_dir=cache_dir), WATCH_URL)
+
+
+def test_mcp_lecture_prompt_calls_tools_in_run_order(cache_dir: Path):
+    """The prompt names transcribe, then get_transcript, then render_mindmap."""
+    text = prompt_text(create_server(cache_dir=cache_dir), WATCH_URL)
+    positions = [text.index(f"`{tool}`") for tool in ("transcribe", "get_transcript", "render_mindmap")]
+    assert positions == sorted(positions)
+
+
+def test_mcp_lecture_prompt_asks_for_only_a_file_link(cache_dir: Path):
+    """The prompt asks for a reply of only a `file://` link to the page."""
+    text = prompt_text(create_server(cache_dir=cache_dir), WATCH_URL)
+    assert "only the page as a `file://` link" in text
+
+
+def test_mcp_lecture_prompt_leaves_format_to_render_tool(cache_dir: Path):
+    """The prompt points at render_mindmap for the Outline format and carries no stamp of its own."""
+    text = prompt_text(create_server(cache_dir=cache_dir), WATCH_URL)
+    assert "format the `render_mindmap` tool describes" in text
+    assert "[m:ss]" not in text
+
+
+def test_mcp_render_description_puts_stamp_at_label_end(cache_dir: Path):
+    """The render tool's description asks for one stamp at the end of each node label."""
+    assert "One stamp at the end of each node label" in render_tool_description(create_server(cache_dir=cache_dir))
+
+
+def test_mcp_render_description_asks_for_two_or_three_levels(cache_dir: Path):
+    """The render tool's description asks for an Outline two or three levels deep."""
+    assert "two or three levels deep" in render_tool_description(create_server(cache_dir=cache_dir))
+
+
+def test_mcp_main_writes_pages_to_mindmaps_in_working_folder(tmp_path: Path, monkeypatch):
+    """`main` points the server's output at `mindmaps/` in the folder it starts in."""
+    started = {}
+
+    class FakeServer:
+        def run(self):
+            pass
+
+    def fake_create_server(**kwargs):
+        started.update(kwargs)
+        return FakeServer()
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(mcp_server, "create_server", fake_create_server)
+    mcp_server.main()
+    assert started["output_dir"] == tmp_path / "mindmaps"
