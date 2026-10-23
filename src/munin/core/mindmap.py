@@ -131,15 +131,19 @@ def render_mindmap(
     deck_pages = pdf.page_count(deck) if deck.is_file() else None
     nodes, unlinked, unlinked_slides = _outline_nodes(outline, entry, deck_pages)
     linked = sorted({number for node in nodes for number in node["slides"]})
-    images = {
-        str(number): "data:image/png;base64," + base64.b64encode(pdf.page_png(deck, number)).decode()
-        for number in linked
-    }
-    content = _page_html(transcript_id, nodes, entry.source, images)
+    content = _page_html(transcript_id, nodes, entry.source, _slide_images(deck, linked))
     page = (output_dir or _DEFAULT_OUTPUT_DIR).resolve() / f"{transcript_id}.html"
     page.parent.mkdir(parents=True, exist_ok=True)
     page.write_text(content, encoding="utf-8")
     return RenderResult(page, unlinked, unlinked_slides)
+
+
+def _slide_images(deck: Path, numbers: list[int]) -> dict[str, str]:
+    """Return each numbered Slide of the Deck as a PNG data URI, keyed by its number as text."""
+    return {
+        str(number): "data:image/png;base64," + base64.b64encode(pdf.page_png(deck, number)).decode()
+        for number in numbers
+    }
 
 
 def _timestamp_url(source: Source, offset_s: int) -> str:
@@ -243,15 +247,16 @@ def _resolve_slides(
     numbers: set[int] = set()
     unlinked: list[UnlinkedSlide] = []
     for marker in _SLIDE_MARKER.finditer(label):
-        number = _SLIDE_NUMBER.fullmatch(marker[0])
+        match = _SLIDE_NUMBER.fullmatch(marker[0])
+        number = int(match[1]) if match else 0
         if deck_pages is None:
             unlinked.append(UnlinkedSlide(label, marker[0], "no_deck"))
-        elif not number or int(number[1]) < 1:
+        elif number < 1:
             unlinked.append(UnlinkedSlide(label, marker[0], "malformed"))
-        elif int(number[1]) > deck_pages:
+        elif number > deck_pages:
             unlinked.append(UnlinkedSlide(label, marker[0], "past_end"))
         else:
-            numbers.add(int(number[1]))
+            numbers.add(number)
             shown = shown.replace(marker[0], "", 1)
     return _SPACE_RUN.sub(" ", shown).strip(), sorted(numbers), unlinked
 

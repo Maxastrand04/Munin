@@ -24,12 +24,20 @@ _Avoid_: chunk, piece
 A list of terms, plus a boost strength (alpha) from 0 to 2, that steers Pianissimo toward spelling those terms correctly. Terms are case sensitive. A Vocabulary whose terms are all blank counts as none.
 _Avoid_: glossary, keywords, hotwords
 
+**Deck**:
+The PDF of lecture slides attached to one Transcript. A Transcript has at most one Deck, and attaching a new one replaces the old.
+_Avoid_: slideshow, presentation, PDF
+
+**Slide**:
+One page of a Deck, numbered from 1.
+_Avoid_: page, frame
+
 **Outline**:
-The nested Markdown the LLM writes from a Transcript, where node labels carry `[m:ss]` or `[h:mm:ss]` stamps.
+The nested Markdown the LLM writes from a Transcript, where node labels carry `[m:ss]` or `[h:mm:ss]` stamps and `[slide N]` markers.
 _Avoid_: notes, summary, mindmap (for the Markdown)
 
 **Mindmap**:
-The rendered HTML page built from an Outline, with each stamp turned into a Timestamp link. A malformed stamp, or one past the Source's end, stays as plain text and is reported back as unlinked.
+The rendered HTML page built from an Outline, with each stamp turned into a Timestamp link. A malformed stamp, or one past the Source's end, stays as plain text and is reported back as unlinked. A node's panel shows the Slides its markers name, and a marker that is malformed, past the Deck's last Slide, or on a Transcript with no Deck is reported back as unlinked too.
 _Avoid_: map, graph, diagram
 
 **Timestamp link**:
@@ -43,8 +51,10 @@ _Avoid_: jump link, deep link, seek link
 - A **Segment** is merged from one or more **Fragments**
 - A **Vocabulary** is optional and applies to one transcription of a **Source**
 - A cached **Transcript** records the **Vocabulary** it was made with, or none. Transcribing with a **Vocabulary** replaces the cached **Transcript** and keeps its ID
+- A **Transcript** has at most one **Deck**, which has one or more **Slides**
+- A node of an **Outline** lists any number of **Slides**, and a **Slide** can appear on any number of nodes
 - An **Outline** is written from exactly one **Transcript**
-- A **Mindmap** renders exactly one **Outline** and resolves its stamps against that **Transcript**'s **Source** and the Source's duration
+- A **Mindmap** renders exactly one **Outline** and resolves its stamps against that **Transcript**'s **Source** and the Source's duration, and its Slide markers against that **Transcript**'s **Deck**
 
 ## Example dialogue
 

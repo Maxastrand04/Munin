@@ -8,6 +8,8 @@ from pathlib import Path
 import pypdfium2
 
 _SCALE = 2.0
+_PNG_COLOR_TYPE_BY_CHANNELS = {3: 2, 4: 6}
+_PNG_BIT_DEPTH = 8
 _EMPTY_PAGE_TREE = re.compile(rb"<<(?:(?!>>).)*?/Type\s*/Pages\b(?:(?!>>).)*?/Count\s+0\b", re.DOTALL)
 
 
@@ -65,16 +67,19 @@ def _read_page(page: pypdfium2.PdfPage) -> tuple[str, bytes]:
     try:
         text = page.get_textpage().get_text_range()
         bitmap = page.render(scale=_SCALE, rev_byteorder=True)
-        return text, _png(bitmap.width, bitmap.height, bitmap.stride, bitmap.n_channels, bytes(bitmap.buffer))
+        return text, _png(bitmap)
     finally:
         page.close()
 
 
-def _png(width: int, height: int, stride: int, channels: int, pixels: bytes) -> bytes:
-    row = width * channels
-    raw = b"".join(b"\x00" + pixels[y * stride : y * stride + row] for y in range(height))
-    color_type = {3: 2, 4: 6}[channels]
-    header = struct.pack(">IIBBBBB", width, height, 8, color_type, 0, 0, 0)
+def _png(bitmap: pypdfium2.PdfBitmap) -> bytes:
+    pixels = bytes(bitmap.buffer)
+    row = bitmap.width * bitmap.n_channels
+    raw = b"".join(
+        b"\x00" + pixels[y * bitmap.stride : y * bitmap.stride + row] for y in range(bitmap.height)
+    )
+    color_type = _PNG_COLOR_TYPE_BY_CHANNELS[bitmap.n_channels]
+    header = struct.pack(">IIBBBBB", bitmap.width, bitmap.height, _PNG_BIT_DEPTH, color_type, 0, 0, 0)
     return b"\x89PNG\r\n\x1a\n" + _chunk(b"IHDR", header) + _chunk(b"IDAT", zlib.compress(raw)) + _chunk(b"IEND", b"")
 
 
