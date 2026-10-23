@@ -52,7 +52,9 @@ def create_server(
         """Render an Outline whose node labels carry `[m:ss]` stamps into a Mindmap page.
 
         Returns the absolute path of the written HTML page. Each stamp becomes a
-        link that opens the Transcript's Source at that second.
+        link that opens the Transcript's Source at that second. Headings and nested
+        list items form nodes; any following prose appears in the explanation panel.
+        The page defaults to Radial rings, with Topic circles available in settings.
         """
         with _core_errors_as_tool_errors():
             return str(render_mindmap(transcript_id, outline, cache_dir=cache_dir, output_dir=output_dir))

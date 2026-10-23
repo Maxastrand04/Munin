@@ -2,8 +2,10 @@
 
 import json
 import re
+from html import escape
 from pathlib import Path
 
+from klang_notes.core.errors import OutlineError
 from klang_notes.core.sources import Source
 from klang_notes.core.stamps import STAMP, format_stamp, stamp_seconds
 from klang_notes.core.transcribe import get_source
@@ -12,26 +14,9 @@ from klang_notes.core.youtube import YouTubeSource
 _REPO_ROOT = Path(__file__).resolve().parents[3]
 _DEFAULT_OUTPUT_DIR = _REPO_ROOT / "mindmaps"
 
-_PAGE = """<!doctype html>
-<html>
-<head>
-<meta charset="utf-8">
-<title>Mindmap {transcript_id}</title>
-<style>
-  html, body {{ margin: 0; height: 100%; }}
-  .markmap {{ width: 100vw; height: 100vh; }}
-  .markmap > svg {{ width: 100%; height: 100%; }}
-</style>
-</head>
-<body>
-<div class="markmap"><script type="text/template"></script></div>
-<script>
-  document.querySelector(".markmap script").textContent = {outline_json};
-</script>
-<script src="https://cdn.jsdelivr.net/npm/markmap-autoloader@0.18"></script>
-</body>
-</html>
-"""
+_ASSETS = Path(__file__).with_name("mindmap_assets")
+_HEADING = re.compile(r"^\s{0,3}(#{1,6})\s+(.+?)(?:\s+#+)?\s*$")
+_BULLET = re.compile(r"^(\s*)(?:[-+*]|\d+[.)])\s+(.+)$")
 
 
 def render_mindmap(
@@ -43,46 +28,29 @@ def render_mindmap(
 ) -> Path:
     """Write the Mindmap page for an Outline and return the page's absolute path.
 
-    Each `[m:ss]` stamp in the Outline becomes a Timestamp link to the
-    Transcript's Source, per `link_stamps`. The link is inline HTML, since
-    Markmap's Markdown parser drops `file:` links. Text without a stamp stays as
-    written.
+    Markdown headings and nested list items become nodes. Each `[m:ss]` stamp
+    becomes a Timestamp link to the Transcript's Source. Prose following a node
+    supplies its explanation when present; this tool does not generate prose.
 
     The page is `<transcript_id>.html` in `output_dir`, replacing any earlier
-    page for the same Transcript. It loads Markmap from a CDN and embeds the
-    Outline, so it opens straight from disk.
+    page for the same Transcript. CSS, JavaScript, and Outline data are embedded,
+    so it opens straight from disk without network access. Radial rings is the
+    default layout; settings also offers Topic circles.
 
     `cache_dir` defaults to the per-user cache folder for klang-notes.
     `output_dir` defaults to `mindmaps/` at the repo root, found from this
     file's location, so the server's working directory does not matter.
 
     Raises `UnknownTranscriptError` when no cached Transcript has this ID, and
+    `OutlineError` when the Outline has no headings or list items. Either way it
     writes nothing.
     """
     source = get_source(transcript_id, cache_dir=cache_dir)
-    linked = link_stamps(outline, source)
+    content = _page_html(transcript_id, outline, source)
     page = (output_dir or _DEFAULT_OUTPUT_DIR).resolve() / f"{transcript_id}.html"
     page.parent.mkdir(parents=True, exist_ok=True)
-    page.write_text(_page_html(transcript_id, linked), encoding="utf-8")
+    page.write_text(content, encoding="utf-8")
     return page
-
-
-def link_stamps(outline: str, source: Source) -> str:
-    """Replace each `[m:ss]` stamp with an `<a>` linking to `source` at that second.
-
-    A local Source links to `file://<path>#t=<s>`, with the path percent-encoded.
-    A YouTube Source links to its `timestamp_url`,
-    `https://www.youtube.com/watch?v=<id>&t=<s>s`.
-
-    Minutes may count past 59, so `[75:03]` links to 4503 s. The link text is the
-    stamp written as `m:ss`.
-    """
-
-    def link(stamp: re.Match[str]) -> str:
-        offset_s = stamp_seconds(stamp)
-        return f'<a href="{_timestamp_url(source, offset_s)}">{format_stamp(offset_s)}</a>'
-
-    return STAMP.sub(link, outline)
 
 
 def _timestamp_url(source: Source, offset_s: int) -> str:
@@ -91,9 +59,95 @@ def _timestamp_url(source: Source, offset_s: int) -> str:
     return f"{source.as_uri()}#t={offset_s}"
 
 
-def _page_html(transcript_id: str, outline: str) -> str:
-    return _PAGE.format(transcript_id=transcript_id, outline_json=_script_safe_json(outline))
+def _outline_nodes(outline: str, source: Source) -> list[dict]:
+    """Read heading/list hierarchy and optional prose without interpreting HTML.
+
+    A single top-level node is the main topic. Multiple top-level nodes get a
+    common main topic. All labels and explanations are displayed as plain text.
+    """
+    nodes: list[dict] = []
+    headings: list[tuple[int, int]] = []
+    bullets: list[tuple[int, int]] = []
+    current: int | None = None
+    for line in outline.expandtabs(4).splitlines():
+        heading = _HEADING.match(line)
+        bullet = _BULLET.match(line)
+        if heading:
+            level, label = len(heading[1]), heading[2]
+            while headings and headings[-1][0] >= level:
+                headings.pop()
+            parent = headings[-1][1] if headings else None
+            bullets.clear()
+        elif bullet:
+            level, label = len(bullet[1]), bullet[2]
+            while bullets and bullets[-1][0] >= level:
+                bullets.pop()
+            parent = (
+                bullets[-1][1] if bullets else headings[-1][1] if headings else None
+            )
+        else:
+            if line.strip() and current is not None:
+                previous = nodes[current]["explanation"]
+                nodes[current]["explanation"] = f"{previous}\n{line.strip()}".strip()
+            continue
+        current = len(nodes)
+        nodes.append(
+            {
+                "id": current,
+                "parent": parent,
+                "label": STAMP.sub("", label).strip(),
+                "links": [
+                    {
+                        "text": format_stamp(stamp_seconds(stamp)),
+                        "url": _timestamp_url(source, stamp_seconds(stamp)),
+                    }
+                    for stamp in STAMP.finditer(label)
+                ],
+                "explanation": "",
+            }
+        )
+        (headings if heading else bullets).append((level, current))
+    if not nodes:
+        raise OutlineError()
+    if len([node for node in nodes if node["parent"] is None]) != 1:
+        for node in nodes:
+            node["id"] += 1
+            node["parent"] = 0 if node["parent"] is None else node["parent"] + 1
+        nodes.insert(
+            0,
+            {
+                "id": 0,
+                "parent": None,
+                "label": "Lecture notes",
+                "links": [],
+                "explanation": "",
+            },
+        )
+    return nodes
 
 
-def _script_safe_json(text: str) -> str:
-    return json.dumps(text, ensure_ascii=False).replace("<", "\\u003c")
+def _page_html(transcript_id: str, outline: str, source: Source) -> str:
+    nodes = _outline_nodes(outline, source)
+    title = nodes[0]["label"] or "Mindmap"
+    source_url = source.url if isinstance(source, YouTubeSource) else source.as_uri()
+    replacements = {
+        "__CSS__": (_ASSETS / "mindmap.css").read_text(encoding="utf-8"),
+        "__JS__": (_ASSETS / "mindmap.js").read_text(encoding="utf-8"),
+        "__DATA__": _script_safe_json(nodes),
+        "__PAGE__": _script_safe_json(
+            {"title": title, "source_url": source_url, "transcript_id": transcript_id}
+        ),
+        "__TITLE__": escape(title),
+        "__SOURCE__": escape(source_url, quote=True),
+    }
+    template = (_ASSETS / "mindmap.html").read_text(encoding="utf-8")
+    # One substitution pass keeps token-like text in the Outline literal.
+    return re.sub(
+        r"__(?:CSS|JS|DATA|PAGE|TITLE|SOURCE)__",
+        lambda match: replacements[match[0]],
+        template,
+    )
+
+
+def _script_safe_json(value: object) -> str:
+    return json.dumps(value, ensure_ascii=False).replace("<", "\\u003c")
