@@ -39,17 +39,37 @@ class UnlinkedStamp:
 
 
 @dataclass(frozen=True)
+class UnlinkedSlide:
+    """A slide marker in a node label that `render_mindmap` could not link to a Slide.
+
+    `label` is the node's label as written in the Outline, every marker and
+    stamp included. `slide` is the marker's text as written, brackets
+    included, such as `[slide 99]` or `[Slide x]`. `reason` is `"malformed"`
+    when the marker is not `slide` and a positive whole number, `"past_end"`
+    when its number is past the Deck's last Slide, and `"no_deck"` when the
+    Transcript has no Deck attached, whatever the marker's shape.
+    """
+
+    label: str
+    slide: str
+    reason: Literal["malformed", "past_end", "no_deck"]
+
+
+@dataclass(frozen=True)
 class RenderResult:
     """What `render_mindmap` tells the caller about the page it wrote.
 
     `page` is the page's absolute path. `unlinked` holds one entry per bad stamp
     occurrence in node labels, in Outline order and left to right within a
     label, so the same bad stamp on two nodes gives two entries. It is empty
-    when every stamp linked.
+    when every stamp linked. `unlinked_slides` holds one entry per bad slide
+    marker occurrence in node labels, in the same order, and is empty when
+    every marker linked or the Outline has none.
     """
 
     page: Path
     unlinked: tuple[UnlinkedStamp, ...]
+    unlinked_slides: tuple[UnlinkedSlide, ...] = ()
 
 
 def render_mindmap(
@@ -71,9 +91,24 @@ def render_mindmap(
     explanation when present; its stamps are neither linked nor reported, and
     this tool does not generate prose.
 
+    A slide marker is a bracket starting with `slide`, in any case, such as
+    `[slide 3]` or `[Slide 3]`. A node lists any number of Slides, one marker
+    each, and a Slide may appear on any number of nodes. A marker naming a
+    Slide of the Deck attached to the Transcript links that Slide to the node
+    and leaves the label. A malformed marker, one past the Deck's last Slide,
+    or any marker when the Transcript has no Deck, stays in the label as plain
+    text and is reported in `unlinked_slides`. A Slide listed twice on one
+    node counts once and is not reported. Markers in prose are neither linked
+    nor reported. Clicking a node shows its linked Slides in its panel, top to
+    bottom in Slide order, below the explanation and above the Source link,
+    each captioned and alt-texted `Slide N`. A node with no linked Slide has no
+    slide area. The page embeds each linked Slide's `image` exactly once, as a
+    base64 `data:image/png` URI, however many nodes list it, and embeds no
+    Slide that no node links.
+
     The page is `<transcript_id>.html` in `output_dir`, replacing any earlier
     page for the same Transcript, and is written even when stamps go unlinked.
-    CSS, JavaScript, and Outline data are embedded, so it opens straight from
+    CSS, JavaScript, Outline data and Slide images are embedded, so it opens straight from
     disk without network access. Radial rings is the default layout; settings
     also offers Topic circles.
 
