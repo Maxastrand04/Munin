@@ -494,3 +494,21 @@ def test_mcp_lecture_prompt_with_deck_reads_slides_between_transcript_and_render
     text = prompt_text(create_server(cache_dir=cache_dir), {"source": "lecture.m4a", "deck": "/tmp/matriser.pdf"})
     positions = [text.find(f"`{tool}`") for tool in ("get_transcript", "read_slides", "render_mindmap")]
     assert positions == sorted(positions)
+
+
+def test_mcp_lecture_prompt_without_deck_skips_read_slides(cache_dir: Path):
+    """With no Deck, the prompt never names read_slides or asks for Slide numbers."""
+    text = prompt_text(create_server(cache_dir=cache_dir), {"source": "lecture.m4a"})
+    assert "read_slides" not in text and "Slide" not in text
+
+
+def test_mcp_lecture_prompt_with_deck_asks_to_match_slides(cache_dir: Path):
+    """With a Deck, the prompt asks the LLM to match Slides to the part of the Transcript covering them."""
+    text = prompt_text(create_server(cache_dir=cache_dir), {"source": "lecture.m4a", "deck": "/tmp/matriser.pdf"})
+    assert "Match each Slide to the part of the Transcript" in text
+
+
+def test_mcp_lecture_prompt_with_deck_asks_for_slide_numbers_on_nodes(cache_dir: Path):
+    """With a Deck, the prompt asks the LLM to put the matching Slide numbers on each node."""
+    text = prompt_text(create_server(cache_dir=cache_dir), {"source": "lecture.m4a", "deck": "/tmp/matriser.pdf"})
+    assert "Slide numbers on each node" in text
