@@ -99,7 +99,8 @@ def test_opening_view_centres_main_topic(page, mindmap_url, style):
 def test_expanding_branch_keeps_existing_nodes_in_place(page, mindmap_url, style):
     page.goto(f"{mindmap_url}?variant={style}")
     before = node_boxes(page)
-    page.get_by_role("button", name="Reveal children of A", exact=True).click()
+    # The opening zoom may leave A off-screen, and scrolling it into view would move every box.
+    page.get_by_role("button", name="Reveal children of A", exact=True).dispatch_event("click")
     after = {box["label"]: box for box in node_boxes(page)}
     for box in before:
         assert after[box["label"]] == box
@@ -182,3 +183,54 @@ def test_edges_do_not_pass_through_other_nodes(page, mindmap_url, style):
     page.goto(f"{mindmap_url}?variant={style}")
     page.get_by_role("button", name="Show whole Mindmap", exact=True).click()
     assert page.evaluate(EDGES_CROSSING_NODES) == []
+
+
+MIN_READABLE_LABEL_PX = 11
+
+
+def on_screen_label_sizes(page, depth: int) -> list[dict]:
+    """Rendered font size in screen pixels of every visible label at `depth`."""
+    return page.locator(f'.node[data-depth="{depth}"] .node-label').evaluate_all(
+        "labels => labels.map(label => ({label: label.textContent,"
+        "px: parseFloat(getComputedStyle(label).fontSize)"
+        " * label.getBoundingClientRect().width / label.offsetWidth}))"
+    )
+
+
+def boxes_outside_canvas(page) -> list[str]:
+    canvas = page.locator("#canvas").bounding_box()
+    return [
+        box["label"]
+        for box in node_boxes(page)
+        if box["x"] < canvas["x"]
+        or box["y"] < canvas["y"]
+        or box["x"] + box["width"] > canvas["x"] + canvas["width"]
+        or box["y"] + box["height"] > canvas["y"] + canvas["height"]
+    ]
+
+
+def test_mindmap_opens_in_radial_rings(page, mindmap_url):
+    page.goto(mindmap_url)
+    page.get_by_role("button", name="Mindmap settings").click()
+    assert page.get_by_role("radio", name="Radial rings").is_checked()
+    assert page.locator("body").get_attribute("data-variant") == "A"
+
+
+@pytest.mark.parametrize("outline", [DEMO_OUTLINE], ids=["demo"])
+def test_opening_view_shows_every_group_with_a_readable_label(page, mindmap_url):
+    page.goto(mindmap_url)
+    sizes = on_screen_label_sizes(page, 1)
+    assert len(sizes) == 6
+    assert [size for size in sizes if size["px"] < MIN_READABLE_LABEL_PX] == []
+    assert [
+        label for label in boxes_outside_canvas(page)
+        if label in {size["label"] for size in sizes}
+    ] == []
+
+
+@pytest.mark.parametrize("style", ["C", "A"], ids=["topic-circles", "radial-rings"])
+@pytest.mark.parametrize("outline", [DEMO_OUTLINE], ids=["demo"])
+def test_show_whole_mindmap_fits_every_node_on_screen(page, mindmap_url, style):
+    page.goto(f"{mindmap_url}?variant={style}")
+    page.get_by_role("button", name="Show whole Mindmap", exact=True).click()
+    assert boxes_outside_canvas(page) == []

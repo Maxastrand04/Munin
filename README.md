@@ -47,8 +47,10 @@ uv run klang-notes-mcp
 The first transcription downloads the Pianissimo weights, and the loaded model takes about 2.4 GB of RAM. Transcripts are cached in the per-user cache folder. Mindmap pages land in `mindmaps/` at the repo root, which git ignores. Open one straight from disk in Chrome or Safari. Timestamp links work for mp4 and m4a in both.
 
 Generated Mindmaps use the approved Linen theme, ellipse nodes, an explanation panel,
-and a small settings control for Topic circles or Radial rings. Clicking a node centres
-it without changing zoom. Timestamp links open the Source separately. The page embeds
+and a small settings control for Radial rings (the default) or Topic circles. The opening
+view keeps group labels readable, so large Mindmaps may start partly off-screen; "Show
+whole Mindmap" zooms out to fit everything. Clicking a node centres it without changing
+zoom. Timestamp links open the Source separately. The page embeds
 its styles and scripts, so the Mindmap itself works offline.
 
 Outlines may use Markdown headings or nested lists. Optional prose immediately after

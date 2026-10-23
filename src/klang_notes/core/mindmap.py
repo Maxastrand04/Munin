@@ -34,8 +34,8 @@ def render_mindmap(
 
     The page is `<transcript_id>.html` in `output_dir`, replacing any earlier
     page for the same Transcript. CSS, JavaScript, and Outline data are embedded,
-    so it opens straight from disk without network access. Topic circles is the
-    default layout; settings also offers Radial rings.
+    so it opens straight from disk without network access. Radial rings is the
+    default layout; settings also offers Topic circles.
 
     `cache_dir` defaults to the per-user cache folder for klang-notes.
     `output_dir` defaults to `mindmaps/` at the repo root, found from this

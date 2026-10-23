@@ -18,10 +18,12 @@ const mainTopicColors = ['#756a59','#f8f4ec','#433b31'];
 const nodes = DATA.map(n => ({...n,children:[],depth:0,group:-1,x:0,y:0,w:220,h:96}));
 nodes.forEach(n=>{if(n.parent!==null){nodes[n.parent].children.push(n.id);n.depth=nodes[n.parent].depth+1;n.group=n.depth===1?nodes[0].children.indexOf(n.id):nodes[n.parent].group;}});
 let variant = new URLSearchParams(location.search).get('variant');
-if(!variants[variant]) variant='C';
+if(!variants[variant]) variant='A';
 let depth = new URLSearchParams(location.search).get('depth') || '2';
 if(!['1','2','all'].includes(depth)) depth='2';
-let collapsed=new Set(),selected=null,scale=1,tx=0,ty=0,drag=null;
+// The opening view never zooms out past the point where group labels stop being readable.
+const OPENING_MIN_SCALE=.55,WHOLE_MIN_SCALE=.02;
+let collapsed=new Set(),selected=null,scale=1,tx=0,ty=0,drag=null,minScale=OPENING_MIN_SCALE;
 const svgNS='http://www.w3.org/2000/svg';
 function el(tag,attrs={}) {const e=document.createElementNS(svgNS,tag);Object.entries(attrs).forEach(([k,v])=>e.setAttribute(k,v));return e;}
 function groupColors(group) {
@@ -132,13 +134,14 @@ function transform(){
   $('world').setAttribute('transform',`translate(${tx} ${ty}) scale(${scale})`);
   $('zoom').textContent=`${Math.round(scale*100)}%`;
 }
-function fit(){
+function fit(floor=minScale){
+  minScale=floor;
   const shown=nodes.filter(visible),rect=$('canvas').getBoundingClientRect();
   const minX=Math.min(...shown.map(n=>n.x-n.w/2)),maxX=Math.max(...shown.map(n=>n.x+n.w/2));
   const minY=Math.min(...shown.map(n=>n.y-n.h/2)),maxY=Math.max(...shown.map(n=>n.y+n.h/2));
   const horizontalMargin=50,verticalMargin=100,root=nodes[0];
   const halfWidth=Math.max(root.x-minX,maxX-root.x),halfHeight=Math.max(root.y-minY,maxY-root.y);
-  scale=Math.max(.02,Math.min(1.15,(rect.width/2-horizontalMargin)/halfWidth,(rect.height/2-verticalMargin)/halfHeight));
+  scale=Math.max(floor,Math.min(1.15,(rect.width/2-horizontalMargin)/halfWidth,(rect.height/2-verticalMargin)/halfHeight));
   centre(root);
 }
 function centre(n){const rect=$('canvas').getBoundingClientRect();tx=rect.width/2-n.x*scale;ty=rect.height/2-n.y*scale;transform();}
@@ -157,7 +160,7 @@ function select(id){
   $('panel').scrollTop=0;render();centre(n);
 }
 function zoom(factor,x,y){const rect=$('canvas').getBoundingClientRect();x??=rect.width/2;y??=rect.height/2;const next=Math.max(.02,Math.min(2,scale*factor));tx=x-(x-tx)*next/scale;ty=y-(y-ty)*next/scale;scale=next;transform();}
-function choose(key){variant=key;document.body.dataset.variant=key;document.body.style.setProperty('--selected-color',groupColors(selected===null?-1:nodes[selected].group)[0]);document.querySelectorAll('input[name="mindmap-style"]').forEach(input=>{input.checked=input.value===key;});$('map-kicker').textContent=variants[key][1];$('map-intro').textContent=variants[key][2];syncURL();coordinates();render();fit();}
+function choose(key){variant=key;document.body.dataset.variant=key;document.body.style.setProperty('--selected-color',groupColors(selected===null?-1:nodes[selected].group)[0]);document.querySelectorAll('input[name="mindmap-style"]').forEach(input=>{input.checked=input.value===key;});$('map-kicker').textContent=variants[key][1];$('map-intro').textContent=variants[key][2];syncURL();coordinates();render();fit(OPENING_MIN_SCALE);}
 function setSettings(open,restoreFocus=false){
   $('mindmap-settings').hidden=!open;
   $('settings-toggle').setAttribute('aria-expanded',String(open));
@@ -170,9 +173,9 @@ document.querySelectorAll('input[name="mindmap-style"]').forEach(input=>{
 });
 document.addEventListener('pointerdown',e=>{if(!$('settings').contains(e.target))setSettings(false);});
 $('depth').value=depth;
-$('depth').onchange=e=>{depth=e.target.value;resetDepth();syncURL();render();fit();};
-$('reopen').onclick=()=>{selected=null;$('panel').hidden=true;resetDepth();render();fit();};
-$('fit').onclick=()=>{collapsed.clear();render();fit();};
+$('depth').onchange=e=>{depth=e.target.value;resetDepth();syncURL();render();fit(OPENING_MIN_SCALE);};
+$('reopen').onclick=()=>{selected=null;$('panel').hidden=true;resetDepth();render();fit(OPENING_MIN_SCALE);};
+$('fit').onclick=()=>{collapsed.clear();render();fit(WHOLE_MIN_SCALE);};
 $('close').onclick=()=>{selected=null;$('panel').hidden=true;render();};
 $('in').onclick=()=>zoom(1.2);$('out').onclick=()=>zoom(1/1.2);
 $('canvas').addEventListener('wheel',e=>{e.preventDefault();const r=$('canvas').getBoundingClientRect();zoom(Math.exp(-e.deltaY*.002),e.clientX-r.left,e.clientY-r.top);},{passive:false});
