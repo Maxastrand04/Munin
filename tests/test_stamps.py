@@ -1,6 +1,6 @@
 import pytest
 
-from klang_notes.core.stamps import stamp_seconds
+from klang_notes.core.stamps import display_stamp, stamp_seconds
 
 # Well-formed stamps
 
@@ -62,3 +62,26 @@ def test_stamp_seconds_rejects_single_minute_digit_in_hour_stamp():
 def test_stamp_seconds_rejects_wrong_field_count(stamp: str):
     """A stamp with too many fields or an empty field is malformed."""
     assert stamp_seconds(stamp) is None
+
+
+# Display stamps
+
+
+def test_display_stamp_keeps_minutes_under_an_hour():
+    """A time under an hour, such as 3599 s, reads `59:59`."""
+    assert display_stamp(3599) == "59:59"
+
+
+def test_display_stamp_shows_hours_from_one_hour():
+    """A time of exactly an hour reads `1:00:00`."""
+    assert display_stamp(3600) == "1:00:00"
+
+
+def test_display_stamp_pads_minutes_after_the_hour():
+    """6321 s reads `1:45:21`, and 3665 s reads `1:01:05` with two-digit minutes."""
+    assert (display_stamp(6321), display_stamp(3665)) == ("1:45:21", "1:01:05")
+
+
+def test_display_stamp_rounds_down_to_the_whole_second():
+    """3600.9 s reads `1:00:00`."""
+    assert display_stamp(3600.9) == "1:00:00"

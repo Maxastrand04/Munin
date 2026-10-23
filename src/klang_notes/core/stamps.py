@@ -26,6 +26,19 @@ def format_stamp(seconds: float) -> str:
     return f"{minutes}:{secs:02d}"
 
 
+def display_stamp(seconds: float) -> str:
+    """Return `m:ss` under an hour and `h:mm:ss` from an hour on, rounded down to the whole second.
+
+    This is the form a Mindmap shows on its Timestamp links, so 6321 s reads
+    `1:45:21`. Transcript lines keep `format_stamp`.
+    """
+    hours, rest = divmod(int(seconds), _SECONDS_PER_MINUTE * _SECONDS_PER_MINUTE)
+    if not hours:
+        return format_stamp(rest)
+    minutes, secs = divmod(rest, _SECONDS_PER_MINUTE)
+    return f"{hours}:{minutes:02d}:{secs:02d}"
+
+
 def stamp_seconds(stamp: str) -> int | None:
     """Return the seconds offset of a stamp's text, brackets included, or None when it is malformed.
 

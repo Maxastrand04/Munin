@@ -9,7 +9,7 @@ from typing import Literal
 
 from klang_notes.core.errors import OutlineError
 from klang_notes.core.sources import Source
-from klang_notes.core.stamps import STAMP, format_stamp, stamp_seconds
+from klang_notes.core.stamps import STAMP, display_stamp, stamp_seconds
 from klang_notes.core.transcribe import CacheEntry, cached_entry
 from klang_notes.core.youtube import YouTubeSource
 
@@ -175,7 +175,7 @@ def _resolve_stamps(label: str, entry: CacheEntry) -> tuple[str, list[dict], lis
         elif offset > entry.duration_s:
             unlinked.append(UnlinkedStamp(label, stamp[0], "past_end"))
         else:
-            links.append({"text": format_stamp(offset), "url": _timestamp_url(entry.source, offset)})
+            links.append({"text": display_stamp(offset), "url": _timestamp_url(entry.source, offset)})
             shown = shown.replace(stamp[0], "", 1)
     return _SPACE_RUN.sub(" ", shown).strip(), links, unlinked
 
