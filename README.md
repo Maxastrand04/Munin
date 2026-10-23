@@ -14,7 +14,7 @@ Klang's [Pianissimo](https://huggingface.co/KlangAI/pianissimo-sv) model does th
 |---|---|
 | `transcribe(source, vocabulary?)` | Takes a YouTube URL or local file, runs Pianissimo with VAD, caches the Transcript, returns its ID and stats |
 | `get_transcript(id)` | Returns `[m:ss] text` lines for the LLM |
-| `render_mindmap(id, outline)` | Writes an interactive HTML Mindmap with Topic circles and Radial rings, turning each `[m:ss]` into a link to the Source |
+| `render_mindmap(id, outline)` | Writes an interactive HTML Mindmap with Topic circles and Radial rings, turning each `[m:ss]` or `[h:mm:ss]` into a link to the Source. Returns the page path and the stamps it left unlinked, each malformed or past the Source's end |
 
 ## Measured on an M1 Pro (ONNX int8, CPU only)
 

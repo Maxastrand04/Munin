@@ -10,7 +10,7 @@ from typing import Literal
 from klang_notes.core.errors import OutlineError
 from klang_notes.core.sources import Source
 from klang_notes.core.stamps import STAMP, format_stamp, stamp_seconds
-from klang_notes.core.transcribe import _cached_entry
+from klang_notes.core.transcribe import CacheEntry, cached_entry
 from klang_notes.core.youtube import YouTubeSource
 
 _REPO_ROOT = Path(__file__).resolve().parents[3]
@@ -19,6 +19,7 @@ _DEFAULT_OUTPUT_DIR = _REPO_ROOT / "mindmaps"
 _ASSETS = Path(__file__).with_name("mindmap_assets")
 _HEADING = re.compile(r"^\s{0,3}(#{1,6})\s+(.+?)(?:\s+#+)?\s*$")
 _BULLET = re.compile(r"^(\s*)(?:[-+*]|\d+[.)])\s+(.+)$")
+_SPACE_RUN = re.compile(r"\s{2,}")
 
 
 @dataclass(frozen=True)
@@ -84,14 +85,13 @@ def render_mindmap(
     `OutlineError` when the Outline has no headings or list items. Either way it
     writes nothing.
     """
-    entry = _cached_entry(transcript_id, cache_dir)
-    unlinked: list[UnlinkedStamp] = []
-    nodes = _outline_nodes(outline, entry.source, entry.duration_s, unlinked)
+    entry = cached_entry(transcript_id, cache_dir=cache_dir)
+    nodes, unlinked = _outline_nodes(outline, entry)
     content = _page_html(transcript_id, nodes, entry.source)
     page = (output_dir or _DEFAULT_OUTPUT_DIR).resolve() / f"{transcript_id}.html"
     page.parent.mkdir(parents=True, exist_ok=True)
     page.write_text(content, encoding="utf-8")
-    return RenderResult(page, tuple(unlinked))
+    return RenderResult(page, unlinked)
 
 
 def _timestamp_url(source: Source, offset_s: int) -> str:
@@ -100,16 +100,15 @@ def _timestamp_url(source: Source, offset_s: int) -> str:
     return f"{source.as_uri()}#t={offset_s}"
 
 
-def _outline_nodes(
-    outline: str, source: Source, duration_s: float, unlinked: list[UnlinkedStamp]
-) -> list[dict]:
+def _outline_nodes(outline: str, entry: CacheEntry) -> tuple[list[dict], tuple[UnlinkedStamp, ...]]:
     """Read heading/list hierarchy and optional prose without interpreting HTML.
 
     A single top-level node is the main topic. Multiple top-level nodes get a
     common main topic. All labels and explanations are displayed as plain text.
-    Bad stamps stay in their label and are appended to `unlinked`.
+    Returns the nodes and every node label's bad stamps, in Outline order.
     """
     nodes: list[dict] = []
+    unlinked: list[UnlinkedStamp] = []
     headings: list[tuple[int, int]] = []
     bullets: list[tuple[int, int]] = []
     current: int | None = None
@@ -135,20 +134,13 @@ def _outline_nodes(
                 nodes[current]["explanation"] = f"{previous}\n{line.strip()}".strip()
             continue
         current = len(nodes)
-        shown, links = label, []
-        for stamp in STAMP.finditer(label):
-            offset = stamp_seconds(stamp[0])
-            if offset is None or offset > duration_s:
-                reason = "malformed" if offset is None else "past_end"
-                unlinked.append(UnlinkedStamp(label, stamp[0], reason))
-                continue
-            links.append({"text": format_stamp(offset), "url": _timestamp_url(source, offset)})
-            shown = shown.replace(stamp[0], "", 1)
+        shown, links, bad = _resolve_stamps(label, entry)
+        unlinked.extend(bad)
         nodes.append(
             {
                 "id": current,
                 "parent": parent,
-                "label": re.sub(r"\s{2,}", " ", shown).strip(),
+                "label": shown,
                 "links": links,
                 "explanation": "",
             }
@@ -170,7 +162,22 @@ def _outline_nodes(
                 "explanation": "",
             },
         )
-    return nodes
+    return nodes, tuple(unlinked)
+
+
+def _resolve_stamps(label: str, entry: CacheEntry) -> tuple[str, list[dict], list[UnlinkedStamp]]:
+    """Return the label without its linked stamps, their links, and its bad stamps."""
+    shown, links, unlinked = label, [], []
+    for stamp in STAMP.finditer(label):
+        offset = stamp_seconds(stamp[0])
+        if offset is None:
+            unlinked.append(UnlinkedStamp(label, stamp[0], "malformed"))
+        elif offset > entry.duration_s:
+            unlinked.append(UnlinkedStamp(label, stamp[0], "past_end"))
+        else:
+            links.append({"text": format_stamp(offset), "url": _timestamp_url(entry.source, offset)})
+            shown = shown.replace(stamp[0], "", 1)
+    return _SPACE_RUN.sub(" ", shown).strip(), links, unlinked
 
 
 def _page_html(transcript_id: str, nodes: list[dict], source: Source) -> str:
@@ -187,7 +194,6 @@ def _page_html(transcript_id: str, nodes: list[dict], source: Source) -> str:
         "__SOURCE__": escape(source_url, quote=True),
     }
     template = (_ASSETS / "mindmap.html").read_text(encoding="utf-8")
-    # One substitution pass keeps token-like text in the Outline literal.
     return re.sub(
         r"__(?:CSS|JS|DATA|PAGE|TITLE|SOURCE)__",
         lambda match: replacements[match[0]],

@@ -25,11 +25,11 @@ A list of terms, plus a boost strength (alpha), that steers Pianissimo toward sp
 _Avoid_: glossary, keywords, hotwords
 
 **Outline**:
-The nested Markdown the LLM writes from a Transcript, where node labels carry `[m:ss]` stamps.
+The nested Markdown the LLM writes from a Transcript, where node labels carry `[m:ss]` or `[h:mm:ss]` stamps.
 _Avoid_: notes, summary, mindmap (for the Markdown)
 
 **Mindmap**:
-The rendered HTML page built from an Outline, with each stamp turned into a Timestamp link.
+The rendered HTML page built from an Outline, with each stamp turned into a Timestamp link. A malformed stamp, or one past the Source's end, stays as plain text and is reported back as unlinked.
 _Avoid_: map, graph, diagram
 
 **Timestamp link**:
@@ -43,7 +43,7 @@ _Avoid_: jump link, deep link, seek link
 - A **Segment** is merged from one or more **Fragments**
 - A **Vocabulary** is optional and applies to one transcription of a **Source**
 - An **Outline** is written from exactly one **Transcript**
-- A **Mindmap** renders exactly one **Outline** and resolves its stamps against that **Transcript**'s **Source**
+- A **Mindmap** renders exactly one **Outline** and resolves its stamps against that **Transcript**'s **Source** and the Source's duration
 
 ## Example dialogue
 

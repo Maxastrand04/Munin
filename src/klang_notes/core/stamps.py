@@ -1,4 +1,4 @@
-"""The `[m:ss]` stamp that Transcript lines carry and Outline labels repeat."""
+"""Stamps: the `[m:ss]` that Transcript lines carry, and the `[m:ss]` or `[h:mm:ss]` that Outline labels may use."""
 
 import re
 
