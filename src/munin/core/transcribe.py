@@ -60,7 +60,7 @@ class CacheEntry:
     segments: tuple[Segment, ...]
     vocabulary: Vocabulary | None = None
 
-    def result(self, transcript_id: str, *, cached: bool) -> TranscribeResult:
+    def _result(self, transcript_id: str, *, cached: bool) -> TranscribeResult:
         """Return this entry as the `TranscribeResult` for `transcript_id`, marked `cached` or not."""
         return TranscribeResult(
             transcript_id, self.duration_s, len(self.segments), self.transcription_s, cached, self.vocabulary
@@ -121,13 +121,13 @@ def transcribe(
     entry_path = _entry_path(cache_dir, transcript_id)
     vocabulary = vocabulary if vocabulary and vocabulary.terms else None
     if vocabulary is None and entry_path.is_file():
-        return _read_entry(entry_path).result(transcript_id, cached=True)
+        return _read_entry(entry_path)._result(transcript_id, cached=True)
     if isinstance(resolved, YouTubeSource):
         entry = _transcribe_video(resolved, entry_path.parent, download, recognize, vocabulary)
     else:
         entry = _transcribe_fresh(source, resolved, recognize, vocabulary)
     _write_entry(entry_path, entry)
-    return entry.result(transcript_id, cached=False)
+    return entry._result(transcript_id, cached=False)
 
 
 def get_transcript(transcript_id: str, *, cache_dir: Path | None = None) -> str:
@@ -208,13 +208,13 @@ def _duration_s(wav: Path) -> float:
 
 def _read_entry(entry_path: Path) -> CacheEntry:
     stored = json.loads(entry_path.read_text(encoding="utf-8"))
-    boost = stored.get("vocabulary")
+    stored_vocabulary = stored.get("vocabulary")
     return CacheEntry(
         source=parse_source(stored["source"]),
         duration_s=stored["duration_s"],
         transcription_s=stored["transcription_s"],
         segments=tuple(Segment(s["start"], s["end"], s["text"]) for s in stored["segments"]),
-        vocabulary=Vocabulary(boost["terms"], boost["alpha"]) if boost else None,
+        vocabulary=Vocabulary(stored_vocabulary["terms"], stored_vocabulary["alpha"]) if stored_vocabulary else None,
     )
 
 

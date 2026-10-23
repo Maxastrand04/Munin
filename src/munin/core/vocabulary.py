@@ -1,9 +1,11 @@
 """The terms, and how hard to boost them, that steer Pianissimo's spelling."""
 
-from collections.abc import Iterable
 from dataclasses import dataclass
 
 from munin.core.errors import VocabularyError
+
+_MIN_ALPHA = 0
+_MAX_ALPHA = 2
 
 
 @dataclass(frozen=True)
@@ -26,7 +28,7 @@ class Vocabulary:
     alpha: float = 1.0
 
     def __post_init__(self) -> None:
-        if not 0 <= self.alpha <= 2:
+        if not _MIN_ALPHA <= self.alpha <= _MAX_ALPHA:
             raise VocabularyError(self.alpha)
         stripped = (term.strip() for term in self.terms)
         object.__setattr__(self, "terms", tuple(dict.fromkeys(term for term in stripped if term)))
