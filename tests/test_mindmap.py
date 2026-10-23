@@ -1,10 +1,17 @@
+import json
 import re
 import shutil
 from pathlib import Path
 
 import pytest
 
-from klang_notes.core import Fragment, UnknownTranscriptError, YouTubeSource, render_mindmap, transcribe
+from klang_notes.core import (
+    Fragment,
+    UnknownTranscriptError,
+    YouTubeSource,
+    render_mindmap,
+    transcribe,
+)
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SPEECH = Path(__file__).parent / "fixtures" / "sv_short.m4a"
@@ -200,3 +207,117 @@ def test_unknown_transcript_id_writes_nothing(cache_dir: Path, tmp_path: Path):
     with pytest.raises(UnknownTranscriptError):
         render_mindmap("deadbeef0000", "# Matriser", cache_dir=cache_dir, output_dir=output_dir)
     assert not output_dir.exists()
+
+
+def embedded_nodes(page: Path) -> list[dict]:
+    return json.JSONDecoder().raw_decode(page.read_text().split("const DATA = ", 1)[1])[
+        0
+    ]
+
+
+def test_headings_lists_and_explanations_keep_their_hierarchy(
+    source: Path, cache_dir: Path, tmp_path: Path
+):
+    outline = """# Lecture [0:01]
+
+An explanation of the lecture.
+
+## First group [0:12]
+- First idea [0:15]
+  - Detail [0:20]
+    A simple explanation of the detail.
+- Second idea
+## Second group
+### Another idea
+"""
+    page = render_mindmap(
+        transcript_of(source, cache_dir),
+        outline,
+        cache_dir=cache_dir,
+        output_dir=tmp_path,
+    )
+    nodes = embedded_nodes(page)
+    assert [node["parent"] for node in nodes] == [None, 0, 1, 2, 1, 0, 5]
+    assert [node["label"] for node in nodes] == [
+        "Lecture",
+        "First group",
+        "First idea",
+        "Detail",
+        "Second idea",
+        "Second group",
+        "Another idea",
+    ]
+    assert nodes[0]["explanation"] == "An explanation of the lecture."
+    assert nodes[3]["explanation"] == "A simple explanation of the detail."
+    assert nodes[4]["explanation"] == ""
+    assert nodes[4]["links"] == []
+
+
+def test_multiple_top_level_topics_share_a_main_topic(
+    source: Path, cache_dir: Path, tmp_path: Path
+):
+    page = render_mindmap(
+        transcript_of(source, cache_dir),
+        "- First [0:01]\n- Second [0:02]",
+        cache_dir=cache_dir,
+        output_dir=tmp_path,
+    )
+    nodes = embedded_nodes(page)
+    assert [node["parent"] for node in nodes] == [None, 0, 0]
+    assert [node["id"] for node in nodes] == [0, 1, 2]
+    assert [node["label"] for node in nodes[1:]] == ["First", "Second"]
+
+
+def test_empty_outline_still_has_a_main_topic(
+    source: Path, cache_dir: Path, tmp_path: Path
+):
+    page = render_mindmap(
+        transcript_of(source, cache_dir), "", cache_dir=cache_dir, output_dir=tmp_path
+    )
+    assert embedded_nodes(page) == [
+        {
+            "id": 0,
+            "parent": None,
+            "label": "Lecture notes",
+            "links": [],
+            "explanation": "",
+        }
+    ]
+
+
+def test_outline_text_cannot_end_script_or_replace_template_tokens(
+    source: Path, cache_dir: Path, tmp_path: Path
+):
+    label = '</script><img src=x onerror=alert(1)> __CSS__ & "lecture"'
+    explanation = "</script> __JS__ __TITLE__"
+    page = render_mindmap(
+        transcript_of(source, cache_dir),
+        f"# {label}\n\n{explanation}",
+        cache_dir=cache_dir,
+        output_dir=tmp_path,
+    )
+    text = page.read_text()
+    assert text.count("</script>") == 1
+    assert "<img src=x" not in text
+    assert "&lt;/script&gt;" in text
+    assert embedded_nodes(page)[0]["label"] == label
+    assert embedded_nodes(page)[0]["explanation"] == explanation
+
+
+def test_new_page_uses_outline_title_and_contains_no_demo_content(
+    source: Path, cache_dir: Path, tmp_path: Path
+):
+    page = render_mindmap(
+        transcript_of(source, cache_dir),
+        "# En annan föreläsning\n- Första idén [0:05]",
+        cache_dir=cache_dir,
+        output_dir=tmp_path,
+    )
+    text = page.read_text()
+    assert "<title>En annan föreläsning · Klang notes</title>" in text
+    assert "sZipb-R1hfg" not in text
+    assert "Matriser" not in text
+    assert "https://cdn." not in text
+    assert 'src="http' not in text
+    assert "Topic circles" in text
+    assert "Radial rings" in text

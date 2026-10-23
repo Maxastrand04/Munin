@@ -1,0 +1,45 @@
+/* Approved Linen theme, shared by both Mindmap styles. */
+:root{--canvas:#eee8dd;--paper:#f8f4ec;--ink:#393329;--muted:#756a59;--line:#d2c7b5;--accent:#896d45;--accent-fill:#705335;--on-fill:#fffaf0;--bar:#29251f;--control:#433b31}
+*{box-sizing:border-box} :root{font-family:Inter,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:var(--ink);background:var(--canvas);font-synthesis:none;color-scheme:light}body{margin:0;height:100vh;overflow:hidden}button,a,select{-webkit-tap-highlight-color:transparent}button,select{font:inherit}button{cursor:pointer}button:focus-visible,a:focus-visible,select:focus-visible{outline:3px solid var(--accent);outline-offset:3px}a{color:inherit}button{border:1px solid var(--line);background:var(--paper);color:inherit;border-radius:8px;padding:9px 13px}button:hover{filter:brightness(.96)}.topbar{height:100px;padding:20px 36px;display:flex;align-items:center;gap:48px;border-bottom:1px solid var(--line);background:var(--paper)}.brand{text-decoration:none;letter-spacing:-2px;font-size:32px;font-weight:750;display:flex;align-items:baseline}.brand>small{font-size:12px;font-weight:500;letter-spacing:0;margin-left:7px;color:var(--muted)}.lecture{display:grid;grid-template-columns:auto auto;column-gap:18px;align-items:baseline}.eyebrow{font-size:10px;letter-spacing:1.8px;font-weight:700}.lecture>.eyebrow{grid-column:1/-1;color:var(--muted)}h1{font-size:24px;letter-spacing:-.7px;margin:5px 0 0}.lecture-meta{font-size:12px;color:var(--muted)}.source-link{margin-left:auto;font-size:12px;text-decoration:none;border:1px solid var(--line);padding:11px 15px;border-radius:8px}#workspace{height:calc(100vh - 100px);display:flex;padding-bottom:16px}.map-area{position:relative;min-width:0;flex:1;overflow:hidden;background:var(--canvas)}.map-caption{position:absolute;top:28px;left:32px;pointer-events:none;z-index:1}.map-caption .eyebrow{color:var(--muted)}.map-caption p{font-size:18px;letter-spacing:-.5px;margin:8px 0}#canvas{width:100%;height:100%;display:block;touch-action:none;cursor:grab}#canvas.dragging{cursor:grabbing}.edge{fill:none;stroke:var(--group);stroke-width:2;opacity:.65}.node-shell{height:100%;padding:5px;overflow:visible}.node-card{height:100%;position:relative;border:1.5px solid color-mix(in srgb,var(--group) 65%,var(--paper));border-radius:999px;background:var(--tint);box-shadow:0 4px 10px #2d44330a;display:flex;flex-direction:column;overflow:visible}.node-card.selected{background:var(--fill);border-color:var(--fill);box-shadow:0 5px 14px color-mix(in srgb,var(--fill) 25%,transparent)}.node-card.selected .node-label,.node-card.selected .stamp{color:var(--on-fill)}.node-card.selected .branch-toggle{background:#ffffff26;color:var(--on-fill)}.node-label{flex:1;border:0;background:transparent;text-align:left;padding:12px 25px 3px;font-size:15px;font-weight:600;line-height:1.3;border-radius:inherit;white-space:normal;color:var(--ink)}.node-footer{height:28px;display:flex;align-items:center;justify-content:space-between;padding:0 13px 8px}.stamp{font-size:11px;font-weight:500;text-decoration:none;color:var(--group)}.stamp:hover{text-decoration:underline}.branch-toggle{font-size:12px;line-height:1;border:0;border-radius:20px;background:#ffffff88;color:var(--group);padding:3px 7px;min-width:25px}.root .node-card{border-width:2px}.root .node-label{color:var(--ink)}.root .node-label{font-size:22px}.map-tools{position:absolute;left:28px;bottom:37px;display:flex;gap:12px;align-items:center}.map-tools>button{font-size:11px;padding:11px 14px;box-shadow:0 3px 12px #00000006}.zoom-controls{background:var(--paper);border:1px solid var(--line);display:flex;align-items:center;border-radius:8px}.zoom-controls button{border:0;background:transparent;font-size:17px;padding:5px 11px}.zoom-controls output{width:44px;text-align:center;font-size:11px}.gesture-hint{position:absolute;bottom:10px;left:29px;font-size:10px;color:var(--muted);margin:0}#panel{width:326px;flex-shrink:0;background:var(--paper);border:1px solid var(--line);box-shadow:-5px 7px 20px #58442614;position:relative;z-index:2;overflow:auto}#panel[hidden]{display:none}.panel-top{padding:22px 24px 12px;display:flex;justify-content:space-between;align-items:center;color:var(--muted)}.panel-top button{padding:0;width:28px;height:28px;border:0;background:transparent;font-size:23px}.panel-content{padding:16px 26px 24px}.panel-path{font-size:11px;line-height:1.7;color:var(--selected-color,var(--muted))}h2{font-size:28px;line-height:1.15;font-weight:550;letter-spacing:-.8px;margin:17px 0 25px}.panel-rule{width:36px;border-top:3px solid var(--selected-color,var(--muted));margin-bottom:26px}.explanation-label{font-size:10px;letter-spacing:1px;text-transform:uppercase;color:var(--muted)}#explanation{font-size:15px;line-height:1.8;margin:12px 0 24px}#panel-source{display:block;background:var(--accent-fill);color:var(--on-fill);padding:13px 15px;text-decoration:none;border-radius:8px;font-size:12px}.related{margin-top:35px}.related h3{font-size:10px;letter-spacing:1px;text-transform:uppercase;color:var(--muted)}.related button{display:block;border:0;border-bottom:1px solid var(--line);border-radius:0;width:100%;text-align:left;padding:12px 0;font-size:12px;background:transparent}.related button::after{content:'↗';float:right;color:var(--muted)}.sample-note{font-size:10px;line-height:1.6;color:var(--muted);margin-top:28px}.node{overflow:visible}
+/* Ellipse nodes, shared by both Mindmap styles. */
+.node-card{border-radius:50%;box-shadow:0 2px 4px #5844260d,0 7px 16px #5844261a}
+.node-label{text-align:center;padding:20px 28px 0;font-size:16px;font-weight:550}
+.node-footer{padding:0 37px 18px;height:32px}
+.root .node-label{font-size:22px}
+.node-card.selected{box-shadow:0 3px 6px #58442617,0 9px 20px color-mix(in srgb,var(--fill) 30%,transparent)}
+@media(max-width:1100px){.topbar{padding:18px 24px;gap:24px}.lecture-meta{display:none}}
+@media(prefers-reduced-motion:no-preference){.node-card{transition:background-color .15s,border-color .15s,box-shadow .15s}}
+
+/* Node area and label size decrease together at each level from the main topic. */
+.node[data-depth="0"] .node-label{font-size:32px;font-weight:650;padding:32px 40px 0}
+.node[data-depth="0"] .node-footer{height:42px;padding:0 65px 24px}
+.node[data-depth="0"] .stamp{font-size:13px}
+.node[data-depth="1"] .node-label{font-size:21px;font-weight:600;padding:25px 32px 0}
+.node[data-depth="1"] .node-footer{height:37px;padding:0 44px 20px}
+.node[data-depth="2"] .node-label{font-size:17px;padding:20px 28px 0}
+.node[data-depth="3"] .node-label{font-size:15px;padding:14px 25px 0}
+.node[data-depth="3"] .node-footer{height:28px;padding:0 32px 14px}
+.node[data-depth="0"] .node-card{border-width:2.5px}
+.node[data-depth="1"] .node-card{border-width:2px}
+
+/* Style and opening-depth settings. */
+.topbar{gap:32px}
+.settings{position:relative}
+.settings-toggle{display:grid;place-items:center;width:32px;height:32px;padding:0;border:0;background:transparent;color:var(--muted)}
+.settings-toggle:hover,.settings-toggle[aria-expanded="true"]{background:var(--canvas);color:var(--ink)}
+.settings-popover{position:absolute;right:0;top:44px;width:278px;padding:18px;background:var(--paper);border:1px solid var(--line);border-radius:12px;box-shadow:0 8px 28px #58442624;z-index:20}
+.settings-popover[hidden]{display:none}
+.settings-popover fieldset{border:0;padding:0;margin:0}
+.settings-popover legend{font-size:12px;font-weight:650;padding:0;margin-bottom:10px}
+.style-option{display:flex;gap:10px;align-items:center;padding:12px 10px;border:1px solid transparent;border-radius:8px;cursor:pointer;font-size:13px}
+.style-option:has(input:checked){background:var(--canvas);border-color:var(--line)}
+.style-option:hover{background:var(--canvas)}
+.style-option input{accent-color:var(--accent-fill);margin:0}
+.style-option small{display:block;font-size:10px;color:var(--muted);margin-top:5px}
+.opening-setting{border-top:1px solid var(--line);margin-top:14px;padding-top:15px}
+.opening-setting>label{display:block;font-size:11px;color:var(--muted);margin-bottom:8px}
+.opening-setting select{width:100%;padding:8px;background:var(--paper);color:var(--ink);border:1px solid var(--line);border-radius:6px;font-size:12px}
+.opening-setting button{width:100%;font-size:11px;margin-top:10px}
+
+.node-stamps{display:flex;gap:7px}
+#explanation{white-space:pre-line}

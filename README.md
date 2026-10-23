@@ -14,7 +14,7 @@ Klang's [Pianissimo](https://huggingface.co/KlangAI/pianissimo-sv) model does th
 |---|---|
 | `transcribe(source, vocabulary?)` | Takes a YouTube URL or local file, runs Pianissimo with VAD, caches the Transcript, returns its ID and stats |
 | `get_transcript(id)` | Returns `[m:ss] text` lines for the LLM |
-| `render_mindmap(id, outline)` | Writes a static Markmap HTML page and turns each `[m:ss]` into a link to the Source |
+| `render_mindmap(id, outline)` | Writes an interactive HTML Mindmap with Topic circles and Radial rings, turning each `[m:ss]` into a link to the Source |
 
 ## Measured on an M1 Pro (ONNX int8, CPU only)
 
@@ -45,6 +45,27 @@ uv run klang-notes-mcp
 ```
 
 The first transcription downloads the Pianissimo weights, and the loaded model takes about 2.4 GB of RAM. Transcripts are cached in the per-user cache folder. Mindmap pages land in `mindmaps/` at the repo root, which git ignores. Open one straight from disk in Chrome or Safari. Timestamp links work for mp4 and m4a in both.
+
+Generated Mindmaps use the approved Linen theme, ellipse nodes, an explanation panel,
+and a small settings control for Topic circles or Radial rings. Clicking a node centres
+it without changing zoom. Timestamp links open the Source separately. The page embeds
+its styles and scripts, so the Mindmap itself works offline.
+
+Outlines may use Markdown headings or nested lists. Optional prose immediately after
+a heading or list item appears in that node's explanation panel. The renderer does
+not generate explanations; it uses the supplied Outline.
+
+To regenerate the demo from its existing cached Transcript and the approved example
+Outline, run:
+
+```sh
+uv run python scripts/render_demo.py
+```
+
+This writes `mindmaps/5ea1f5df74c8.html`. The example Outline in
+[`docs/examples/matriser-outline.md`](docs/examples/matriser-outline.md) includes the
+sample explanations used during design review. For a different cached Transcript,
+pass `--transcript-id`.
 
 Run the tests with `uv run pytest`. Add `-m "not slow and not network"` to skip the test that loads the real model and the two that download from YouTube.
 
