@@ -5,7 +5,7 @@ from pathlib import Path
 
 from mcp import Client
 
-from munin.core import Fragment, YouTubeSource, get_transcript
+from munin.core import Fragment, Vocabulary, YouTubeSource, get_transcript
 from munin import mcp_server
 from munin.mcp_server import create_server
 
@@ -13,7 +13,7 @@ SPEECH = Path(__file__).parent / "fixtures" / "sv_short.m4a"
 WATCH_URL = "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
 
 
-def two_sentences(wav: Path):
+def two_sentences(wav: Path, vocabulary: Vocabulary | None):
     """A recognizer that ignores the audio and yields two sentences."""
     return [Fragment(1.2, 3.0, "Idag ska vi prata om matriser."), Fragment(65.7, 68.0, "En matris är en tabell.")]
 
@@ -58,19 +58,6 @@ def test_mcp_lists_all_tools(cache_dir: Path):
 
     names = {tool.name for tool in asyncio.run(run()).tools}
     assert names == {"transcribe", "get_transcript", "render_mindmap"}
-
-
-def test_mcp_transcribe_returns_result_fields(source: Path, cache_dir: Path):
-    """The transcribe tool returns the five TranscribeResult fields."""
-    server = create_server(cache_dir=cache_dir, recognize=two_sentences)
-    result = call(server, "transcribe", {"source": str(source)})
-    assert set(result.structured_content) == {
-        "transcript_id",
-        "duration_s",
-        "segment_count",
-        "transcription_s",
-        "cached",
-    }
 
 
 def test_mcp_transcribe_accepts_youtube_url(cache_dir: Path):

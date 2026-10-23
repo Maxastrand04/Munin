@@ -13,6 +13,7 @@ from munin.core import (
     NoSpeechError,
     SourceError,
     UnknownTranscriptError,
+    Vocabulary,
     YouTubeSource,
     get_transcript,
     transcribe,
@@ -34,13 +35,13 @@ MISSING_VIDEO_URL = f"https://youtu.be/{MISSING_VIDEO_ID}"
 def fake(*fragments: Fragment):
     """A recognizer that ignores the audio and yields the given fragments."""
 
-    def recognize(wav: Path):
+    def recognize(wav: Path, vocabulary: Vocabulary | None):
         return list(fragments)
 
     return recognize
 
 
-def never_called(wav: Path):
+def never_called(wav: Path, vocabulary: Vocabulary | None):
     raise AssertionError("the recognizer ran on what should be a cache hit")
 
 
@@ -101,7 +102,7 @@ def test_transcribe_reports_source_duration(source: Path, cache_dir: Path):
 def test_transcribe_reports_measured_transcription_time(source: Path, cache_dir: Path):
     """transcription_s on a fresh run covers the time the recognizer took."""
 
-    def slow_recognize(wav: Path):
+    def slow_recognize(wav: Path, vocabulary: Vocabulary | None):
         time.sleep(0.05)
         return [Fragment(0.0, 1.0, "Hej.")]
 
@@ -125,7 +126,7 @@ def test_recognizer_gets_16_khz_audio(source: Path, cache_dir: Path):
     """The recognizer receives a wav sampled at 16 kHz."""
     rates = []
 
-    def recognize(wav: Path):
+    def recognize(wav: Path, vocabulary: Vocabulary | None):
         with wave.open(str(wav)) as w:
             rates.append(w.getframerate())
         return [Fragment(0.0, 1.0, "Hej.")]
@@ -138,7 +139,7 @@ def test_recognizer_gets_mono_audio(source: Path, cache_dir: Path):
     """The recognizer receives a wav with one channel."""
     channels = []
 
-    def recognize(wav: Path):
+    def recognize(wav: Path, vocabulary: Vocabulary | None):
         with wave.open(str(wav)) as w:
             channels.append(w.getnchannels())
         return [Fragment(0.0, 1.0, "Hej.")]
