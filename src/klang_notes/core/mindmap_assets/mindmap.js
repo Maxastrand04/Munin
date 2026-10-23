@@ -57,12 +57,26 @@ function coordinates(){
       surround(id,0);
     });
   }
-  // Keep ellipses clear at every depth before freezing this variant's coordinates.
-  for(let pass=0;pass<16;pass++){
-    const overlap=nodes.some((n,i)=>nodes.slice(i+1).some(m=>Math.abs(n.x-m.x)<(n.w+m.w)/2+24&&Math.abs(n.y-m.y)<(n.h+m.h)/2+20));
-    if(!overlap)break;
-    nodes.forEach(n=>{n.x*=1.08;n.y*=1.08;});
-  }
+  separateNodes();
+}
+function separateNodes(){
+  const gapX=24,gapY=20,placed=[];
+  const overlaps=(n,m,x=n.x,y=n.y)=>Math.abs(x-m.x)<(n.w+m.w)/2+gapX&&Math.abs(y-m.y)<(n.h+m.h)/2+gapY;
+  const moveBranch=(id,dx,dy)=>{const n=nodes[id];n.x+=dx;n.y+=dy;n.children.forEach(child=>moveBranch(child,dx,dy));};
+  nodes.forEach(n=>{
+    if(placed.some(m=>overlaps(n,m))){
+      const candidates=placed.flatMap(m=>[
+        {x:m.x+(m.w+n.w)/2+gapX,y:n.y},
+        {x:m.x-(m.w+n.w)/2-gapX,y:n.y},
+        {x:n.x,y:m.y+(m.h+n.h)/2+gapY},
+        {x:n.x,y:m.y-(m.h+n.h)/2-gapY}
+      ]);
+      const free=candidates.filter(p=>placed.every(m=>!overlaps(n,m,p.x,p.y)));
+      free.sort((a,b)=>Math.hypot(a.x-n.x,a.y-n.y)-Math.hypot(b.x-n.x,b.y-n.y));
+      moveBranch(n.id,free[0].x-n.x,free[0].y-n.y);
+    }
+    placed.push(n);
+  });
 }
 function connection(p,n){
   if(variant==='A'){
@@ -110,9 +124,10 @@ function fit(){
   const shown=nodes.filter(visible),rect=$('canvas').getBoundingClientRect();
   const minX=Math.min(...shown.map(n=>n.x-n.w/2)),maxX=Math.max(...shown.map(n=>n.x+n.w/2));
   const minY=Math.min(...shown.map(n=>n.y-n.h/2)),maxY=Math.max(...shown.map(n=>n.y+n.h/2));
-  const top=85,bottom=100;
-  scale=Math.max(.02,Math.min(1.15,(rect.width-100)/(maxX-minX),(rect.height-top-bottom)/(maxY-minY)));
-  tx=rect.width/2-(minX+maxX)/2*scale;ty=top+(rect.height-top-bottom)/2-(minY+maxY)/2*scale;transform();
+  const horizontalMargin=50,verticalMargin=100,root=nodes[0];
+  const halfWidth=Math.max(root.x-minX,maxX-root.x),halfHeight=Math.max(root.y-minY,maxY-root.y);
+  scale=Math.max(.02,Math.min(1.15,(rect.width/2-horizontalMargin)/halfWidth,(rect.height/2-verticalMargin)/halfHeight));
+  centre(root);
 }
 function centre(n){const rect=$('canvas').getBoundingClientRect();tx=rect.width/2-n.x*scale;ty=rect.height/2-n.y*scale;transform();}
 function select(id){

@@ -67,7 +67,10 @@ This writes `mindmaps/5ea1f5df74c8.html`. The example Outline in
 sample explanations used during design review. For a different cached Transcript,
 pass `--transcript-id`.
 
-Run the tests with `uv run pytest`. Add `-m "not slow and not network"` to skip the test that loads the real model and the two that download from YouTube.
+Install the browser used by the Mindmap tests once with `uv run playwright install chromium`,
+then run the tests with `uv run pytest`. On Linux, use
+`uv run playwright install --with-deps chromium` to also install browser system dependencies.
+Add `-m "not slow and not network"` to skip the test that loads the real model and the tests that download from YouTube.
 
 ## Docs
 
