@@ -1,5 +1,6 @@
 """Rendering an Outline into a Mindmap page with Timestamp links."""
 
+import base64
 import json
 import re
 from dataclasses import dataclass
@@ -7,7 +8,10 @@ from html import escape
 from pathlib import Path
 from typing import Literal
 
+from munin.core import pdf
+from munin.core.cache_paths import default_cache_dir
 from munin.core.errors import OutlineError
+from munin.core.slides import deck_path
 from munin.core.sources import Source
 from munin.core.stamps import STAMP, display_stamp, stamp_seconds
 from munin.core.transcribe import CacheEntry, cached_entry
@@ -20,6 +24,8 @@ _ASSETS = Path(__file__).with_name("mindmap_assets")
 _HEADING = re.compile(r"^\s{0,3}(#{1,6})\s+(.+?)(?:\s+#+)?\s*$")
 _BULLET = re.compile(r"^(\s*)(?:[-+*]|\d+[.)])\s+(.+)$")
 _SPACE_RUN = re.compile(r"\s{2,}")
+_SLIDE_MARKER = re.compile(r"\[slide(?:\s[^\]]*)?\]", re.IGNORECASE)
+_SLIDE_NUMBER = re.compile(r"\[slide\s+(\d+)\]", re.IGNORECASE)
 
 
 @dataclass(frozen=True)
@@ -121,12 +127,19 @@ def render_mindmap(
     writes nothing.
     """
     entry = cached_entry(transcript_id, cache_dir=cache_dir)
-    nodes, unlinked = _outline_nodes(outline, entry)
-    content = _page_html(transcript_id, nodes, entry.source)
+    deck = deck_path(transcript_id, cache_dir or default_cache_dir())
+    deck_pages = pdf.page_count(deck) if deck.is_file() else None
+    nodes, unlinked, unlinked_slides = _outline_nodes(outline, entry, deck_pages)
+    linked = sorted({number for node in nodes for number in node["slides"]})
+    images = {
+        str(number): "data:image/png;base64," + base64.b64encode(pdf.page_png(deck, number)).decode()
+        for number in linked
+    }
+    content = _page_html(transcript_id, nodes, entry.source, images)
     page = (output_dir or _DEFAULT_OUTPUT_DIR).resolve() / f"{transcript_id}.html"
     page.parent.mkdir(parents=True, exist_ok=True)
     page.write_text(content, encoding="utf-8")
-    return RenderResult(page, unlinked)
+    return RenderResult(page, unlinked, unlinked_slides)
 
 
 def _timestamp_url(source: Source, offset_s: int) -> str:
@@ -135,15 +148,19 @@ def _timestamp_url(source: Source, offset_s: int) -> str:
     return f"{source.as_uri()}#t={offset_s}"
 
 
-def _outline_nodes(outline: str, entry: CacheEntry) -> tuple[list[dict], tuple[UnlinkedStamp, ...]]:
+def _outline_nodes(
+    outline: str, entry: CacheEntry, deck_pages: int | None
+) -> tuple[list[dict], tuple[UnlinkedStamp, ...], tuple[UnlinkedSlide, ...]]:
     """Read heading/list hierarchy and optional prose without interpreting HTML.
 
     A single top-level node is the main topic. Multiple top-level nodes get a
     common main topic. All labels and explanations are displayed as plain text.
-    Returns the nodes and every node label's bad stamps, in Outline order.
+    Returns the nodes, and every node label's bad stamps and bad slide markers,
+    in Outline order. `deck_pages` is None when the Transcript has no Deck.
     """
     nodes: list[dict] = []
     unlinked: list[UnlinkedStamp] = []
+    unlinked_slides: list[UnlinkedSlide] = []
     headings: list[tuple[int, int]] = []
     bullets: list[tuple[int, int]] = []
     current: int | None = None
@@ -171,12 +188,15 @@ def _outline_nodes(outline: str, entry: CacheEntry) -> tuple[list[dict], tuple[U
         current = len(nodes)
         shown, links, bad = _resolve_stamps(label, entry)
         unlinked.extend(bad)
+        shown, slides, bad_slides = _resolve_slides(label, shown, deck_pages)
+        unlinked_slides.extend(bad_slides)
         nodes.append(
             {
                 "id": current,
                 "parent": parent,
                 "label": shown,
                 "links": links,
+                "slides": slides,
                 "explanation": "",
             }
         )
@@ -194,10 +214,11 @@ def _outline_nodes(outline: str, entry: CacheEntry) -> tuple[list[dict], tuple[U
                 "parent": None,
                 "label": "Lecture notes",
                 "links": [],
+                "slides": [],
                 "explanation": "",
             },
         )
-    return nodes, tuple(unlinked)
+    return nodes, tuple(unlinked), tuple(unlinked_slides)
 
 
 def _resolve_stamps(label: str, entry: CacheEntry) -> tuple[str, list[dict], list[UnlinkedStamp]]:
@@ -215,7 +236,27 @@ def _resolve_stamps(label: str, entry: CacheEntry) -> tuple[str, list[dict], lis
     return _SPACE_RUN.sub(" ", shown).strip(), links, unlinked
 
 
-def _page_html(transcript_id: str, nodes: list[dict], source: Source) -> str:
+def _resolve_slides(
+    label: str, shown: str, deck_pages: int | None
+) -> tuple[str, list[int], list[UnlinkedSlide]]:
+    """Return the label without its linked slide markers, their sorted Slide numbers, and its bad markers."""
+    numbers: set[int] = set()
+    unlinked: list[UnlinkedSlide] = []
+    for marker in _SLIDE_MARKER.finditer(label):
+        number = _SLIDE_NUMBER.fullmatch(marker[0])
+        if deck_pages is None:
+            unlinked.append(UnlinkedSlide(label, marker[0], "no_deck"))
+        elif not number or int(number[1]) < 1:
+            unlinked.append(UnlinkedSlide(label, marker[0], "malformed"))
+        elif int(number[1]) > deck_pages:
+            unlinked.append(UnlinkedSlide(label, marker[0], "past_end"))
+        else:
+            numbers.add(int(number[1]))
+            shown = shown.replace(marker[0], "", 1)
+    return _SPACE_RUN.sub(" ", shown).strip(), sorted(numbers), unlinked
+
+
+def _page_html(transcript_id: str, nodes: list[dict], source: Source, slide_images: dict[str, str]) -> str:
     title = nodes[0]["label"] or "Mindmap"
     source_url = source.url if isinstance(source, YouTubeSource) else source.as_uri()
     replacements = {
@@ -223,7 +264,7 @@ def _page_html(transcript_id: str, nodes: list[dict], source: Source) -> str:
         "__JS__": (_ASSETS / "mindmap.js").read_text(encoding="utf-8"),
         "__DATA__": _script_safe_json(nodes),
         "__PAGE__": _script_safe_json(
-            {"title": title, "source_url": source_url, "transcript_id": transcript_id}
+            {"title": title, "source_url": source_url, "transcript_id": transcript_id, "slides": slide_images}
         ),
         "__TITLE__": escape(title),
         "__SOURCE__": escape(source_url, quote=True),

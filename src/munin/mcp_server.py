@@ -17,6 +17,7 @@ from munin.core import (
     TranscribeResult,
     Vocabulary,
     get_transcript,
+    read_slides,
     render_mindmap,
     transcribe,
 )
@@ -106,6 +107,15 @@ def create_server(
         is not empty, fix those stamps in the Outline and render again; the new page
         replaces the old one. The page defaults to Radial rings, with Topic circles
         available in settings.
+
+        When the lecture has a Deck read with `read_slides`, a node label may also
+        carry one `[slide N]` marker for each Slide that covers the topic, such as
+        `## Gausselimination [4:34] [slide 2] [slide 3]`. N counts from 1. Clicking
+        the node then shows those Slides in its panel. `unlinked_slides` lists the
+        markers left as plain text. Each entry gives the node `label`, the `slide`
+        marker as written, and a `reason`: `malformed`, `past_end` when N is past the
+        Deck's last Slide, or `no_deck` when the Transcript has no Deck. Fix those in
+        the Outline and render again.
         """
         with _core_errors_as_tool_errors():
             return render_mindmap(transcript_id, outline, cache_dir=cache_dir, output_dir=output_dir)
@@ -113,21 +123,36 @@ def create_server(
     @server.tool(name="read_slides")
     def read_slides_tool(transcript_id: str, deck: str) -> list[TextContent | Image]:
         """Attach a lecture's slide PDF to a Transcript and return every Slide's number, text and image."""
-        raise NotImplementedError
+        with _core_errors_as_tool_errors():
+            slides = read_slides(transcript_id, deck, cache_dir=cache_dir)
+        blocks: list[TextContent | Image] = []
+        for slide in slides:
+            blocks.append(TextContent(type="text", text=f"Slide {slide.number}:\n{slide.text}"))
+            blocks.append(Image(data=slide.image, format="png"))
+        return blocks
 
     @server.prompt(name="lecture_to_mindmap")
     def lecture_to_mindmap_prompt(source: str, deck: str | None = None) -> str:
         """Turn a lecture, given as a YouTube URL or local file path, into a Mindmap page."""
-        return (
-            f"Turn this lecture into a Mindmap: {source}\n\n"
-            "1. Call `transcribe` with that Source.\n"
-            "2. Call `get_transcript` with the returned Transcript ID.\n"
-            "3. Write an Outline of the lecture in the format the `render_mindmap` tool describes.\n"
-            "4. Call `render_mindmap` with the Transcript ID and the Outline.\n"
-            "5. Reply with only the page as a `file://` link, such as `file:///path/to/page.html`. "
+        steps = [
+            "Call `transcribe` with that Source.",
+            "Call `get_transcript` with the returned Transcript ID.",
+        ]
+        if deck:
+            steps.append(
+                f"Call `read_slides` with the Transcript ID and this Deck path: {deck}. "
+                "Match each Slide to the part of the Transcript that covers the same content."
+            )
+        steps += [
+            "Write an Outline of the lecture in the format the `render_mindmap` tool describes."
+            + (" Put the matching Slide numbers on each node." if deck else ""),
+            "Call `render_mindmap` with the Transcript ID and the Outline.",
+            "Reply with only the page as a `file://` link, such as `file:///path/to/page.html`. "
             "Write nothing else: no Outline, no summary, no list of steps. "
-            "If a step fails, reply with only which step failed and the error."
-        )
+            "If a step fails, reply with only which step failed and the error.",
+        ]
+        numbered = "\n".join(f"{number}. {step}" for number, step in enumerate(steps, start=1))
+        return f"Turn this lecture into a Mindmap: {source}\n\n{numbered}"
 
     return server
 

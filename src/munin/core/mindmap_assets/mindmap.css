@@ -43,3 +43,7 @@
 
 .node-stamps{display:flex;gap:7px}
 #explanation{white-space:pre-line}
+.slides{margin:18px 0}
+.slides figure{margin:0 0 14px}
+.slides img{display:block;width:100%;height:auto;border:1px solid var(--line);border-radius:6px}
+.slides figcaption{font-size:11px;color:var(--muted);margin-top:5px}

@@ -1,8 +1,14 @@
 """Reading a Deck's Slides and attaching the Deck to a Transcript."""
 
 import os
+import shutil
 from dataclasses import dataclass
 from pathlib import Path
+
+from munin.core import pdf
+from munin.core.cache_paths import default_cache_dir
+from munin.core.errors import DeckError
+from munin.core.transcribe import cached_entry
 
 
 @dataclass(frozen=True)
@@ -42,4 +48,25 @@ def read_slides(
     file, is not a readable PDF, or has no pages. Either way nothing is
     attached, and any Deck attached before stays attached.
     """
-    raise NotImplementedError
+    given = str(deck)
+    cache_dir = cache_dir or default_cache_dir()
+    cached_entry(transcript_id, cache_dir=cache_dir)
+    path = Path(deck).expanduser().resolve()
+    if not path.is_file():
+        raise DeckError(given, "not a file")
+    try:
+        pages = pdf.read_pages(path)
+    except ValueError as error:
+        raise DeckError(given, "not a readable PDF") from error
+    if not pages:
+        raise DeckError(given, "has no pages")
+    target = deck_path(transcript_id, cache_dir)
+    partial = target.with_suffix(".pdf.part")
+    shutil.copyfile(path, partial)
+    partial.replace(target)
+    return tuple(Slide(number, text, image) for number, (text, image) in enumerate(pages, start=1))
+
+
+def deck_path(transcript_id: str, cache_dir: Path) -> Path:
+    """Return where the Deck of a Transcript is kept, whether or not one is attached."""
+    return cache_dir / f"{transcript_id}.deck.pdf"
