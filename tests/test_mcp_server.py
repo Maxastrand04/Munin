@@ -115,3 +115,11 @@ def test_mcp_render_mindmap_unknown_id_error_names_it(cache_dir: Path, tmp_path:
     server = create_server(cache_dir=cache_dir, recognize=two_sentences, output_dir=tmp_path / "out")
     result = call(server, "render_mindmap", {"transcript_id": "deadbeef0000", "outline": "# Matriser"})
     assert "deadbeef0000" in result.content[0].text
+
+
+def test_mcp_render_mindmap_reports_unlinked_stamps(source: Path, cache_dir: Path, tmp_path: Path):
+    """The render_mindmap tool returns each unlinked stamp's label, stamp and reason."""
+    server = create_server(cache_dir=cache_dir, recognize=two_sentences, output_dir=tmp_path / "out")
+    transcript_id = call(server, "transcribe", {"source": str(source)}).structured_content["transcript_id"]
+    result = call(server, "render_mindmap", {"transcript_id": transcript_id, "outline": "# Matriser\n- Gauss [1:75]"})
+    assert result.structured_content["unlinked"] == [{"label": "Gauss [1:75]", "stamp": "[1:75]", "reason": "malformed"}]
