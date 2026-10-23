@@ -1,6 +1,6 @@
 // Compute the complete layout once per style, before applying branch visibility.
 const $ = id => document.getElementById(id);
-const variants = {A: ['Radial rings','LECTURE OVERVIEW','A place for every idea.'], C: ['Topic circles','LECTURE OVERVIEW','A place for every idea.']};
+const variants = {A: 'Radial rings', C: 'Topic circles'};
 // Each group has a readable accent, a quiet surface, and a saturated focus fill.
 // The 15 hues sit at least 20 degrees apart; neighbouring groups get far-apart hues.
 const palette = [
@@ -160,7 +160,7 @@ function select(id){
   $('panel').scrollTop=0;render();centre(n);
 }
 function zoom(factor,x,y){const rect=$('canvas').getBoundingClientRect();x??=rect.width/2;y??=rect.height/2;const next=Math.max(.02,Math.min(2,scale*factor));tx=x-(x-tx)*next/scale;ty=y-(y-ty)*next/scale;scale=next;transform();}
-function choose(key){variant=key;document.body.dataset.variant=key;document.body.style.setProperty('--selected-color',groupColors(selected===null?-1:nodes[selected].group)[0]);document.querySelectorAll('input[name="mindmap-style"]').forEach(input=>{input.checked=input.value===key;});$('map-kicker').textContent=variants[key][1];$('map-intro').textContent=variants[key][2];syncURL();coordinates();render();fit(OPENING_MIN_SCALE);}
+function choose(key){variant=key;document.body.dataset.variant=key;document.body.style.setProperty('--selected-color',groupColors(selected===null?-1:nodes[selected].group)[0]);document.querySelectorAll('input[name="mindmap-style"]').forEach(input=>{input.checked=input.value===key;});syncURL();coordinates();render();fit(OPENING_MIN_SCALE);}
 function setSettings(open,restoreFocus=false){
   $('mindmap-settings').hidden=!open;
   $('settings-toggle').setAttribute('aria-expanded',String(open));
