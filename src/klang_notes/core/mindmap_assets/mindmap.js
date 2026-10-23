@@ -2,11 +2,19 @@
 const $ = id => document.getElementById(id);
 const variants = {A: ['Radial rings','LECTURE OVERVIEW','A place for every idea.'], C: ['Topic circles','LECTURE OVERVIEW','A place for every idea.']};
 // Each group has a readable accent, a quiet surface, and a saturated focus fill.
+// The 15 hues sit at least 20 degrees apart; neighbouring groups get far-apart hues.
 const palette = [
  ['#58735a','#e7ece0','#3d5e42'],['#96713d','#f0e7d6','#795522'],
  ['#62758e','#e5e9ef','#445d7d'],['#9a6870','#f1e3e3','#7b4752'],
- ['#80708d','#eae4ee','#645071'],['#547c75','#e1ece6','#38635a']
+ ['#80708d','#eae4ee','#645071'],['#547c75','#e1ece6','#38635a'],
+ ['#5a7e87','#e2ecee','#39616a'],['#87635a','#eee4e2','#6a4339'],
+ ['#5c5a87','#e2e2ee','#3c396a'],['#78875a','#eaeee2','#5b6a39'],
+ ['#875a75','#eee2e9','#6a3956'],['#5a876d','#e2eee7','#396a4e'],
+ ['#87845a','#eeeee2','#6a6839'],['#865a87','#eee2ee','#69396a'],
+ ['#67875a','#e5eee2','#486a39']
 ];
+// The main topic stays in the Linen neutrals so no group shares its colour.
+const mainTopicColors = ['#756a59','#f8f4ec','#433b31'];
 const nodes = DATA.map(n => ({...n,children:[],depth:0,group:-1,x:0,y:0,w:220,h:96}));
 nodes.forEach(n=>{if(n.parent!==null){nodes[n.parent].children.push(n.id);n.depth=nodes[n.parent].depth+1;n.group=n.depth===1?nodes[0].children.indexOf(n.id):nodes[n.parent].group;}});
 let variant = new URLSearchParams(location.search).get('variant');
@@ -17,7 +25,7 @@ let collapsed=new Set(),selected=null,scale=1,tx=0,ty=0,drag=null;
 const svgNS='http://www.w3.org/2000/svg';
 function el(tag,attrs={}) {const e=document.createElementNS(svgNS,tag);Object.entries(attrs).forEach(([k,v])=>e.setAttribute(k,v));return e;}
 function groupColors(group) {
-  if (group < 0) return palette[0];
+  if (group < 0) return mainTopicColors;
   if (group < palette.length) return palette[group];
   const hue = (group * 137.508) % 360;
   return [`hsl(${hue} 24% 38%)`, `hsl(${hue} 26% 91%)`, `hsl(${hue} 30% 30%)`];

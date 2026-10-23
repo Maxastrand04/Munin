@@ -5,6 +5,7 @@ import re
 from html import escape
 from pathlib import Path
 
+from klang_notes.core.errors import OutlineError
 from klang_notes.core.sources import Source
 from klang_notes.core.stamps import STAMP, format_stamp, stamp_seconds
 from klang_notes.core.transcribe import get_source
@@ -41,6 +42,7 @@ def render_mindmap(
     file's location, so the server's working directory does not matter.
 
     Raises `UnknownTranscriptError` when no cached Transcript has this ID, and
+    `OutlineError` when the Outline has no headings or list items. Either way it
     writes nothing.
     """
     source = get_source(transcript_id, cache_dir=cache_dir)
@@ -49,26 +51,6 @@ def render_mindmap(
     page.parent.mkdir(parents=True, exist_ok=True)
     page.write_text(content, encoding="utf-8")
     return page
-
-
-def link_stamps(outline: str, source: Source) -> str:
-    """Replace each `[m:ss]` stamp with an `<a>` linking to `source` at that second.
-
-    A local Source links to `file://<path>#t=<s>`, with the path percent-encoded.
-    A YouTube Source links to its `timestamp_url`,
-    `https://www.youtube.com/watch?v=<id>&t=<s>s`.
-
-    Minutes may count past 59, so `[75:03]` links to 4503 s. The link text is the
-    stamp written as `m:ss`.
-    """
-
-    def link(stamp: re.Match[str]) -> str:
-        offset_s = stamp_seconds(stamp)
-        return (
-            f'<a href="{_timestamp_url(source, offset_s)}">{format_stamp(offset_s)}</a>'
-        )
-
-    return STAMP.sub(link, outline)
 
 
 def _timestamp_url(source: Source, offset_s: int) -> str:
@@ -125,6 +107,8 @@ def _outline_nodes(outline: str, source: Source) -> list[dict]:
             }
         )
         (headings if heading else bullets).append((level, current))
+    if not nodes:
+        raise OutlineError()
     if len([node for node in nodes if node["parent"] is None]) != 1:
         for node in nodes:
             node["id"] += 1

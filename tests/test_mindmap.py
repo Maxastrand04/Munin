@@ -7,6 +7,7 @@ import pytest
 
 from klang_notes.core import (
     Fragment,
+    OutlineError,
     UnknownTranscriptError,
     YouTubeSource,
     render_mindmap,
@@ -268,21 +269,26 @@ def test_multiple_top_level_topics_share_a_main_topic(
     assert [node["label"] for node in nodes[1:]] == ["First", "Second"]
 
 
-def test_empty_outline_still_has_a_main_topic(
+@pytest.mark.parametrize(
+    "outline", ["", "Just prose about matrices [1:00]."], ids=["empty", "prose-only"]
+)
+def test_outline_without_nodes_raises(
+    source: Path, cache_dir: Path, tmp_path: Path, outline: str
+):
+    """An Outline with no headings or list items raises instead of rendering an empty Mindmap."""
+    with pytest.raises(OutlineError, match="no headings or list items"):
+        render_mindmap(
+            transcript_of(source, cache_dir), outline, cache_dir=cache_dir, output_dir=tmp_path
+        )
+
+
+def test_outline_without_nodes_writes_nothing(
     source: Path, cache_dir: Path, tmp_path: Path
 ):
-    page = render_mindmap(
-        transcript_of(source, cache_dir), "", cache_dir=cache_dir, output_dir=tmp_path
-    )
-    assert embedded_nodes(page) == [
-        {
-            "id": 0,
-            "parent": None,
-            "label": "Lecture notes",
-            "links": [],
-            "explanation": "",
-        }
-    ]
+    transcript_id = transcript_of(source, cache_dir)
+    with pytest.raises(OutlineError):
+        render_mindmap(transcript_id, "Just prose.", cache_dir=cache_dir, output_dir=tmp_path)
+    assert not (tmp_path / f"{transcript_id}.html").exists()
 
 
 def test_outline_text_cannot_end_script_or_replace_template_tokens(

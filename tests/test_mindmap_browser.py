@@ -1,3 +1,5 @@
+import colorsys
+import re
 from itertools import combinations
 from pathlib import Path
 
@@ -101,3 +103,49 @@ def test_expanding_branch_keeps_existing_nodes_in_place(page, mindmap_url, style
     after = {box["label"]: box for box in node_boxes(page)}
     for box in before:
         assert after[box["label"]] == box
+
+
+MIN_DISTINCT_GROUPS = 15
+MANY_GROUPS_OUTLINE = "# Lecture\n" + "".join(
+    f"## Group {number}\n" for number in range(1, MIN_DISTINCT_GROUPS + 1)
+)
+
+
+def hue(colour: str) -> float:
+    red, green, blue = (int(part) / 255 for part in re.findall(r"\d+", colour)[:3])
+    return colorsys.rgb_to_hls(red, green, blue)[0] * 360
+
+
+def group_colours(page) -> dict[str, str]:
+    """Each visible node's group colour as `rgb(r, g, b)`, keyed by label."""
+    return dict(
+        page.locator(".node").evaluate_all(
+            "elements => elements.map(element => {"
+            "const probe = document.createElement('span');"
+            "probe.style.color = getComputedStyle(element.querySelector('.node-shell'))"
+            ".getPropertyValue('--group');"
+            "document.body.append(probe);"
+            "const colour = getComputedStyle(probe).color; probe.remove();"
+            "return [element.querySelector('.node-label').textContent, colour];})"
+        )
+    )
+
+
+@pytest.mark.parametrize("outline", [MANY_GROUPS_OUTLINE], ids=["many-groups"])
+def test_at_least_fifteen_groups_get_clearly_different_hues(page, mindmap_url):
+    """Fifteen groups get hues at least 20 degrees apart around the colour wheel."""
+    page.goto(mindmap_url)
+    colours = group_colours(page)
+    hues = [hue(colour) for label, colour in colours.items() if label != "Lecture"]
+    assert len(hues) == MIN_DISTINCT_GROUPS
+    for first, second in combinations(hues, 2):
+        gap = abs(first - second) % 360
+        assert min(gap, 360 - gap) >= 20, f"hues {first:.0f} and {second:.0f} too close"
+
+
+@pytest.mark.parametrize("outline", [MANY_GROUPS_OUTLINE], ids=["many-groups"])
+def test_main_topic_colour_differs_from_every_group(page, mindmap_url):
+    page.goto(mindmap_url)
+    colours = group_colours(page)
+    main_topic = colours.pop("Lecture")
+    assert main_topic not in colours.values()

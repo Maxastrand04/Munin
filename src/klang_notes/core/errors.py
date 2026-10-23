@@ -40,3 +40,10 @@ class UnknownTranscriptError(KlangError):
     def __init__(self, transcript_id: str) -> None:
         self.transcript_id = transcript_id
         super().__init__(f"No Transcript with ID {transcript_id}")
+
+
+class OutlineError(KlangError):
+    """The Outline has no Markdown headings or list items, so it has no nodes to draw."""
+
+    def __init__(self) -> None:
+        super().__init__("Outline has no headings or list items to turn into Mindmap nodes")
