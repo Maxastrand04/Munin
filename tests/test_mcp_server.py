@@ -91,7 +91,7 @@ def test_mcp_render_mindmap_returns_page_path(source: Path, cache_dir: Path, tmp
     server = create_server(cache_dir=cache_dir, recognize=two_sentences, output_dir=output_dir)
     transcript_id = call(server, "transcribe", {"source": str(source)}).structured_content["transcript_id"]
     result = call(server, "render_mindmap", {"transcript_id": transcript_id, "outline": "# Matriser [0:01]"})
-    assert result.content[0].text == str(output_dir / f"{transcript_id}.html")
+    assert result.structured_content["page"] == str(output_dir / f"{transcript_id}.html")
 
 
 def test_mcp_render_mindmap_writes_page(source: Path, cache_dir: Path, tmp_path: Path):

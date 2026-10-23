@@ -2,8 +2,10 @@
 
 import json
 import re
+from dataclasses import dataclass
 from html import escape
 from pathlib import Path
+from typing import Literal
 
 from klang_notes.core.errors import OutlineError
 from klang_notes.core.sources import Source
@@ -19,23 +21,60 @@ _HEADING = re.compile(r"^\s{0,3}(#{1,6})\s+(.+?)(?:\s+#+)?\s*$")
 _BULLET = re.compile(r"^(\s*)(?:[-+*]|\d+[.)])\s+(.+)$")
 
 
+@dataclass(frozen=True)
+class UnlinkedStamp:
+    """A stamp in a node label that `render_mindmap` left as plain text.
+
+    `label` is the node's label as written in the Outline, every stamp
+    included, so `Gauss [0:02] [1:75]` stays whole. `stamp` is the stamp's text,
+    brackets included, such as `[1:75]`. `reason` is `"malformed"` when
+    `stamp_seconds` rejects its shape, and `"past_end"` when it is well-formed
+    but later than the Source's duration.
+    """
+
+    label: str
+    stamp: str
+    reason: Literal["malformed", "past_end"]
+
+
+@dataclass(frozen=True)
+class RenderResult:
+    """What `render_mindmap` tells the caller about the page it wrote.
+
+    `page` is the page's absolute path. `unlinked` holds one entry per bad stamp
+    occurrence in node labels, in Outline order and left to right within a
+    label, so the same bad stamp on two nodes gives two entries. It is empty
+    when every stamp linked.
+    """
+
+    page: Path
+    unlinked: tuple[UnlinkedStamp, ...]
+
+
 def render_mindmap(
     transcript_id: str,
     outline: str,
     *,
     cache_dir: Path | None = None,
     output_dir: Path | None = None,
-) -> Path:
-    """Write the Mindmap page for an Outline and return the page's absolute path.
+) -> RenderResult:
+    """Write the Mindmap page for an Outline and return its path and any unlinked stamps.
 
-    Markdown headings and nested list items become nodes. Each `[m:ss]` stamp
-    becomes a Timestamp link to the Transcript's Source. Prose following a node
-    supplies its explanation when present; this tool does not generate prose.
+    Markdown headings and nested list items become nodes. Each `STAMP` match in
+    a node label is resolved with `stamp_seconds`. A stamp at or before the
+    Transcript's stored audio duration becomes a Timestamp link to the
+    Transcript's Source and leaves the label. A malformed stamp, or one past
+    the duration, stays in the label as plain text with no link, and is
+    reported in `unlinked`. Bracketed text that is not a `STAMP` match stays in
+    the label and is never reported. Prose following a node supplies its
+    explanation when present; its stamps are neither linked nor reported, and
+    this tool does not generate prose.
 
     The page is `<transcript_id>.html` in `output_dir`, replacing any earlier
-    page for the same Transcript. CSS, JavaScript, and Outline data are embedded,
-    so it opens straight from disk without network access. Radial rings is the
-    default layout; settings also offers Topic circles.
+    page for the same Transcript, and is written even when stamps go unlinked.
+    CSS, JavaScript, and Outline data are embedded, so it opens straight from
+    disk without network access. Radial rings is the default layout; settings
+    also offers Topic circles.
 
     `cache_dir` defaults to the per-user cache folder for klang-notes.
     `output_dir` defaults to `mindmaps/` at the repo root, found from this
@@ -45,12 +84,7 @@ def render_mindmap(
     `OutlineError` when the Outline has no headings or list items. Either way it
     writes nothing.
     """
-    source = get_source(transcript_id, cache_dir=cache_dir)
-    content = _page_html(transcript_id, outline, source)
-    page = (output_dir or _DEFAULT_OUTPUT_DIR).resolve() / f"{transcript_id}.html"
-    page.parent.mkdir(parents=True, exist_ok=True)
-    page.write_text(content, encoding="utf-8")
-    return page
+    raise NotImplementedError
 
 
 def _timestamp_url(source: Source, offset_s: int) -> str:

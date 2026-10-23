@@ -53,7 +53,7 @@ def mindmap_url(source: Path, cache_dir: Path, tmp_path: Path, outline):
         outline,
         cache_dir=cache_dir,
         output_dir=tmp_path,
-    ).as_uri()
+    ).page.as_uri()
 
 
 def node_boxes(page):

@@ -7,7 +7,7 @@ from klang_notes.core.errors import (
     SourceError,
     UnknownTranscriptError,
 )
-from klang_notes.core.mindmap import render_mindmap
+from klang_notes.core.mindmap import RenderResult, UnlinkedStamp, render_mindmap
 from klang_notes.core.model import Recognize, load_recognizer
 from klang_notes.core.segments import Fragment, Segment, merge_fragments
 from klang_notes.core.sources import Source, parse_source
@@ -21,11 +21,13 @@ __all__ = [
     "NoSpeechError",
     "OutlineError",
     "Recognize",
+    "RenderResult",
     "Segment",
     "Source",
     "SourceError",
     "TranscribeResult",
     "UnknownTranscriptError",
+    "UnlinkedStamp",
     "YouTubeSource",
     "download_audio",
     "get_transcript",
