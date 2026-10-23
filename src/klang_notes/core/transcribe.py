@@ -40,13 +40,22 @@ class TranscribeResult:
 
 
 @dataclass(frozen=True)
-class _CacheEntry:
+class CacheEntry:
+    """A cached Transcript and what is known about its Source.
+
+    `source` is a local Source's resolved absolute path, or for YouTube the
+    video, never the audio file downloaded to transcribe it. `duration_s` is the
+    Source's audio length in seconds, `transcription_s` how long the run that
+    made the Transcript took, and `segments` the Transcript in time order.
+    """
+
     source: Source
     duration_s: float
     transcription_s: float
     segments: tuple[Segment, ...]
 
     def result(self, transcript_id: str, *, cached: bool) -> TranscribeResult:
+        """Return this entry as the `TranscribeResult` for `transcript_id`, marked `cached` or not."""
         return TranscribeResult(transcript_id, self.duration_s, len(self.segments), self.transcription_s, cached)
 
 
@@ -113,24 +122,17 @@ def get_transcript(transcript_id: str, *, cache_dir: Path | None = None) -> str:
 
     Raises `UnknownTranscriptError` when no cached Transcript has this ID.
     """
-    segments = _cached_entry(transcript_id, cache_dir).segments
+    segments = cached_entry(transcript_id, cache_dir=cache_dir).segments
     return "\n".join(f"[{format_stamp(s.start)}] {s.text}" for s in segments)
 
 
-def get_source(transcript_id: str, *, cache_dir: Path | None = None) -> Source:
-    """Return a cached Transcript's Source.
-
-    A local Source is its resolved absolute path. A YouTube Source is the video,
-    never the audio file downloaded to transcribe it.
+def cached_entry(transcript_id: str, *, cache_dir: Path | None = None) -> CacheEntry:
+    """Return the cached Transcript with this ID.
 
     `cache_dir` defaults to the per-user cache folder for klang-notes.
 
     Raises `UnknownTranscriptError` when no cached Transcript has this ID.
     """
-    return _cached_entry(transcript_id, cache_dir).source
-
-
-def _cached_entry(transcript_id: str, cache_dir: Path | None) -> _CacheEntry:
     entry_path = _entry_path(cache_dir, transcript_id)
     if not _ID_PATTERN.fullmatch(transcript_id) or not entry_path.is_file():
         raise UnknownTranscriptError(transcript_id)
@@ -151,7 +153,7 @@ def _entry_path(cache_dir: Path | None, transcript_id: str) -> Path:
 
 def _transcribe_video(
     video: YouTubeSource, cache_folder: Path, download: Download | None, recognize: Recognize | None
-) -> _CacheEntry:
+) -> CacheEntry:
     cache_folder.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(dir=cache_folder) as workdir:
         audio = (download or download_audio)(video, Path(workdir))
@@ -160,7 +162,7 @@ def _transcribe_video(
 
 def _transcribe_fresh(
     given: str | os.PathLike[str], resolved: Path, recognize: Recognize | None
-) -> _CacheEntry:
+) -> CacheEntry:
     if not resolved.is_file():
         raise SourceError(given, "not a file or a YouTube URL")
     with tempfile.TemporaryDirectory() as workdir:
@@ -173,7 +175,7 @@ def _transcribe_fresh(
         transcription_s = time.perf_counter() - started
     if not segments:
         raise NoSpeechError(given)
-    return _CacheEntry(resolved, duration_s, transcription_s, tuple(segments))
+    return CacheEntry(resolved, duration_s, transcription_s, tuple(segments))
 
 
 def _duration_s(wav: Path) -> float:
@@ -181,9 +183,9 @@ def _duration_s(wav: Path) -> float:
         return audio.getnframes() / audio.getframerate()
 
 
-def _read_entry(entry_path: Path) -> _CacheEntry:
+def _read_entry(entry_path: Path) -> CacheEntry:
     stored = json.loads(entry_path.read_text(encoding="utf-8"))
-    return _CacheEntry(
+    return CacheEntry(
         source=parse_source(stored["source"]),
         duration_s=stored["duration_s"],
         transcription_s=stored["transcription_s"],
@@ -191,7 +193,7 @@ def _read_entry(entry_path: Path) -> _CacheEntry:
     )
 
 
-def _write_entry(entry_path: Path, entry: _CacheEntry) -> None:
+def _write_entry(entry_path: Path, entry: CacheEntry) -> None:
     stored = {
         "source": _source_key(entry.source),
         "duration_s": entry.duration_s,

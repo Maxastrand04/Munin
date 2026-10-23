@@ -11,6 +11,7 @@ from klang_notes.core import (
     Download,
     KlangError,
     Recognize,
+    RenderResult,
     TranscribeResult,
     get_transcript,
     render_mindmap,
@@ -30,7 +31,9 @@ def create_server(
     `transcribe(source: str)` takes a local file path or a YouTube URL and
     returns the `TranscribeResult` fields as an object.
     `get_transcript(transcript_id: str)` returns the `[m:ss] text` lines.
-    `render_mindmap(transcript_id: str, outline: str)` returns the page's absolute path.
+    `render_mindmap(transcript_id: str, outline: str)` returns the `RenderResult`
+    fields as an object, `page` as an absolute path string and `unlinked` as a
+    list of `label`, `stamp` and `reason` objects.
     A `KlangError` comes back as an MCP tool error carrying its message.
     """
     server = MCPServer("klang-notes")
@@ -48,16 +51,21 @@ def create_server(
             return get_transcript(transcript_id, cache_dir=cache_dir)
 
     @server.tool(name="render_mindmap")
-    def render_mindmap_tool(transcript_id: str, outline: str) -> str:
-        """Render an Outline whose node labels carry `[m:ss]` stamps into a Mindmap page.
+    def render_mindmap_tool(transcript_id: str, outline: str) -> RenderResult:
+        """Render an Outline whose node labels carry `[m:ss]` or `[h:mm:ss]` stamps into a Mindmap page.
 
-        Returns the absolute path of the written HTML page. Each stamp becomes a
-        link that opens the Transcript's Source at that second. Headings and nested
-        list items form nodes; any following prose appears in the explanation panel.
-        The page defaults to Radial rings, with Topic circles available in settings.
+        Returns `page`, the absolute path of the written HTML page, and `unlinked`,
+        the stamps left as plain text. Each good stamp becomes a link that opens the
+        Transcript's Source at that second. Each `unlinked` entry gives the node
+        `label` as written in the Outline, the `stamp`, and a `reason`: `malformed`,
+        or `past_end` when the stamp is later than the Source's end. When `unlinked`
+        is not empty, fix those stamps in the Outline and render again; the new page
+        replaces the old one. Headings and nested list items form nodes; any
+        following prose appears in the explanation panel. The page defaults to
+        Radial rings, with Topic circles available in settings.
         """
         with _core_errors_as_tool_errors():
-            return str(render_mindmap(transcript_id, outline, cache_dir=cache_dir, output_dir=output_dir))
+            return render_mindmap(transcript_id, outline, cache_dir=cache_dir, output_dir=output_dir)
 
     return server
 

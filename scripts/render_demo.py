@@ -16,7 +16,7 @@ def main() -> None:
         / "examples"
         / "matriser-outline.md"
     )
-    print(render_mindmap(args.transcript_id, outline.read_text(encoding="utf-8")))
+    print(render_mindmap(args.transcript_id, outline.read_text(encoding="utf-8")).page)
 
 
 if __name__ == "__main__":
