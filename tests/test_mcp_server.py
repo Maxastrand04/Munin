@@ -4,8 +4,9 @@ import shutil
 from pathlib import Path
 
 from mcp import Client
+from mcp.server import MCPServer
 
-from munin.core import Fragment, Vocabulary, YouTubeSource, get_transcript
+from munin.core import Fragment, Vocabulary, YouTubeSource, get_transcript, transcribe
 from munin import mcp_server
 from munin.mcp_server import create_server
 
@@ -175,19 +176,16 @@ def test_mcp_render_description_asks_for_two_or_three_levels(cache_dir: Path):
     assert "two or three levels deep" in render_tool_description(create_server(cache_dir=cache_dir))
 
 
-def test_mcp_main_writes_pages_to_mindmaps_in_working_folder(tmp_path: Path, monkeypatch):
-    """`main` points the server's output at `mindmaps/` in the folder it starts in."""
-    started = {}
-
-    class FakeServer:
-        def run(self):
-            pass
-
-    def fake_create_server(**kwargs):
-        started.update(kwargs)
-        return FakeServer()
-
+def test_mcp_main_writes_pages_to_mindmaps_in_working_folder(source: Path, tmp_path: Path, monkeypatch):
+    """The server `main` starts writes Mindmap pages into `mindmaps/` in the folder it starts in."""
+    home = tmp_path / "home"
+    home.mkdir()
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.delenv("XDG_CACHE_HOME", raising=False)
+    transcript_id = transcribe(source, recognize=two_sentences).transcript_id
+    started = []
+    monkeypatch.setattr(MCPServer, "run", lambda server, *args, **kwargs: started.append(server))
     monkeypatch.chdir(tmp_path)
-    monkeypatch.setattr(mcp_server, "create_server", fake_create_server)
     mcp_server.main()
-    assert started["output_dir"] == tmp_path / "mindmaps"
+    call(started[0], "render_mindmap", {"transcript_id": transcript_id, "outline": "# Matriser [0:01]"})
+    assert (tmp_path / "mindmaps" / f"{transcript_id}.html").is_file()
