@@ -33,5 +33,5 @@ packages = ["src/munin"]
 testpaths = ["tests"]
 markers = [
     "slow: loads the real Pianissimo model",
-    "network: downloads from YouTube with the real downloader",
+    "network: downloads from YouTube or KTH Play with the real downloader",
 ]
