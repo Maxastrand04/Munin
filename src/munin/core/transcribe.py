@@ -13,12 +13,13 @@ from pathlib import Path
 from munin.core.cache_paths import default_cache_dir
 from munin.core.decode import decode_to_wav
 from munin.core.errors import NoSpeechError, SourceError, UnknownTranscriptError
+from munin.core.kthplay import download_smallest_video
 from munin.core.model import Recognize, load_recognizer
 from munin.core.segments import Segment, merge_fragments
-from munin.core.sources import Source, parse_source
+from munin.core.sources import Download, Source, Video, parse_source
 from munin.core.stamps import format_stamp
 from munin.core.vocabulary import Vocabulary
-from munin.core.youtube import Download, YouTubeSource, download_audio
+from munin.core.youtube import YouTubeSource, download_audio
 
 _ID_LENGTH = 12
 _ID_PATTERN = re.compile(f"[0-9a-f]{{{_ID_LENGTH}}}")
@@ -48,8 +49,8 @@ class TranscribeResult:
 class CacheEntry:
     """A cached Transcript and what is known about its Source.
 
-    `source` is a local Source's resolved absolute path, or for YouTube the
-    video, never the audio file downloaded to transcribe it. `duration_s` is the
+    `source` is a local Source's resolved absolute path, or for YouTube and KTH
+    Play the video, never the file downloaded to transcribe it. `duration_s` is the
     Source's audio length in seconds, `transcription_s` how long the run that
     made the Transcript took, and `segments` the Transcript in time order.
     """
@@ -75,15 +76,17 @@ def transcribe(
     recognize: Recognize | None = None,
     download: Download | None = None,
 ) -> TranscribeResult:
-    """Transcribe a local audio or video file or a YouTube video, or return its cached Transcript.
+    """Transcribe a local audio or video file, a YouTube video or a KTH Play video, or return its cached Transcript.
 
     `source` goes through `parse_source`, so a YouTube video URL is a YouTube
-    Source and anything else is a local path.
+    Source, a KTH Play video URL is a KTH Play Source, and anything else is a
+    local path.
 
     A local path has `~` expanded and is resolved to an absolute path. That
     resolved path is the cache key, so relative, `~` and absolute forms of one
-    file share one Transcript. A YouTube Source's key is its canonical `url`, so
-    every accepted URL form of one video shares one Transcript. The Transcript ID
+    file share one Transcript. A YouTube Source's key is its canonical `url`, and
+    a KTH Play Source's key is its fixed lecture address `url`, so every accepted
+    URL form of one video shares one Transcript. The Transcript ID
     is the first 12 hex characters of the SHA-256 of the key. A cached Transcript
     is returned as is, even if the file changed since, and nothing is downloaded,
     and no recognizer is loaded or called.
@@ -96,24 +99,26 @@ def transcribe(
     a cached Transcript is returned as is, whether it was boosted or not, and
     `recognize` receives None on a miss.
 
-    On a miss, a YouTube Source's audio is first fetched with `download` into a
-    temporary work folder. The file, or the downloaded audio, is decoded with
-    ffmpeg to 16 kHz mono and passed to `recognize`, whose fragments go through
-    `merge_fragments`. The Transcript and its Source are then written to the
-    cache. For YouTube the cached Source is the video, not the downloaded file,
-    and the work folder and the audio in it are deleted before returning.
+    On a miss, a YouTube Source's audio, or a KTH Play Source's video file, is
+    first fetched with `download` into a temporary work folder. The file, or the
+    downloaded audio or video, is decoded with ffmpeg to 16 kHz mono and passed
+    to `recognize`, whose fragments go through `merge_fragments`. The Transcript
+    and its Source are then written to the cache. For a YouTube or KTH Play
+    Source the cached Source is the video, not the downloaded file, and the work
+    folder and the download in it are deleted before returning.
     `transcription_s` never includes download time.
 
     `cache_dir` defaults to the per-user cache folder for Munin.
     `recognize` defaults to `load_recognizer()`, called only on a miss.
-    `download` defaults to `download_audio`, called only on a YouTube miss.
+    `download` defaults to `download_audio` for YouTube and
+    `download_smallest_video` for KTH Play, called only on a miss for either.
 
-    Raises `SourceError` when `source` is neither an existing file nor a YouTube
-    video URL, with the reason "not a file or a YouTube URL", when ffmpeg cannot
-    decode it, or when `download` cannot fetch the video. Raises `NoSpeechError`
-    when no non-empty Segment comes out. None of these writes anything to the
-    cache, so a failed boosted run leaves the previously cached Transcript in
-    place.
+    Raises `SourceError` when `source` is not an existing file, a YouTube video
+    URL or a KTH Play video URL, with the reason "not a file, a YouTube URL or a
+    KTH Play video URL", when ffmpeg cannot decode it, or when `download`
+    cannot fetch the video. Raises `NoSpeechError` when no non-empty Segment
+    comes out. None of these writes anything to the cache, so a failed boosted
+    run leaves the previously cached Transcript in place.
     """
     parsed = parse_source(source)
     resolved = parsed.expanduser().resolve() if isinstance(parsed, Path) else parsed
@@ -122,7 +127,7 @@ def transcribe(
     vocabulary = vocabulary if vocabulary and vocabulary.terms else None
     if vocabulary is None and entry_path.is_file():
         return _read_entry(entry_path)._result(transcript_id, cached=True)
-    if isinstance(resolved, YouTubeSource):
+    if isinstance(resolved, Video):
         entry = _transcribe_video(resolved, entry_path.parent, download, recognize, vocabulary)
     else:
         entry = _transcribe_fresh(source, resolved, recognize, vocabulary)
@@ -159,7 +164,7 @@ def cached_entry(transcript_id: str, *, cache_dir: Path | None = None) -> CacheE
 
 
 def _source_key(source: Source) -> str:
-    return source.url if isinstance(source, YouTubeSource) else str(source)
+    return source.url if isinstance(source, Video) else str(source)
 
 
 def _transcript_id(key: str) -> str:
@@ -171,7 +176,7 @@ def _entry_path(cache_dir: Path | None, transcript_id: str) -> Path:
 
 
 def _transcribe_video(
-    video: YouTubeSource,
+    video: Video,
     cache_folder: Path,
     download: Download | None,
     recognize: Recognize | None,
@@ -179,15 +184,16 @@ def _transcribe_video(
 ) -> CacheEntry:
     cache_folder.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(dir=cache_folder) as workdir:
-        audio = (download or download_audio)(video, Path(workdir))
-        return replace(_transcribe_fresh(video.url, audio, recognize, vocabulary), source=video)
+        default_download = download_audio if isinstance(video, YouTubeSource) else download_smallest_video
+        downloaded = (download or default_download)(video, Path(workdir))
+        return replace(_transcribe_fresh(video.url, downloaded, recognize, vocabulary), source=video)
 
 
 def _transcribe_fresh(
     given: str | os.PathLike[str], resolved: Path, recognize: Recognize | None, vocabulary: Vocabulary | None
 ) -> CacheEntry:
     if not resolved.is_file():
-        raise SourceError(given, "not a file or a YouTube URL")
+        raise SourceError(given, "not a file, a YouTube URL or a KTH Play video URL")
     with tempfile.TemporaryDirectory() as workdir:
         wav = Path(workdir, "audio.wav")
         decode_to_wav(given, resolved, wav)

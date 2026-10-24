@@ -6,13 +6,13 @@ Klang's [Pianissimo](https://huggingface.co/KlangAI/pianissimo-sv) model does th
 
 ## Status
 
-`transcribe`, `get_transcript`, `read_slides` and `render_mindmap` work on local files and YouTube URLs, and `transcribe` takes an optional Vocabulary of course terms to spell correctly. The MVP target is the 7:11 clip [SF1624, Föreläsning 4: Matriser](https://www.youtube.com/watch?v=sZipb-R1hfg).
+`transcribe`, `get_transcript`, `read_slides` and `render_mindmap` work on local files, YouTube URLs and KTH Play video URLs, and `transcribe` takes an optional Vocabulary of course terms to spell correctly. The MVP target is the 7:11 clip [SF1624, Föreläsning 4: Matriser](https://www.youtube.com/watch?v=sZipb-R1hfg).
 
 ## Tools
 
 | Tool | Does |
 |---|---|
-| `transcribe(source, vocabulary?, alpha?)` | Takes a YouTube URL or local file, runs Pianissimo with VAD, caches the Transcript, returns its ID and stats. Vocabulary terms are case sensitive and boosted at `alpha`, 0 to 2, default 1.0. A call with terms reruns the Source and replaces its cached Transcript under the same ID |
+| `transcribe(source, vocabulary?, alpha?)` | Takes a YouTube URL, a KTH Play video URL or a local file, runs Pianissimo with VAD, caches the Transcript, returns its ID and stats. Vocabulary terms are case sensitive and boosted at `alpha`, 0 to 2, default 1.0. A call with terms reruns the Source and replaces its cached Transcript under the same ID |
 | `get_transcript(id)` | Returns `[m:ss] text` lines for the LLM |
 | `read_slides(id, deck)` | Attaches a PDF of lecture slides (a Deck) to a Transcript, replacing any earlier Deck, and returns each Slide's number, text and image for the LLM to match against the Transcript |
 | `render_mindmap(id, outline)` | Writes an interactive HTML Mindmap with Topic circles and Radial rings, turning each `[m:ss]` or `[h:mm:ss]` into a link to the Source and showing the Slides named by `[slide N]` markers in the node's panel. Returns the page path, the stamps it left unlinked (malformed or past the Source's end) and the Slide markers it left unlinked (malformed, past the Deck's last Slide, or no Deck) |
@@ -77,7 +77,7 @@ pass `--transcript-id`.
 Install the browser used by the Mindmap tests once with `uv run playwright install chromium`,
 then run the tests with `uv run pytest`. On Linux, use
 `uv run playwright install --with-deps chromium` to also install browser system dependencies.
-Add `-m "not slow and not network"` to skip the test that loads the real model and the tests that download from YouTube.
+Add `-m "not slow and not network"` to skip the test that loads the real model and the tests that download from YouTube or KTH Play.
 
 ## Docs
 

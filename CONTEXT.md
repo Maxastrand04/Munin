@@ -5,7 +5,7 @@ Munin turns a recorded Swedish lecture into a mindmap whose nodes link back to t
 ## Language
 
 **Source**:
-The recording a Transcript was made from, either a YouTube URL or a local audio or video file path.
+The recording a Transcript was made from: a YouTube URL, a KTH Play video URL, or a local audio or video file path. A KTH Play Source is identified by its Kaltura entry ID alone, and its fixed lecture address is `https://play.kth.se/media/t/<entry id>`.
 _Avoid_: input, video, file
 
 **Transcript**:
@@ -41,7 +41,7 @@ The rendered HTML page built from an Outline, with each stamp turned into a Time
 _Avoid_: map, graph, diagram
 
 **Timestamp link**:
-A link that opens the Source at a given second, `&t=<s>s` for YouTube and `#t=<s>` for local files.
+A link that opens the Source at a given second, `&t=<s>s` for YouTube, `?st=<s>` on the fixed lecture address for KTH Play, and `#t=<s>` for local files.
 _Avoid_: jump link, deep link, seek link
 
 ## Relationships
