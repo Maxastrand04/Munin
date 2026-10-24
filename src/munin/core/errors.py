@@ -24,6 +24,20 @@ class SourceError(MuninError):
         super().__init__(f"Cannot read {self.path}: {reason}")
 
 
+class DeckError(MuninError):
+    """The Deck is not a file, is not a PDF that can be read, or has no pages.
+
+    `path` is the path as the caller gave it, and `reason` is one of
+    "not a file", "not a readable PDF" or "has no pages". The message names
+    both, as in "Cannot read slides.pdf: has no pages".
+    """
+
+    def __init__(self, path: str | Path, reason: str) -> None:
+        self.path = str(path)
+        self.reason = reason
+        super().__init__(f"Cannot read {self.path}: {reason}")
+
+
 class NoSpeechError(KlangError):
     """The Source decoded, but VAD and Pianissimo found no non-empty speech in it.
 

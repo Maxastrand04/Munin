@@ -23,6 +23,48 @@ def cache_dir(tmp_path: Path) -> Path:
 
 
 @pytest.fixture
+def write_deck():
+    """Write a PDF with one page per string, each page showing its string in Helvetica, and return its path."""
+    return write_pdf
+
+
+@pytest.fixture
+def deck(tmp_path: Path) -> Path:
+    """A three-page Deck whose Slides read Matriser, Gausselimination and Determinant."""
+    return write_pdf(tmp_path / "decks" / "matriser.pdf", ["Matriser", "Gausselimination", "Determinant"])
+
+
+def write_pdf(path: Path, pages: list[str]) -> Path:
+    page_count = len(pages)
+    objects = [
+        b"<< /Type /Catalog /Pages 2 0 R >>",
+        b"<< /Type /Pages /Kids ["
+        + b" ".join(f"{4 + 2 * i} 0 R".encode() for i in range(page_count))
+        + f"] /Count {page_count} >>".encode(),
+        b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
+    ]
+    for index, text in enumerate(pages):
+        stream = f"BT /F1 36 Tf 72 300 Td ({text}) Tj ET".encode()
+        objects.append(
+            f"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 640 480] "
+            f"/Resources << /Font << /F1 3 0 R >> >> /Contents {5 + 2 * index} 0 R >>".encode()
+        )
+        objects.append(f"<< /Length {len(stream)} >>\nstream\n".encode() + stream + b"\nendstream")
+    body = b"%PDF-1.4\n"
+    offsets = []
+    for number, content in enumerate(objects, start=1):
+        offsets.append(len(body))
+        body += f"{number} 0 obj\n".encode() + content + b"\nendobj\n"
+    xref = len(body)
+    body += f"xref\n0 {len(objects) + 1}\n0000000000 65535 f \n".encode()
+    body += b"".join(f"{offset:010d} 00000 n \n".encode() for offset in offsets)
+    body += f"trailer\n<< /Size {len(objects) + 1} /Root 1 0 R >>\nstartxref\n{xref}\n%%EOF\n".encode()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(body)
+    return path
+
+
+@pytest.fixture
 def five_second_source(tmp_path: Path) -> Path:
     """A WAV of exactly 5.0 s of silence, so stamps can sit on the Source's end to the second."""
     path = tmp_path / "media" / "five_seconds.wav"

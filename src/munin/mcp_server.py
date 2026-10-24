@@ -5,7 +5,9 @@ from contextlib import contextmanager
 from pathlib import Path
 
 from mcp.server import MCPServer
+from mcp.server.mcpserver import Image
 from mcp.server.mcpserver.exceptions import ToolError
+from mcp.types import TextContent
 
 from munin.core import (
     Download,
@@ -15,6 +17,7 @@ from munin.core import (
     TranscribeResult,
     Vocabulary,
     get_transcript,
+    read_slides,
     render_mindmap,
     transcribe,
 )
@@ -27,7 +30,7 @@ def create_server(
     output_dir: Path | None = None,
     download: Download | None = None,
 ) -> MCPServer:
-    """Build the MCP server with three tools and one prompt, passing its arguments to the core.
+    """Build the MCP server with four tools and one prompt, passing its arguments to the core.
 
     `transcribe(source: str, vocabulary: list[str] | None = None, alpha: float = 1.0)`
     takes a local file path or a YouTube URL, plus optional Vocabulary terms and
@@ -41,9 +44,20 @@ def create_server(
     `get_transcript(transcript_id: str)` returns the `[m:ss] text` lines.
     `render_mindmap(transcript_id: str, outline: str)` returns the `RenderResult`
     fields as an object, `page` as an absolute path string and `unlinked` as a
-    list of `label`, `stamp` and `reason` objects.
-    The `lecture_to_mindmap(source: str)` prompt lists the run's steps for one
-    Source and leaves the Outline format to `render_mindmap`'s description.
+    list of `label`, `stamp` and `reason` objects, and `unlinked_slides` as a
+    list of `label`, `slide` and `reason` objects. Its description gives the
+    `[slide N]` marker format next to the stamp format.
+    `read_slides(transcript_id: str, deck: str)` attaches the Deck through the
+    core's `read_slides` and returns two content blocks per Slide in Slide
+    order: a text block `Slide N:` followed by the Slide's text on the next
+    line, then the Slide's image as a PNG image block.
+    The `lecture_to_mindmap(source: str, deck: str | None = None)` prompt lists
+    the run's steps for one Source and leaves the Outline format to
+    `render_mindmap`'s description. With a `deck`, it adds a step between
+    `get_transcript` and writing the Outline that calls `read_slides` with the
+    Transcript ID and that Deck path, and asks the LLM to match each Slide to
+    the part of the Transcript covering the same content. Without one, its
+    text is the same as before Decks existed.
     A `MuninError` comes back as an MCP tool error carrying its message.
     """
     server = MCPServer("munin")
@@ -93,23 +107,52 @@ def create_server(
         is not empty, fix those stamps in the Outline and render again; the new page
         replaces the old one. The page defaults to Radial rings, with Topic circles
         available in settings.
+
+        When the lecture has a Deck read with `read_slides`, a node label may also
+        carry one `[slide N]` marker for each Slide that covers the topic, such as
+        `## Gausselimination [4:34] [slide 2] [slide 3]`. N counts from 1. Clicking
+        the node then shows those Slides in its panel. `unlinked_slides` lists the
+        markers left as plain text. Each entry gives the node `label`, the `slide`
+        marker as written, and a `reason`: `malformed`, `past_end` when N is past the
+        Deck's last Slide, or `no_deck` when the Transcript has no Deck. Fix those in
+        the Outline and render again.
         """
         with _core_errors_as_tool_errors():
             return render_mindmap(transcript_id, outline, cache_dir=cache_dir, output_dir=output_dir)
 
+    @server.tool(name="read_slides")
+    def read_slides_tool(transcript_id: str, deck: str) -> list[TextContent | Image]:
+        """Attach a lecture's slide PDF to a Transcript and return every Slide's number, text and image."""
+        with _core_errors_as_tool_errors():
+            slides = read_slides(transcript_id, deck, cache_dir=cache_dir)
+        blocks: list[TextContent | Image] = []
+        for slide in slides:
+            blocks.append(TextContent(type="text", text=f"Slide {slide.number}:\n{slide.text}"))
+            blocks.append(Image(data=slide.image, format="png"))
+        return blocks
+
     @server.prompt(name="lecture_to_mindmap")
-    def lecture_to_mindmap_prompt(source: str) -> str:
+    def lecture_to_mindmap_prompt(source: str, deck: str | None = None) -> str:
         """Turn a lecture, given as a YouTube URL or local file path, into a Mindmap page."""
-        return (
-            f"Turn this lecture into a Mindmap: {source}\n\n"
-            "1. Call `transcribe` with that Source.\n"
-            "2. Call `get_transcript` with the returned Transcript ID.\n"
-            "3. Write an Outline of the lecture in the format the `render_mindmap` tool describes.\n"
-            "4. Call `render_mindmap` with the Transcript ID and the Outline.\n"
-            "5. Reply with only the page as a `file://` link, such as `file:///path/to/page.html`. "
+        steps = [
+            "Call `transcribe` with that Source.",
+            "Call `get_transcript` with the returned Transcript ID.",
+        ]
+        if deck:
+            steps.append(
+                f"Call `read_slides` with the Transcript ID and this Deck path: {deck}. "
+                "Match each Slide to the part of the Transcript that covers the same content."
+            )
+        steps += [
+            "Write an Outline of the lecture in the format the `render_mindmap` tool describes."
+            + (" Put the matching Slide numbers on each node." if deck else ""),
+            "Call `render_mindmap` with the Transcript ID and the Outline.",
+            "Reply with only the page as a `file://` link, such as `file:///path/to/page.html`. "
             "Write nothing else: no Outline, no summary, no list of steps. "
-            "If a step fails, reply with only which step failed and the error."
-        )
+            "If a step fails, reply with only which step failed and the error.",
+        ]
+        numbered = "\n".join(f"{number}. {step}" for number, step in enumerate(steps, start=1))
+        return f"Turn this lecture into a Mindmap: {source}\n\n{numbered}"
 
     return server
 

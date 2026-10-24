@@ -1,3 +1,4 @@
+import base64
 import json
 import re
 import shutil
@@ -8,10 +9,13 @@ import pytest
 from munin.core import (
     Fragment,
     OutlineError,
+    Slide,
     UnknownTranscriptError,
+    UnlinkedSlide,
     UnlinkedStamp,
     Vocabulary,
     YouTubeSource,
+    read_slides,
     render_mindmap,
     transcribe,
 )
@@ -61,6 +65,10 @@ def embedded_nodes(page: Path) -> list[dict]:
 
 def labels_in(page: Path) -> list[str]:
     return [node["label"] for node in embedded_nodes(page)]
+
+
+def encoded(slide: Slide) -> str:
+    return base64.b64encode(slide.image).decode()
 
 
 # Stamps become Timestamp links
@@ -293,6 +301,114 @@ def test_corrected_outline_links_fixed_stamp(five_second_source: Path, cache_dir
     render_page(transcript_id, "# Matriser\n- Gauss [1:75]", cache_dir=cache_dir, output_dir=output_dir)
     page = render_page(transcript_id, "# Matriser\n- Gauss [0:03]", cache_dir=cache_dir, output_dir=output_dir)
     assert links_in(page) == [f"{five_second_source.resolve().as_uri()}#t=3"]
+
+
+# Slide markers link Slides
+
+
+@pytest.fixture
+def slides_transcript(source: Path, deck: Path, cache_dir: Path) -> tuple[str, tuple[Slide, ...]]:
+    """A Transcript with the three-page Deck attached, and that Deck's Slides."""
+    transcript_id = transcript_of(source, cache_dir)
+    return transcript_id, read_slides(transcript_id, deck, cache_dir=cache_dir)
+
+
+def test_linked_slide_marker_leaves_the_label(slides_transcript, cache_dir: Path, tmp_path: Path):
+    """A marker naming one of the Deck's Slides is removed from the node's label."""
+    transcript_id, _ = slides_transcript
+    page = render_page(transcript_id, "# Matriser\n- Gauss [0:02] [slide 2]", cache_dir=cache_dir, output_dir=tmp_path)
+    assert labels_in(page) == ["Matriser", "Gauss"]
+
+
+def test_listed_slide_image_is_embedded(slides_transcript, cache_dir: Path, tmp_path: Path):
+    """The page embeds the image of a Slide a node lists."""
+    transcript_id, slides = slides_transcript
+    page = render_page(transcript_id, "# Matriser\n- Gauss [slide 2]", cache_dir=cache_dir, output_dir=tmp_path)
+    assert encoded(slides[1]) in page.read_text(encoding="utf-8")
+
+
+def test_capitalised_slide_marker_links(slides_transcript, cache_dir: Path, tmp_path: Path):
+    """`[Slide 2]` links Slide 2 the same as `[slide 2]`."""
+    transcript_id, slides = slides_transcript
+    page = render_page(transcript_id, "# Matriser\n- Gauss [Slide 2]", cache_dir=cache_dir, output_dir=tmp_path)
+    assert encoded(slides[1]) in page.read_text(encoding="utf-8")
+
+
+def test_unlisted_slide_is_not_embedded(slides_transcript, cache_dir: Path, tmp_path: Path):
+    """The page embeds no image of a Slide that no node lists."""
+    transcript_id, slides = slides_transcript
+    page = render_page(transcript_id, "# Matriser\n- Gauss [slide 2]", cache_dir=cache_dir, output_dir=tmp_path)
+    assert encoded(slides[2]) not in page.read_text(encoding="utf-8")
+
+
+def test_slide_on_two_nodes_is_embedded_once(slides_transcript, cache_dir: Path, tmp_path: Path):
+    """A Slide listed on two nodes appears in the page exactly once."""
+    transcript_id, slides = slides_transcript
+    outline = "# Matriser\n- Gauss [slide 2]\n- Rang [slide 2]"
+    page = render_page(transcript_id, outline, cache_dir=cache_dir, output_dir=tmp_path)
+    assert page.read_text(encoding="utf-8").count(encoded(slides[1])) == 1
+
+
+def test_good_slide_marker_beside_bad_one_still_links(slides_transcript, cache_dir: Path, tmp_path: Path):
+    """A good marker on the same node as a bad one still embeds its Slide."""
+    transcript_id, slides = slides_transcript
+    page = render_page(transcript_id, "# Matriser\n- Gauss [slide 2] [slide 9]", cache_dir=cache_dir, output_dir=tmp_path)
+    assert encoded(slides[1]) in page.read_text(encoding="utf-8")
+
+
+# Bad slide markers stay plain text and are reported
+
+
+def test_slide_listed_twice_on_one_node_is_not_reported(slides_transcript, cache_dir: Path, tmp_path: Path):
+    """A Slide listed twice on one node links and is not reported."""
+    transcript_id, _ = slides_transcript
+    result = render_mindmap(transcript_id, "# Matriser\n- Gauss [slide 2] [slide 2]", cache_dir=cache_dir, output_dir=tmp_path)
+    assert result.unlinked_slides == ()
+
+
+def test_slide_past_deck_end_is_reported(slides_transcript, cache_dir: Path, tmp_path: Path):
+    """A marker past the Deck's last Slide comes back as `past_end` with its label and marker."""
+    transcript_id, _ = slides_transcript
+    result = render_mindmap(transcript_id, "# Matriser\n- Gauss [slide 4]", cache_dir=cache_dir, output_dir=tmp_path)
+    assert result.unlinked_slides == (UnlinkedSlide("Gauss [slide 4]", "[slide 4]", "past_end"),)
+
+
+def test_unlinked_slide_marker_stays_in_the_label(slides_transcript, cache_dir: Path, tmp_path: Path):
+    """A marker that does not link stays in the node's label as plain text."""
+    transcript_id, _ = slides_transcript
+    page = render_page(transcript_id, "# Matriser\n- Gauss [slide 4]", cache_dir=cache_dir, output_dir=tmp_path)
+    assert labels_in(page) == ["Matriser", "Gauss [slide 4]"]
+
+
+@pytest.mark.parametrize("marker", ["[slide 0]", "[slide x]", "[slide 3-5]", "[slide]", "[Slide -1]"])
+def test_malformed_slide_marker_is_reported(slides_transcript, cache_dir: Path, tmp_path: Path, marker: str):
+    """A marker that is not `slide` and a positive whole number comes back as `malformed`."""
+    transcript_id, _ = slides_transcript
+    result = render_mindmap(transcript_id, f"# Matriser\n- Gauss {marker}", cache_dir=cache_dir, output_dir=tmp_path)
+    assert result.unlinked_slides == (UnlinkedSlide(f"Gauss {marker}", marker, "malformed"),)
+
+
+def test_slide_marker_without_deck_is_reported_as_no_deck(source: Path, cache_dir: Path, tmp_path: Path):
+    """On a Transcript with no Deck, every marker comes back as `no_deck`, whatever its shape."""
+    outline = "# Matriser\n- Gauss [slide 1]\n- Rang [slide x]"
+    result = render_mindmap(transcript_of(source, cache_dir), outline, cache_dir=cache_dir, output_dir=tmp_path)
+    assert [entry.reason for entry in result.unlinked_slides] == ["no_deck", "no_deck"]
+
+
+def test_slide_marker_in_prose_is_not_reported(slides_transcript, cache_dir: Path, tmp_path: Path):
+    """A marker in a node's explanation prose is neither linked nor reported."""
+    transcript_id, _ = slides_transcript
+    outline = "# Matriser\n- Gauss [slide 2]\n  Se även [slide 9]."
+    result = render_mindmap(transcript_id, outline, cache_dir=cache_dir, output_dir=tmp_path)
+    assert result.unlinked_slides == ()
+
+
+def test_unlinked_slides_follow_outline_order(slides_transcript, cache_dir: Path, tmp_path: Path):
+    """Bad markers come back in Outline order, left to right within a label."""
+    transcript_id, _ = slides_transcript
+    outline = "# Matriser\n- Gauss [slide 9] [slide x]\n- Rang [slide 0]"
+    result = render_mindmap(transcript_id, outline, cache_dir=cache_dir, output_dir=tmp_path)
+    assert [entry.slide for entry in result.unlinked_slides] == ["[slide 9]", "[slide x]", "[slide 0]"]
 
 
 # Writing the page

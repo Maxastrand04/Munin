@@ -1,5 +1,6 @@
 """Rendering an Outline into a Mindmap page with Timestamp links."""
 
+import base64
 import json
 import re
 from dataclasses import dataclass
@@ -7,7 +8,10 @@ from html import escape
 from pathlib import Path
 from typing import Literal
 
+from munin.core import pdf
+from munin.core.cache_paths import default_cache_dir
 from munin.core.errors import OutlineError
+from munin.core.slides import deck_path
 from munin.core.sources import Source
 from munin.core.stamps import STAMP, display_stamp, stamp_seconds
 from munin.core.transcribe import CacheEntry, cached_entry
@@ -20,6 +24,8 @@ _ASSETS = Path(__file__).with_name("mindmap_assets")
 _HEADING = re.compile(r"^\s{0,3}(#{1,6})\s+(.+?)(?:\s+#+)?\s*$")
 _BULLET = re.compile(r"^(\s*)(?:[-+*]|\d+[.)])\s+(.+)$")
 _SPACE_RUN = re.compile(r"\s{2,}")
+_SLIDE_MARKER = re.compile(r"\[slide(?:\s[^\]]*)?\]", re.IGNORECASE)
+_SLIDE_NUMBER = re.compile(r"\[slide\s+(\d+)\]", re.IGNORECASE)
 
 
 @dataclass(frozen=True)
@@ -39,17 +45,37 @@ class UnlinkedStamp:
 
 
 @dataclass(frozen=True)
+class UnlinkedSlide:
+    """A slide marker in a node label that `render_mindmap` could not link to a Slide.
+
+    `label` is the node's label as written in the Outline, every marker and
+    stamp included. `slide` is the marker's text as written, brackets
+    included, such as `[slide 99]` or `[Slide x]`. `reason` is `"malformed"`
+    when the marker is not `slide` and a positive whole number, `"past_end"`
+    when its number is past the Deck's last Slide, and `"no_deck"` when the
+    Transcript has no Deck attached, whatever the marker's shape.
+    """
+
+    label: str
+    slide: str
+    reason: Literal["malformed", "past_end", "no_deck"]
+
+
+@dataclass(frozen=True)
 class RenderResult:
     """What `render_mindmap` tells the caller about the page it wrote.
 
     `page` is the page's absolute path. `unlinked` holds one entry per bad stamp
     occurrence in node labels, in Outline order and left to right within a
     label, so the same bad stamp on two nodes gives two entries. It is empty
-    when every stamp linked.
+    when every stamp linked. `unlinked_slides` holds one entry per bad slide
+    marker occurrence in node labels, in the same order, and is empty when
+    every marker linked or the Outline has none.
     """
 
     page: Path
     unlinked: tuple[UnlinkedStamp, ...]
+    unlinked_slides: tuple[UnlinkedSlide, ...] = ()
 
 
 def render_mindmap(
@@ -71,9 +97,24 @@ def render_mindmap(
     explanation when present; its stamps are neither linked nor reported, and
     this tool does not generate prose.
 
+    A slide marker is a bracket starting with `slide`, in any case, such as
+    `[slide 3]` or `[Slide 3]`. A node lists any number of Slides, one marker
+    each, and a Slide may appear on any number of nodes. A marker naming a
+    Slide of the Deck attached to the Transcript links that Slide to the node
+    and leaves the label. A malformed marker, one past the Deck's last Slide,
+    or any marker when the Transcript has no Deck, stays in the label as plain
+    text and is reported in `unlinked_slides`. A Slide listed twice on one
+    node counts once and is not reported. Markers in prose are neither linked
+    nor reported. Clicking a node shows its linked Slides in its panel, top to
+    bottom in Slide order, below the explanation and above the Source link,
+    each captioned and alt-texted `Slide N`. A node with no linked Slide has no
+    slide area. The page embeds each linked Slide's `image` exactly once, as a
+    base64 `data:image/png` URI, however many nodes list it, and embeds no
+    Slide that no node links.
+
     The page is `<transcript_id>.html` in `output_dir`, replacing any earlier
     page for the same Transcript, and is written even when stamps go unlinked.
-    CSS, JavaScript, and Outline data are embedded, so it opens straight from
+    CSS, JavaScript, Outline data and Slide images are embedded, so it opens straight from
     disk without network access. Radial rings is the default layout; settings
     also offers Topic circles.
 
@@ -86,12 +127,23 @@ def render_mindmap(
     writes nothing.
     """
     entry = cached_entry(transcript_id, cache_dir=cache_dir)
-    nodes, unlinked = _outline_nodes(outline, entry)
-    content = _page_html(transcript_id, nodes, entry.source)
+    deck = deck_path(transcript_id, cache_dir or default_cache_dir())
+    deck_pages = pdf.page_count(deck) if deck.is_file() else None
+    nodes, unlinked, unlinked_slides = _outline_nodes(outline, entry, deck_pages)
+    linked = sorted({number for node in nodes for number in node["slides"]})
+    content = _page_html(transcript_id, nodes, entry.source, _slide_images(deck, linked))
     page = (output_dir or _DEFAULT_OUTPUT_DIR).resolve() / f"{transcript_id}.html"
     page.parent.mkdir(parents=True, exist_ok=True)
     page.write_text(content, encoding="utf-8")
-    return RenderResult(page, unlinked)
+    return RenderResult(page, unlinked, unlinked_slides)
+
+
+def _slide_images(deck: Path, numbers: list[int]) -> dict[str, str]:
+    """Return each numbered Slide of the Deck as a PNG data URI, keyed by its number as text."""
+    return {
+        str(number): "data:image/png;base64," + base64.b64encode(pdf.page_png(deck, number)).decode()
+        for number in numbers
+    }
 
 
 def _timestamp_url(source: Source, offset_s: int) -> str:
@@ -100,15 +152,19 @@ def _timestamp_url(source: Source, offset_s: int) -> str:
     return f"{source.as_uri()}#t={offset_s}"
 
 
-def _outline_nodes(outline: str, entry: CacheEntry) -> tuple[list[dict], tuple[UnlinkedStamp, ...]]:
+def _outline_nodes(
+    outline: str, entry: CacheEntry, deck_pages: int | None
+) -> tuple[list[dict], tuple[UnlinkedStamp, ...], tuple[UnlinkedSlide, ...]]:
     """Read heading/list hierarchy and optional prose without interpreting HTML.
 
     A single top-level node is the main topic. Multiple top-level nodes get a
     common main topic. All labels and explanations are displayed as plain text.
-    Returns the nodes and every node label's bad stamps, in Outline order.
+    Returns the nodes, and every node label's bad stamps and bad slide markers,
+    in Outline order. `deck_pages` is None when the Transcript has no Deck.
     """
     nodes: list[dict] = []
     unlinked: list[UnlinkedStamp] = []
+    unlinked_slides: list[UnlinkedSlide] = []
     headings: list[tuple[int, int]] = []
     bullets: list[tuple[int, int]] = []
     current: int | None = None
@@ -136,12 +192,15 @@ def _outline_nodes(outline: str, entry: CacheEntry) -> tuple[list[dict], tuple[U
         current = len(nodes)
         shown, links, bad = _resolve_stamps(label, entry)
         unlinked.extend(bad)
+        shown, slides, bad_slides = _resolve_slides(label, shown, deck_pages)
+        unlinked_slides.extend(bad_slides)
         nodes.append(
             {
                 "id": current,
                 "parent": parent,
                 "label": shown,
                 "links": links,
+                "slides": slides,
                 "explanation": "",
             }
         )
@@ -159,10 +218,11 @@ def _outline_nodes(outline: str, entry: CacheEntry) -> tuple[list[dict], tuple[U
                 "parent": None,
                 "label": "Lecture notes",
                 "links": [],
+                "slides": [],
                 "explanation": "",
             },
         )
-    return nodes, tuple(unlinked)
+    return nodes, tuple(unlinked), tuple(unlinked_slides)
 
 
 def _resolve_stamps(label: str, entry: CacheEntry) -> tuple[str, list[dict], list[UnlinkedStamp]]:
@@ -180,7 +240,28 @@ def _resolve_stamps(label: str, entry: CacheEntry) -> tuple[str, list[dict], lis
     return _SPACE_RUN.sub(" ", shown).strip(), links, unlinked
 
 
-def _page_html(transcript_id: str, nodes: list[dict], source: Source) -> str:
+def _resolve_slides(
+    label: str, shown: str, deck_pages: int | None
+) -> tuple[str, list[int], list[UnlinkedSlide]]:
+    """Return the label without its linked slide markers, their sorted Slide numbers, and its bad markers."""
+    numbers: set[int] = set()
+    unlinked: list[UnlinkedSlide] = []
+    for marker in _SLIDE_MARKER.finditer(label):
+        match = _SLIDE_NUMBER.fullmatch(marker[0])
+        number = int(match[1]) if match else 0
+        if deck_pages is None:
+            unlinked.append(UnlinkedSlide(label, marker[0], "no_deck"))
+        elif number < 1:
+            unlinked.append(UnlinkedSlide(label, marker[0], "malformed"))
+        elif number > deck_pages:
+            unlinked.append(UnlinkedSlide(label, marker[0], "past_end"))
+        else:
+            numbers.add(number)
+            shown = shown.replace(marker[0], "", 1)
+    return _SPACE_RUN.sub(" ", shown).strip(), sorted(numbers), unlinked
+
+
+def _page_html(transcript_id: str, nodes: list[dict], source: Source, slide_images: dict[str, str]) -> str:
     title = nodes[0]["label"] or "Mindmap"
     source_url = source.url if isinstance(source, YouTubeSource) else source.as_uri()
     replacements = {
@@ -188,7 +269,7 @@ def _page_html(transcript_id: str, nodes: list[dict], source: Source) -> str:
         "__JS__": (_ASSETS / "mindmap.js").read_text(encoding="utf-8"),
         "__DATA__": _script_safe_json(nodes),
         "__PAGE__": _script_safe_json(
-            {"title": title, "source_url": source_url, "transcript_id": transcript_id}
+            {"title": title, "source_url": source_url, "transcript_id": transcript_id, "slides": slide_images}
         ),
         "__TITLE__": escape(title),
         "__SOURCE__": escape(source_url, quote=True),

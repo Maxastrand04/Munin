@@ -150,6 +150,13 @@ function select(id){
   document.body.style.setProperty('--selected-color',(groupColors(n.group))[0]);
   const path=[];let p=n.parent;while(p!==null){path.unshift(nodes[p].label);p=nodes[p].parent;}
   $('panel-path').textContent=path.join(' / ')||'Lecture overview';$('panel-title').textContent=n.label;$('explanation').textContent=n.explanation||'Open the Source to explore this idea in context.';
+  $('slides').replaceChildren();
+  n.slides.forEach(number=>{
+    const figure=document.createElement('figure'),image=document.createElement('img'),caption=document.createElement('figcaption');
+    image.src=PAGE.slides[number];image.alt=`Slide ${number}`;caption.textContent=`Slide ${number}`;
+    figure.append(image,caption);$('slides').append(figure);
+  });
+  $('slides').hidden=!n.slides.length;
   const timestamp=n.links[0];
   $('panel-source').href=timestamp?timestamp.url:PAGE.source_url;
   $('panel-source').textContent=timestamp?`▶  Open Source at ${timestamp.text} ↗`:'Open Source ↗';
