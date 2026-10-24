@@ -77,7 +77,7 @@ pass `--transcript-id`.
 Install the browser used by the Mindmap tests once with `uv run playwright install chromium`,
 then run the tests with `uv run pytest`. On Linux, use
 `uv run playwright install --with-deps chromium` to also install browser system dependencies.
-Add `-m "not slow and not network"` to skip the test that loads the real model and the tests that download from YouTube.
+Add `-m "not slow and not network"` to skip the test that loads the real model and the tests that download from YouTube or KTH Play.
 
 ## Docs
 

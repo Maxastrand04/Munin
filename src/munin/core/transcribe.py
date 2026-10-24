@@ -13,12 +13,12 @@ from pathlib import Path
 from munin.core.cache_paths import default_cache_dir
 from munin.core.decode import decode_to_wav
 from munin.core.errors import NoSpeechError, SourceError, UnknownTranscriptError
+from munin.core.kthplay import download_smallest_video
 from munin.core.model import Recognize, load_recognizer
 from munin.core.segments import Segment, merge_fragments
 from munin.core.sources import Download, Source, Video, parse_source
 from munin.core.stamps import format_stamp
 from munin.core.vocabulary import Vocabulary
-from munin.core.kthplay import KthPlaySource, download_smallest_video
 from munin.core.youtube import YouTubeSource, download_audio
 
 _ID_LENGTH = 12
@@ -127,7 +127,7 @@ def transcribe(
     vocabulary = vocabulary if vocabulary and vocabulary.terms else None
     if vocabulary is None and entry_path.is_file():
         return _read_entry(entry_path)._result(transcript_id, cached=True)
-    if isinstance(resolved, YouTubeSource | KthPlaySource):
+    if isinstance(resolved, Video):
         entry = _transcribe_video(resolved, entry_path.parent, download, recognize, vocabulary)
     else:
         entry = _transcribe_fresh(source, resolved, recognize, vocabulary)
@@ -164,7 +164,7 @@ def cached_entry(transcript_id: str, *, cache_dir: Path | None = None) -> CacheE
 
 
 def _source_key(source: Source) -> str:
-    return source.url if isinstance(source, YouTubeSource | KthPlaySource) else str(source)
+    return source.url if isinstance(source, Video) else str(source)
 
 
 def _transcript_id(key: str) -> str:
@@ -184,9 +184,9 @@ def _transcribe_video(
 ) -> CacheEntry:
     cache_folder.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(dir=cache_folder) as workdir:
-        default = download_audio if isinstance(video, YouTubeSource) else download_smallest_video
-        audio = (download or default)(video, Path(workdir))
-        return replace(_transcribe_fresh(video.url, audio, recognize, vocabulary), source=video)
+        default_download = download_audio if isinstance(video, YouTubeSource) else download_smallest_video
+        downloaded = (download or default_download)(video, Path(workdir))
+        return replace(_transcribe_fresh(video.url, downloaded, recognize, vocabulary), source=video)
 
 
 def _transcribe_fresh(

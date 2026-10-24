@@ -12,11 +12,9 @@ from munin.core import pdf
 from munin.core.cache_paths import default_cache_dir
 from munin.core.errors import OutlineError
 from munin.core.slides import deck_path
-from munin.core.sources import Source
+from munin.core.sources import Source, Video
 from munin.core.stamps import STAMP, display_stamp, stamp_seconds
 from munin.core.transcribe import CacheEntry, cached_entry
-from munin.core.kthplay import KthPlaySource
-from munin.core.youtube import YouTubeSource
 
 _REPO_ROOT = Path(__file__).resolve().parents[3]
 _DEFAULT_OUTPUT_DIR = _REPO_ROOT / "mindmaps"
@@ -148,7 +146,7 @@ def _slide_images(deck: Path, numbers: list[int]) -> dict[str, str]:
 
 
 def _timestamp_url(source: Source, offset_s: int) -> str:
-    if isinstance(source, YouTubeSource | KthPlaySource):
+    if isinstance(source, Video):
         return source.timestamp_url(offset_s)
     return f"{source.as_uri()}#t={offset_s}"
 
@@ -264,7 +262,7 @@ def _resolve_slides(
 
 def _page_html(transcript_id: str, nodes: list[dict], source: Source, slide_images: dict[str, str]) -> str:
     title = nodes[0]["label"] or "Mindmap"
-    source_url = source.url if isinstance(source, YouTubeSource | KthPlaySource) else source.as_uri()
+    source_url = source.url if isinstance(source, Video) else source.as_uri()
     replacements = {
         "__CSS__": (_ASSETS / "mindmap.css").read_text(encoding="utf-8"),
         "__JS__": (_ASSETS / "mindmap.js").read_text(encoding="utf-8"),

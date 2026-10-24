@@ -1,7 +1,7 @@
 """KTH Play videos as a Source: telling their URLs apart, linking into them, and downloading their video."""
 
-from dataclasses import dataclass
 import re
+from dataclasses import dataclass
 from pathlib import Path
 from urllib.parse import urlsplit
 
@@ -9,7 +9,9 @@ from munin.core import ytdlp
 
 _SCHEMES = {"http", "https"}
 _HOST = "play.kth.se"
-_ENTRY_ID = re.compile(r"[0-9]_[a-z0-9]{8}")
+_VIDEO_PATH = re.compile(r"/media/(?:[^/]+/)?(?P<entry_id>[0-9]_[a-z0-9]{8})/?")
+_TOP_RANKED = "b"
+_SMALLEST_FIRST = ["+size", "+br"]
 
 
 @dataclass(frozen=True)
@@ -57,13 +59,8 @@ def parse_kthplay_url(text: str) -> KthPlaySource | None:
         return None
     if parsed.scheme not in _SCHEMES or parsed.netloc.lower() != _HOST:
         return None
-    segments = parsed.path.removesuffix("/").split("/")
-    if len(segments) < 3 or len(segments) > 4 or segments[:2] != ["", "media"]:
-        return None
-    entry_id = segments[-1]
-    if len(segments) == 4 and not segments[2]:
-        return None
-    return KthPlaySource(entry_id) if _ENTRY_ID.fullmatch(entry_id) else None
+    video_path = _VIDEO_PATH.fullmatch(parsed.path)
+    return KthPlaySource(video_path["entry_id"]) if video_path else None
 
 
 def download_smallest_video(video: KthPlaySource, workdir: Path) -> Path:
@@ -76,4 +73,4 @@ def download_smallest_video(video: KthPlaySource, workdir: Path) -> Path:
     video is restricted, removed, or unreachable, for example because the
     machine is offline.
     """
-    return ytdlp.fetch(video.url, workdir, "b", ["+size", "+br"])
+    return ytdlp.fetch(video.url, workdir, _TOP_RANKED, _SMALLEST_FIRST)

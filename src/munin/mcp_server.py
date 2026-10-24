@@ -34,8 +34,9 @@ def create_server(
 
     `transcribe(source: str, vocabulary: list[str] | None = None, alpha: float = 1.0)`
     takes a local file path, a YouTube URL or a KTH Play video URL, plus
-    optional Vocabulary terms and boost strength, and returns the `TranscribeResult` fields as an object, with
-    `vocabulary` as `terms` and `alpha` or null. The tool always builds a
+    optional Vocabulary terms and boost strength, and returns the
+    `TranscribeResult` fields as an object, with `vocabulary` as `terms` and
+    `alpha` or null. The tool always builds a
     `Vocabulary` from `vocabulary` and `alpha`, so an `alpha` outside 0 to 2 is
     a tool error even without terms, and nothing is transcribed or cached.
     Its description tells the LLM that terms are case sensitive, and that it can
