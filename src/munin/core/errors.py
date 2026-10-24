@@ -12,7 +12,7 @@ class KlangError(MuninError):
 
 
 class SourceError(MuninError):
-    """The Source is neither a file nor a YouTube URL, ffmpeg cannot decode it, or its video cannot be downloaded.
+    """The Source is not a file, a YouTube URL or a KTH Play video URL, ffmpeg cannot decode it, or its video cannot be downloaded.
 
     `path` is the path or URL as the caller gave it, or a video's canonical URL
     for a failed download, and the message names it.

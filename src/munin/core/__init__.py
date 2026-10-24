@@ -10,20 +10,22 @@ from munin.core.errors import (
     UnknownTranscriptError,
     VocabularyError,
 )
+from munin.core.kthplay import KthPlaySource, download_smallest_video, parse_kthplay_url
 from munin.core.mindmap import RenderResult, UnlinkedSlide, UnlinkedStamp, render_mindmap
 from munin.core.model import Recognize, load_recognizer
 from munin.core.segments import Fragment, Segment, merge_fragments
 from munin.core.slides import Slide, read_slides
-from munin.core.sources import Source, parse_source
+from munin.core.sources import Download, Source, Video, parse_source
 from munin.core.transcribe import TranscribeResult, get_transcript, transcribe
 from munin.core.vocabulary import Vocabulary
-from munin.core.youtube import Download, YouTubeSource, download_audio, parse_youtube_url
+from munin.core.youtube import YouTubeSource, download_audio, parse_youtube_url
 
 __all__ = [
     "DeckError",
     "Download",
     "Fragment",
     "KlangError",
+    "KthPlaySource",
     "MuninError",
     "NoSpeechError",
     "OutlineError",
@@ -37,13 +39,16 @@ __all__ = [
     "UnknownTranscriptError",
     "UnlinkedSlide",
     "UnlinkedStamp",
+    "Video",
     "Vocabulary",
     "VocabularyError",
     "YouTubeSource",
     "download_audio",
+    "download_smallest_video",
     "get_transcript",
     "load_recognizer",
     "merge_fragments",
+    "parse_kthplay_url",
     "parse_source",
     "parse_youtube_url",
     "read_slides",

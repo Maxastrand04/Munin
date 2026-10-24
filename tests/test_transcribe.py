@@ -550,7 +550,7 @@ def test_unfetchable_video_is_not_cached(cache_dir: Path):
 
 def test_neither_file_nor_youtube_url_raises_source_error_saying_so(tmp_path: Path, cache_dir: Path):
     """A string that is neither an existing file nor a YouTube URL raises SourceError saying so."""
-    with pytest.raises(SourceError, match="not a file or a YouTube URL"):
+    with pytest.raises(SourceError, match="not a file, a YouTube URL or a KTH Play video URL"):
         transcribe(str(tmp_path / "nope.m4a"), cache_dir=cache_dir, recognize=TWO_SENTENCES, download=never_download)
 
 
@@ -570,7 +570,7 @@ def test_neither_file_nor_youtube_url_raises_source_error_saying_so(tmp_path: Pa
 )
 def test_unaccepted_url_raises_source_error_saying_so(url: str, cache_dir: Path):
     """A URL outside the accepted YouTube forms raises the same error as a missing file, without downloading."""
-    with pytest.raises(SourceError, match="not a file or a YouTube URL"):
+    with pytest.raises(SourceError, match="not a file, a YouTube URL or a KTH Play video URL"):
         transcribe(url, cache_dir=cache_dir, recognize=TWO_SENTENCES, download=never_download)
 
 

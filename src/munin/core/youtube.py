@@ -1,7 +1,6 @@
 """YouTube videos as a Source: telling their URLs apart, linking into them, and downloading their audio."""
 
 import re
-from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 from urllib.parse import parse_qs, urlsplit
@@ -38,13 +37,6 @@ class YouTubeSource:
         return f"{self.url}&t={offset_s}s"
 
 
-Download = Callable[[YouTubeSource, Path], Path]
-"""Takes a video and a work folder, writes the video's audio track into the folder, and returns that file's path.
-
-Raises `SourceError` naming the video's `url` when the audio cannot be fetched.
-"""
-
-
 def parse_youtube_url(text: str) -> YouTubeSource | None:
     """Return the video `text` points at, or None when `text` is not a YouTube video URL.
 
@@ -77,9 +69,9 @@ def parse_youtube_url(text: str) -> YouTubeSource | None:
 def download_audio(video: YouTubeSource, workdir: Path) -> Path:
     """Download only the audio track of `video` with yt-dlp into `workdir` and return the file's path.
 
-    This is the default `Download`. It imports yt-dlp on call, so parsing URLs
-    never loads it. It writes nothing to stdout, which the stdio MCP server
-    uses for its messages.
+    This is the default `Download` for YouTube. It imports yt-dlp on call, so
+    parsing URLs never loads it. It writes nothing to stdout, which the stdio
+    MCP server uses for its messages.
 
     Raises `SourceError` naming `video.url`, with yt-dlp's reason, when the video
     is private, removed, or unreachable, for example because the machine is

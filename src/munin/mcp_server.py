@@ -33,8 +33,8 @@ def create_server(
     """Build the MCP server with four tools and one prompt, passing its arguments to the core.
 
     `transcribe(source: str, vocabulary: list[str] | None = None, alpha: float = 1.0)`
-    takes a local file path or a YouTube URL, plus optional Vocabulary terms and
-    boost strength, and returns the `TranscribeResult` fields as an object, with
+    takes a local file path, a YouTube URL or a KTH Play video URL, plus
+    optional Vocabulary terms and boost strength, and returns the `TranscribeResult` fields as an object, with
     `vocabulary` as `terms` and `alpha` or null. The tool always builds a
     `Vocabulary` from `vocabulary` and `alpha`, so an `alpha` outside 0 to 2 is
     a tool error even without terms, and nothing is transcribed or cached.
@@ -64,7 +64,7 @@ def create_server(
 
     @server.tool(name="transcribe")
     def transcribe_tool(source: str, vocabulary: list[str] | None = None, alpha: float = 1.0) -> TranscribeResult:
-        """Transcribe a local audio or video file, or a YouTube video URL, and return its Transcript ID and stats.
+        """Transcribe a local audio or video file, a YouTube video URL or a KTH Play video URL, and return its Transcript ID and stats.
 
         `vocabulary` is an optional list of course terms to spell correctly, and
         `alpha` is the boost strength from 0 to 2, default 1.0. Terms are
@@ -133,7 +133,7 @@ def create_server(
 
     @server.prompt(name="lecture_to_mindmap")
     def lecture_to_mindmap_prompt(source: str, deck: str | None = None) -> str:
-        """Turn a lecture, given as a YouTube URL or local file path, into a Mindmap page."""
+        """Turn a lecture, given as a YouTube URL, a KTH Play video URL or a local file path, into a Mindmap page."""
         steps = [
             "Call `transcribe` with that Source.",
             "Call `get_transcript` with the returned Transcript ID.",
