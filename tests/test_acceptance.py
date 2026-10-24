@@ -14,6 +14,7 @@ from munin.core import (
     NoSpeechError,
     SourceError,
     Vocabulary,
+    download_smallest_video,
     parse_kthplay_url,
     parse_source,
     read_slides,
@@ -27,6 +28,10 @@ SPEECH = Path(__file__).parent / "fixtures" / "sv_short.m4a"
 ENTRY_ID = "0_1zk8obn5"
 FIXED_URL = f"https://play.kth.se/media/t/{ENTRY_ID}"
 SLUG_URL = f"https://play.kth.se/media/Föreläsning+4A+Matriser/{ENTRY_ID}"
+SHORT_ENTRY_ID = "0_kcveux4p"
+SHORT_DURATION_S = 16.4
+SMALLEST_FILE_BYTES = 1_334_087
+MISSING_ENTRY_ID = "0_zzzzzzzz"
 KTHPLAY_LINK = re.compile(r"https://play\.kth\.se/media/t/\w+\?st=\d+")
 
 LINK_FORMS = [
@@ -260,3 +265,27 @@ def test_mcp_transcribe_accepts_kthplay_url(cache_dir: Path):
 
     result = asyncio.run(run())
     assert result.structured_content["transcript_id"] == hashlib.sha256(FIXED_URL.encode()).hexdigest()[:12]
+
+
+# The real KTH Play downloader
+
+
+@pytest.mark.network
+def test_real_kthplay_download_is_smallest_file_on_offer(tmp_path: Path):
+    """The default KTH Play downloader fetches the smallest file on offer, mp4-666 of the short video, not the larger hls-715."""
+    file = download_smallest_video(KthPlaySource(SHORT_ENTRY_ID), tmp_path)
+    assert file.stat().st_size == SMALLEST_FILE_BYTES
+
+
+@pytest.mark.network
+def test_real_kthplay_download_decodes_to_full_length(cache_dir: Path):
+    """The default KTH Play downloader's file decodes to the video's full length."""
+    result = transcribe(f"https://play.kth.se/media/t/{SHORT_ENTRY_ID}", cache_dir=cache_dir, recognize=two_sentences)
+    assert result.duration_s == pytest.approx(SHORT_DURATION_S, abs=1.5)
+
+
+@pytest.mark.network
+def test_real_kthplay_missing_entry_raises_source_error_naming_fixed_address(cache_dir: Path):
+    """The default KTH Play downloader turns an entry KTH Play can't serve into SourceError naming its fixed lecture address."""
+    with pytest.raises(SourceError, match=re.escape(f"https://play.kth.se/media/t/{MISSING_ENTRY_ID}")):
+        transcribe(f"https://play.kth.se/media/t/{MISSING_ENTRY_ID}", cache_dir=cache_dir, recognize=two_sentences)
