@@ -15,6 +15,7 @@ from munin.core import (
     SourceError,
     Vocabulary,
     download_smallest_video,
+    get_transcript,
     parse_kthplay_url,
     parse_source,
     read_slides,
@@ -63,6 +64,11 @@ NOT_VIDEO_LINKS = [
 def two_sentences(wav: Path, vocabulary: Vocabulary | None):
     """A recognizer that ignores the audio and yields two sentences."""
     return [Fragment(1.2, 3.0, "Idag ska vi prata om matriser."), Fragment(65.7, 68.0, "En matris är en tabell.")]
+
+
+def gauss(wav: Path, vocabulary: Vocabulary | None):
+    """A recognizer that ignores the audio and yields one sentence naming Gauss."""
+    return [Fragment(1.2, 3.0, "Idag ska vi prata om Gauss.")]
 
 
 def no_speech(wav: Path, vocabulary: Vocabulary | None):
@@ -198,6 +204,15 @@ def test_kthplay_vocabulary_run_keeps_transcript_id(cache_dir: Path):
     assert boosted.transcript_id == first.transcript_id
 
 
+def test_kthplay_vocabulary_run_replaces_saved_transcript(cache_dir: Path):
+    """After a boosted run on a KTH Play Source, its saved Transcript reads back as the boosted text."""
+    transcribe_kthplay(SLUG_URL, cache_dir)
+    boosted = transcribe(
+        SLUG_URL, cache_dir=cache_dir, recognize=gauss, download=fake_download(), vocabulary=Vocabulary(["Gauss"])
+    )
+    assert get_transcript(boosted.transcript_id, cache_dir=cache_dir) == "[0:01] Idag ska vi prata om Gauss."
+
+
 def test_unfetchable_kthplay_video_raises_source_error_naming_fixed_address(cache_dir: Path):
     """A KTH Play video the downloader can't fetch raises SourceError naming the fixed lecture address."""
     with pytest.raises(SourceError, match=re.escape(FIXED_URL)):
@@ -267,6 +282,17 @@ def test_mcp_transcribe_accepts_kthplay_url(cache_dir: Path):
     assert result.structured_content["transcript_id"] == hashlib.sha256(FIXED_URL.encode()).hexdigest()[:12]
 
 
+def test_mcp_lecture_prompt_fills_in_kthplay_url(cache_dir: Path):
+    """The lecture_to_mindmap prompt's text carries the KTH Play link it was given."""
+    server = create_server(cache_dir=cache_dir)
+
+    async def run():
+        async with Client(server) as client:
+            return await client.get_prompt("lecture_to_mindmap", {"source": SLUG_URL})
+
+    assert SLUG_URL in asyncio.run(run()).messages[0].content.text
+
+
 # The real KTH Play downloader
 
 
@@ -286,6 +312,6 @@ def test_real_kthplay_download_decodes_to_full_length(cache_dir: Path):
 
 @pytest.mark.network
 def test_real_kthplay_missing_entry_raises_source_error_naming_fixed_address(cache_dir: Path):
-    """The default KTH Play downloader turns an entry KTH Play can't serve into SourceError naming its fixed lecture address."""
-    with pytest.raises(SourceError, match=re.escape(f"https://play.kth.se/media/t/{MISSING_ENTRY_ID}")):
+    """The default KTH Play downloader turns an entry KTH Play can't serve into SourceError naming its fixed lecture address and the download's reason."""
+    with pytest.raises(SourceError, match=re.escape(f"https://play.kth.se/media/t/{MISSING_ENTRY_ID}") + ": .+"):
         transcribe(f"https://play.kth.se/media/t/{MISSING_ENTRY_ID}", cache_dir=cache_dir, recognize=two_sentences)
