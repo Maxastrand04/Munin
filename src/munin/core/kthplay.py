@@ -67,7 +67,7 @@ def parse_kthplay_url(text: str) -> KthPlaySource | None:
 
 
 def download_smallest_video(video: KthPlaySource, workdir: Path) -> Path:
-    """Download the lowest-quality video file of `video` into `workdir` and return the file's path.
+    """Download the smallest video file of `video` into `workdir` and return the file's path.
 
     This is the default `Download` for KTH Play. See ADR-0013. It writes nothing
     to stdout, which the stdio MCP server uses for its messages.

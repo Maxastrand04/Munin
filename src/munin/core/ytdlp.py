@@ -5,8 +5,12 @@ from pathlib import Path
 from munin.core.errors import SourceError
 
 
-def fetch(url: str, workdir: Path, format_selector: str) -> Path:
+def fetch(url: str, workdir: Path, format_selector: str, format_sort: list[str] | None = None) -> Path:
     """Download `url` with yt-dlp into `workdir` using `format_selector` and return the file's path.
+
+    `format_sort` goes to yt-dlp as its `format_sort` option and sets the order
+    `format_selector` picks from, so `["+size", "+br"]` with `"b"` takes the
+    smallest file. None leaves yt-dlp's default order.
 
     It imports yt-dlp on call, so parsing URLs never loads it. It writes nothing
     to stdout, which the stdio MCP server uses for its messages.
