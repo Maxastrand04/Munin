@@ -4,7 +4,7 @@ import os
 from collections.abc import Callable
 from pathlib import Path
 
-from munin.core.kthplay import KthPlaySource
+from munin.core.kthplay import KthPlaySource, parse_kthplay_url
 from munin.core.youtube import YouTubeSource, parse_youtube_url
 
 Video = YouTubeSource | KthPlaySource
@@ -27,4 +27,5 @@ def parse_source(text: str | os.PathLike[str]) -> Source:
     check, per `parse_kthplay_url`. The Path is returned as given, with no `~`
     expansion, resolving, or check that it exists.
     """
-    return parse_youtube_url(os.fspath(text)) or Path(text)
+    given = os.fspath(text)
+    return parse_youtube_url(given) or parse_kthplay_url(given) or Path(text)

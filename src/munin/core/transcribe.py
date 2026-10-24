@@ -15,9 +15,10 @@ from munin.core.decode import decode_to_wav
 from munin.core.errors import NoSpeechError, SourceError, UnknownTranscriptError
 from munin.core.model import Recognize, load_recognizer
 from munin.core.segments import Segment, merge_fragments
-from munin.core.sources import Download, Source, parse_source
+from munin.core.sources import Download, Source, Video, parse_source
 from munin.core.stamps import format_stamp
 from munin.core.vocabulary import Vocabulary
+from munin.core.kthplay import KthPlaySource, download_smallest_video
 from munin.core.youtube import YouTubeSource, download_audio
 
 _ID_LENGTH = 12
@@ -126,7 +127,7 @@ def transcribe(
     vocabulary = vocabulary if vocabulary and vocabulary.terms else None
     if vocabulary is None and entry_path.is_file():
         return _read_entry(entry_path)._result(transcript_id, cached=True)
-    if isinstance(resolved, YouTubeSource):
+    if isinstance(resolved, YouTubeSource | KthPlaySource):
         entry = _transcribe_video(resolved, entry_path.parent, download, recognize, vocabulary)
     else:
         entry = _transcribe_fresh(source, resolved, recognize, vocabulary)
@@ -163,7 +164,7 @@ def cached_entry(transcript_id: str, *, cache_dir: Path | None = None) -> CacheE
 
 
 def _source_key(source: Source) -> str:
-    return source.url if isinstance(source, YouTubeSource) else str(source)
+    return source.url if isinstance(source, YouTubeSource | KthPlaySource) else str(source)
 
 
 def _transcript_id(key: str) -> str:
@@ -175,7 +176,7 @@ def _entry_path(cache_dir: Path | None, transcript_id: str) -> Path:
 
 
 def _transcribe_video(
-    video: YouTubeSource,
+    video: Video,
     cache_folder: Path,
     download: Download | None,
     recognize: Recognize | None,
@@ -183,7 +184,8 @@ def _transcribe_video(
 ) -> CacheEntry:
     cache_folder.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(dir=cache_folder) as workdir:
-        audio = (download or download_audio)(video, Path(workdir))
+        default = download_audio if isinstance(video, YouTubeSource) else download_smallest_video
+        audio = (download or default)(video, Path(workdir))
         return replace(_transcribe_fresh(video.url, audio, recognize, vocabulary), source=video)
 
 
@@ -191,7 +193,7 @@ def _transcribe_fresh(
     given: str | os.PathLike[str], resolved: Path, recognize: Recognize | None, vocabulary: Vocabulary | None
 ) -> CacheEntry:
     if not resolved.is_file():
-        raise SourceError(given, "not a file or a YouTube URL")
+        raise SourceError(given, "not a file, a YouTube URL or a KTH Play video URL")
     with tempfile.TemporaryDirectory() as workdir:
         wav = Path(workdir, "audio.wav")
         decode_to_wav(given, resolved, wav)

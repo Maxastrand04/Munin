@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from urllib.parse import parse_qs, urlsplit
 
-from munin.core.errors import SourceError
+from munin.core import ytdlp
 
 _SCHEMES = {"http", "https"}
 _SHORT_HOST = "youtu.be"
@@ -69,28 +69,11 @@ def parse_youtube_url(text: str) -> YouTubeSource | None:
 def download_audio(video: YouTubeSource, workdir: Path) -> Path:
     """Download only the audio track of `video` with yt-dlp into `workdir` and return the file's path.
 
-    This is the default `Download` for YouTube. It imports yt-dlp on call, so
-    parsing URLs never loads it. It writes nothing to stdout, which the stdio
-    MCP server uses for its messages.
+    This is the default `Download` for YouTube. It writes nothing to stdout,
+    which the stdio MCP server uses for its messages.
 
     Raises `SourceError` naming `video.url`, with yt-dlp's reason, when the video
     is private, removed, or unreachable, for example because the machine is
     offline.
     """
-    from yt_dlp import YoutubeDL
-    from yt_dlp.utils import DownloadError
-
-    options = {
-        "format": "bestaudio",
-        "outtmpl": str(workdir / "download.%(ext)s"),
-        "noplaylist": True,
-        "quiet": True,
-        "noprogress": True,
-        "cachedir": False,
-    }
-    try:
-        with YoutubeDL(options) as downloader:
-            info = downloader.extract_info(video.url, download=True)
-            return Path(downloader.prepare_filename(info))
-    except DownloadError as error:
-        raise SourceError(video.url, str(error)) from error
+    return ytdlp.fetch(video.url, workdir, "bestaudio")
