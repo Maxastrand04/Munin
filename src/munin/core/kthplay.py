@@ -76,4 +76,4 @@ def download_smallest_video(video: KthPlaySource, workdir: Path) -> Path:
     video is restricted, removed, or unreachable, for example because the
     machine is offline.
     """
-    return ytdlp.fetch(video.url, workdir, "worst")
+    return ytdlp.fetch(video.url, workdir, "b", ["+size", "+br"])

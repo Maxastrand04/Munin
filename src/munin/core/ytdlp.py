@@ -28,6 +28,8 @@ def fetch(url: str, workdir: Path, format_selector: str, format_sort: list[str] 
         "noprogress": True,
         "cachedir": False,
     }
+    if format_sort is not None:
+        options["format_sort"] = format_sort
     try:
         with YoutubeDL(options) as downloader:
             info = downloader.extract_info(url, download=True)
