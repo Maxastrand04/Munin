@@ -13,8 +13,8 @@ from munin.core import (
     UnknownTranscriptError,
     UnlinkedSlide,
     UnlinkedStamp,
+    Video,
     Vocabulary,
-    YouTubeSource,
     read_slides,
     render_mindmap,
     transcribe,
@@ -26,6 +26,10 @@ TIMESTAMP_LINK = re.compile(r"file://[^\"'\\\s]*#t=\d+")
 YOUTUBE_LINK = re.compile(r"https://www\.youtube\.com/watch\?v=[\w-]{11}&t=\d+s")
 VIDEO_ID = "dQw4w9WgXcQ"
 WATCH_URL = f"https://www.youtube.com/watch?v={VIDEO_ID}"
+KTHPLAY_LINK = re.compile(r"https://play\.kth\.se/media/t/\w+\?st=\d+")
+ENTRY_ID = "0_1zk8obn5"
+FIXED_URL = f"https://play.kth.se/media/t/{ENTRY_ID}"
+SLUG_URL = f"https://play.kth.se/media/Föreläsning+4A+Matriser/{ENTRY_ID}"
 
 
 def one_sentence(wav: Path, vocabulary: Vocabulary | None):
@@ -37,14 +41,14 @@ def transcript_of(source: Path, cache_dir: Path) -> str:
     return transcribe(source, cache_dir=cache_dir, recognize=one_sentence).transcript_id
 
 
-def fake_download(video: YouTubeSource, workdir: Path) -> Path:
+def fake_download(video: Video, workdir: Path) -> Path:
     """A downloader that copies the speech fixture into the work folder instead of fetching anything."""
     audio = workdir / "audio.m4a"
     shutil.copy(SPEECH, audio)
     return audio
 
 
-def youtube_transcript_of(url: str, cache_dir: Path) -> str:
+def video_transcript_of(url: str, cache_dir: Path) -> str:
     return transcribe(url, cache_dir=cache_dir, recognize=one_sentence, download=fake_download).transcript_id
 
 
@@ -126,16 +130,53 @@ def test_link_to_source_with_spaces_and_swedish_letters_is_percent_encoded(
 
 def test_youtube_stamp_becomes_youtube_timestamp_link(cache_dir: Path, tmp_path: Path):
     """A stamp in a YouTube Transcript's Outline links to the video at that second."""
-    transcript_id = youtube_transcript_of(f"https://youtu.be/{VIDEO_ID}", cache_dir)
+    transcript_id = video_transcript_of(f"https://youtu.be/{VIDEO_ID}", cache_dir)
     page = render_page(transcript_id, "# Matriser\n- Gauss [0:03]", cache_dir=cache_dir, output_dir=tmp_path / "out")
     assert YOUTUBE_LINK.findall(page.read_text(encoding="utf-8")) == [f"{WATCH_URL}&t=3s"]
 
 
 def test_youtube_mindmap_has_no_file_links(cache_dir: Path, tmp_path: Path):
     """A YouTube Transcript's Mindmap never links to the downloaded audio file."""
-    transcript_id = youtube_transcript_of(WATCH_URL, cache_dir)
+    transcript_id = video_transcript_of(WATCH_URL, cache_dir)
     page = render_page(transcript_id, "# Matriser\n- Gauss [0:03]", cache_dir=cache_dir, output_dir=tmp_path / "out")
     assert "file://" not in page.read_text(encoding="utf-8")
+
+
+def test_kthplay_stamp_becomes_kthplay_timestamp_link(cache_dir: Path, tmp_path: Path):
+    """A stamp in a KTH Play Transcript's Outline links to the fixed lecture address at that second."""
+    transcript_id = video_transcript_of(SLUG_URL, cache_dir)
+    page = render_page(transcript_id, "# Matriser\n- Gauss [0:03]", cache_dir=cache_dir, output_dir=tmp_path / "out")
+    assert KTHPLAY_LINK.findall(page.read_text(encoding="utf-8")) == [f"{FIXED_URL}?st=3"]
+
+
+def test_kthplay_mindmap_has_no_file_links(cache_dir: Path, tmp_path: Path):
+    """A KTH Play Transcript's Mindmap never links to the downloaded video file."""
+    transcript_id = video_transcript_of(SLUG_URL, cache_dir)
+    page = render_page(transcript_id, "# Matriser\n- Gauss [0:03]", cache_dir=cache_dir, output_dir=tmp_path / "out")
+    assert "file://" not in page.read_text(encoding="utf-8")
+
+
+# The page's lecture link
+
+
+def test_lecture_link_is_source_file_uri(source: Path, cache_dir: Path, tmp_path: Path):
+    """A local Source's page links the lecture as its `file://` URI."""
+    page = render_page(transcript_of(source, cache_dir), "# Matriser", cache_dir=cache_dir, output_dir=tmp_path / "out")
+    assert f'class="source-link" href="{source.resolve().as_uri()}"' in page.read_text(encoding="utf-8")
+
+
+def test_youtube_lecture_link_is_watch_url(cache_dir: Path, tmp_path: Path):
+    """A YouTube Source's page links the lecture as its canonical watch URL, with no `&t`."""
+    transcript_id = video_transcript_of(f"https://youtu.be/{VIDEO_ID}", cache_dir)
+    page = render_page(transcript_id, "# Matriser", cache_dir=cache_dir, output_dir=tmp_path / "out")
+    assert f'class="source-link" href="{WATCH_URL}"' in page.read_text(encoding="utf-8")
+
+
+def test_kthplay_lecture_link_is_fixed_address(cache_dir: Path, tmp_path: Path):
+    """A KTH Play Source's page links the lecture as its fixed lecture address, with no ?st."""
+    transcript_id = video_transcript_of(SLUG_URL, cache_dir)
+    page = render_page(transcript_id, "# Matriser\n- Gauss [0:03]", cache_dir=cache_dir, output_dir=tmp_path / "out")
+    assert f'class="source-link" href="{FIXED_URL}"' in page.read_text(encoding="utf-8")
 
 
 def test_hour_stamp_becomes_timestamp_link(source: Path, cache_dir: Path, tmp_path: Path):
@@ -353,6 +394,14 @@ def test_good_slide_marker_beside_bad_one_still_links(slides_transcript, cache_d
     """A good marker on the same node as a bad one still embeds its Slide."""
     transcript_id, slides = slides_transcript
     page = render_page(transcript_id, "# Matriser\n- Gauss [slide 2] [slide 9]", cache_dir=cache_dir, output_dir=tmp_path)
+    assert encoded(slides[1]) in page.read_text(encoding="utf-8")
+
+
+def test_kthplay_slide_image_is_embedded(deck: Path, cache_dir: Path, tmp_path: Path):
+    """A Slide a node lists on a KTH Play Transcript with a Deck is embedded in the page."""
+    transcript_id = video_transcript_of(SLUG_URL, cache_dir)
+    slides = read_slides(transcript_id, deck, cache_dir=cache_dir)
+    page = render_page(transcript_id, "# Matriser\n- Gauss [slide 2]", cache_dir=cache_dir, output_dir=tmp_path)
     assert encoded(slides[1]) in page.read_text(encoding="utf-8")
 
 

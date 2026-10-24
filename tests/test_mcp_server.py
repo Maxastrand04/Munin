@@ -7,12 +7,13 @@ import pytest
 from mcp import Client
 from mcp.server import MCPServer
 
-from munin.core import Fragment, Vocabulary, YouTubeSource, get_transcript, transcribe
+from munin.core import Fragment, Video, Vocabulary, get_transcript, transcribe
 from munin import mcp_server
 from munin.mcp_server import create_server
 
 SPEECH = Path(__file__).parent / "fixtures" / "sv_short.m4a"
 WATCH_URL = "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
+KTHPLAY_URL = "https://play.kth.se/media/Föreläsning+4A+Matriser/0_1zk8obn5"
 
 
 def two_sentences(wav: Path, vocabulary: Vocabulary | None):
@@ -35,7 +36,7 @@ def recording(received: list):
     return recognize
 
 
-def fake_download(video: YouTubeSource, workdir: Path) -> Path:
+def fake_download(video: Video, workdir: Path) -> Path:
     """A downloader that copies the speech fixture into the work folder instead of fetching anything."""
     audio = workdir / "audio.m4a"
     shutil.copy(SPEECH, audio)
@@ -159,6 +160,14 @@ def test_mcp_transcribe_accepts_youtube_url(cache_dir: Path):
     result = call(server, "transcribe", {"source": WATCH_URL})
     assert result.structured_content["transcript_id"] == hashlib.sha256(WATCH_URL.encode()).hexdigest()[:12]
 
+
+
+def test_mcp_transcribe_accepts_kthplay_url(cache_dir: Path):
+    """The transcribe tool takes a KTH Play link as `source` and returns its Transcript ID."""
+    server = create_server(cache_dir=cache_dir, recognize=two_sentences, download=fake_download)
+    result = call(server, "transcribe", {"source": KTHPLAY_URL})
+    expected = hashlib.sha256(b"https://play.kth.se/media/t/0_1zk8obn5").hexdigest()[:12]
+    assert result.structured_content["transcript_id"] == expected
 
 def test_mcp_get_transcript_returns_lines(source: Path, cache_dir: Path):
     """The get_transcript tool returns the same lines as the core."""
@@ -307,6 +316,11 @@ def test_mcp_lecture_prompt_fills_in_source(cache_dir: Path):
     """The prompt's text carries the Source it was given."""
     assert WATCH_URL in prompt_text(create_server(cache_dir=cache_dir), WATCH_URL)
 
+
+
+def test_mcp_lecture_prompt_fills_in_kthplay_url(cache_dir: Path):
+    """The prompt's text carries the KTH Play link it was given."""
+    assert KTHPLAY_URL in prompt_text(create_server(cache_dir=cache_dir), KTHPLAY_URL)
 
 def test_mcp_lecture_prompt_calls_tools_in_run_order(cache_dir: Path):
     """The prompt names transcribe, then get_transcript, then render_mindmap."""

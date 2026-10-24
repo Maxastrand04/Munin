@@ -10,9 +10,11 @@ import pytest
 
 from munin.core import (
     Fragment,
+    KthPlaySource,
     NoSpeechError,
     SourceError,
     UnknownTranscriptError,
+    Video,
     Vocabulary,
     YouTubeSource,
     get_transcript,
@@ -32,6 +34,13 @@ ZOO_VIDEO_URL = "https://youtu.be/jNQXAC9IVRw"
 ZOO_DURATION_S = 19
 MISSING_VIDEO_ID = "zzzzzzzzzz0"
 MISSING_VIDEO_URL = f"https://youtu.be/{MISSING_VIDEO_ID}"
+
+ENTRY_ID = "0_1zk8obn5"
+FIXED_URL = f"https://play.kth.se/media/t/{ENTRY_ID}"
+SLUG_URL = f"https://play.kth.se/media/Föreläsning+4A+Matriser/{ENTRY_ID}"
+SHORT_ENTRY_ID = "0_kcveux4p"
+SHORT_DURATION_S = 16.4
+MISSING_ENTRY_ID = "0_zzzzzzzz"
 
 
 def fake(*fragments: Fragment, received: list | None = None):
@@ -62,7 +71,7 @@ BOOSTED_GAUSS = Fragment(1.2, 3.0, "Idag ska vi prata om Gausselimination.")
 def fake_download(calls: list | None = None, written: list | None = None):
     """A downloader that copies the speech fixture into the work folder instead of fetching anything."""
 
-    def download(video: YouTubeSource, workdir: Path) -> Path:
+    def download(video: Video, workdir: Path) -> Path:
         if calls is not None:
             calls.append(video)
         audio = workdir / "audio.m4a"
@@ -74,11 +83,11 @@ def fake_download(calls: list | None = None, written: list | None = None):
     return download
 
 
-def never_download(video: YouTubeSource, workdir: Path) -> Path:
-    raise AssertionError("the downloader ran on what should be a cache hit or a non-YouTube Source")
+def never_download(video: Video, workdir: Path) -> Path:
+    raise AssertionError("the downloader ran on what should be a cache hit or a non-video Source")
 
 
-def unfetchable(video: YouTubeSource, workdir: Path) -> Path:
+def unfetchable(video: Video, workdir: Path) -> Path:
     raise SourceError(video.url, "Video unavailable")
 
 
@@ -528,7 +537,7 @@ def test_downloaded_audio_is_deleted(cache_dir: Path):
 def test_youtube_transcription_time_excludes_download(cache_dir: Path):
     """transcription_s measures recognition only, so a slow download does not count."""
 
-    def slow_download(video: YouTubeSource, workdir: Path) -> Path:
+    def slow_download(video: Video, workdir: Path) -> Path:
         time.sleep(0.5)
         return fake_download()(video, workdir)
 
@@ -572,6 +581,118 @@ def test_unaccepted_url_raises_source_error_saying_so(url: str, cache_dir: Path)
     """A URL outside the accepted YouTube forms raises the same error as a missing file, without downloading."""
     with pytest.raises(SourceError, match="not a file, a YouTube URL or a KTH Play video URL"):
         transcribe(url, cache_dir=cache_dir, recognize=TWO_SENTENCES, download=never_download)
+
+
+# KTH Play Sources
+
+
+def test_kthplay_url_miss_is_transcribed_fresh(cache_dir: Path):
+    """A KTH Play link seen for the first time is transcribed, not served from the cache."""
+    assert transcribe_url(SLUG_URL, cache_dir).cached is False
+
+
+def test_kthplay_url_miss_downloads_the_parsed_video(cache_dir: Path):
+    """The downloader is asked for the KTH Play video the link points at."""
+    calls: list = []
+    transcribe_url(SLUG_URL, cache_dir, download=fake_download(calls=calls))
+    assert calls == [KthPlaySource(ENTRY_ID)]
+
+
+def test_kthplay_transcript_id_is_sha256_prefix_of_fixed_address(cache_dir: Path):
+    """A KTH Play Transcript's ID is the first 12 hex characters of the SHA-256 of the fixed lecture address."""
+    expected = hashlib.sha256(FIXED_URL.encode()).hexdigest()[:12]
+    assert transcribe_url(SLUG_URL, cache_dir).transcript_id == expected
+
+
+def test_kthplay_cache_hit_does_not_download(cache_dir: Path):
+    """A second call for the same KTH Play video returns the saved Transcript without downloading."""
+    transcribe_url(SLUG_URL, cache_dir)
+    assert transcribe_url(SLUG_URL, cache_dir, download=never_download).cached is True
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        f"https://play.kth.se/media/Matriser/{ENTRY_ID}",
+        f"http://play.kth.se/media/Matriser/{ENTRY_ID}",
+        f"play.kth.se/media/Matriser/{ENTRY_ID}",
+        f"https://play.kth.se/media/t/{ENTRY_ID}",
+        f"http://play.kth.se/media/t/{ENTRY_ID}",
+        f"play.kth.se/media/t/{ENTRY_ID}",
+        f"https://play.kth.se/media/{ENTRY_ID}",
+        f"http://play.kth.se/media/{ENTRY_ID}",
+        f"play.kth.se/media/{ENTRY_ID}",
+        f"https://PLAY.KTH.SE/media/t/{ENTRY_ID}",
+        f"https://play.kth.se/media/t/{ENTRY_ID}?st=90",
+        f"https://play.kth.se/media/Matriser/{ENTRY_ID}#comments",
+        f"https://play.kth.se/media/Matriser/{ENTRY_ID}/",
+    ],
+)
+def test_kthplay_url_form_shares_one_transcript(url: str, cache_dir: Path):
+    """Every accepted link form of a KTH Play video hits the Transcript made from another form."""
+    first = transcribe_url(SLUG_URL, cache_dir)
+    assert transcribe_url(url, cache_dir, download=never_download).transcript_id == first.transcript_id
+
+
+def test_downloaded_kthplay_video_is_deleted(cache_dir: Path):
+    """After a KTH Play miss, the file the downloader wrote no longer exists."""
+    written: list = []
+    transcribe_url(SLUG_URL, cache_dir, download=fake_download(written=written))
+    assert not written[0].exists()
+
+
+def test_kthplay_vocabulary_reruns_cached_video(cache_dir: Path):
+    """A boosted call on a cached KTH Play Source downloads the video again."""
+    calls: list = []
+    transcribe_url(SLUG_URL, cache_dir)
+    transcribe(SLUG_URL, vocabulary=GAUSS, cache_dir=cache_dir, recognize=TWO_SENTENCES, download=fake_download(calls=calls))
+    assert len(calls) == 1
+
+
+def test_kthplay_vocabulary_run_keeps_transcript_id(cache_dir: Path):
+    """A boosted run replaces the saved KTH Play Transcript under the same ID."""
+    first = transcribe_url(SLUG_URL, cache_dir)
+    second = transcribe(SLUG_URL, vocabulary=GAUSS, cache_dir=cache_dir, recognize=TWO_SENTENCES, download=fake_download())
+    assert second.transcript_id == first.transcript_id
+
+
+def test_kthplay_vocabulary_run_replaces_cached_transcript(cache_dir: Path):
+    """After a boosted run on a KTH Play Source, its saved Transcript reads back as the boosted text."""
+    transcribe(SLUG_URL, cache_dir=cache_dir, recognize=fake(PLAIN_GAUSS), download=fake_download())
+    result = transcribe(SLUG_URL, vocabulary=GAUSS, cache_dir=cache_dir, recognize=fake(BOOSTED_GAUSS), download=fake_download())
+    assert get_transcript(result.transcript_id, cache_dir=cache_dir) == "[0:01] Idag ska vi prata om Gausselimination."
+
+
+def test_unfetchable_kthplay_video_raises_source_error_naming_fixed_address(cache_dir: Path):
+    """A KTH Play video the downloader can't fetch raises SourceError naming the fixed lecture address."""
+    with pytest.raises(SourceError, match=re.escape(FIXED_URL)):
+        transcribe_url(SLUG_URL, cache_dir, download=unfetchable)
+
+
+def test_unfetchable_kthplay_video_is_not_cached(cache_dir: Path):
+    """After a failed KTH Play download, the same video is transcribed fresh once it can be fetched."""
+    with pytest.raises(SourceError):
+        transcribe_url(SLUG_URL, cache_dir, download=unfetchable)
+    assert transcribe_url(SLUG_URL, cache_dir).cached is False
+
+
+def test_silent_kthplay_video_raises_no_speech_error(cache_dir: Path):
+    """A KTH Play video with no speech raises NoSpeechError."""
+    with pytest.raises(NoSpeechError):
+        transcribe(SLUG_URL, cache_dir=cache_dir, recognize=fake(), download=fake_download())
+
+
+def test_silent_kthplay_video_is_not_cached(cache_dir: Path):
+    """After a KTH Play video yields no speech, the same video is transcribed fresh next time."""
+    with pytest.raises(NoSpeechError):
+        transcribe(SLUG_URL, cache_dir=cache_dir, recognize=fake(), download=fake_download())
+    assert transcribe_url(SLUG_URL, cache_dir).cached is False
+
+
+def test_non_video_kthplay_link_raises_source_error_saying_so(cache_dir: Path):
+    """A play.kth.se link outside the three video shapes fails like any unrecognised input, without downloading."""
+    with pytest.raises(SourceError, match="not a file, a YouTube URL or a KTH Play video URL"):
+        transcribe("https://play.kth.se/channel/SF1624/123456", cache_dir=cache_dir, recognize=TWO_SENTENCES, download=never_download)
 
 
 # get_transcript
@@ -650,3 +771,17 @@ def test_real_downloader_unavailable_video_raises_source_error_naming_url(cache_
     """The default downloader turns a video YouTube can't serve into SourceError naming its canonical URL."""
     with pytest.raises(SourceError, match=re.escape(f"https://www.youtube.com/watch?v={MISSING_VIDEO_ID}")):
         transcribe(MISSING_VIDEO_URL, cache_dir=cache_dir, recognize=TWO_SENTENCES)
+
+
+@pytest.mark.network
+def test_real_kthplay_downloader_fetches_full_length_video(cache_dir: Path):
+    """The default KTH Play downloader's file decodes to the video's full length."""
+    result = transcribe(f"https://play.kth.se/media/t/{SHORT_ENTRY_ID}", cache_dir=cache_dir, recognize=TWO_SENTENCES)
+    assert result.duration_s == pytest.approx(SHORT_DURATION_S, abs=1.5)
+
+
+@pytest.mark.network
+def test_real_kthplay_downloader_missing_entry_raises_source_error_naming_fixed_address(cache_dir: Path):
+    """The default KTH Play downloader turns an entry KTH Play can't serve into SourceError naming its fixed lecture address and the download's reason."""
+    with pytest.raises(SourceError, match=re.escape(f"https://play.kth.se/media/t/{MISSING_ENTRY_ID}") + ": .+"):
+        transcribe(f"https://play.kth.se/media/t/{MISSING_ENTRY_ID}", cache_dir=cache_dir, recognize=TWO_SENTENCES)
