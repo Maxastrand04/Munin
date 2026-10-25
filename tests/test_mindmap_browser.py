@@ -42,18 +42,28 @@ def outline():
 
 
 @pytest.fixture
-def mindmap_url(source: Path, cache_dir: Path, tmp_path: Path, outline):
+def render_outline(source: Path, cache_dir: Path, tmp_path: Path):
+    """Render an Outline into a folder of its own and return the page's URL."""
     transcript = transcribe(
         source,
         cache_dir=cache_dir,
         recognize=lambda wav, vocabulary: [Fragment(0, 1, "En föreläsning.")],
     )
-    return render_mindmap(
-        transcript.transcript_id,
-        outline,
-        cache_dir=cache_dir,
-        output_dir=tmp_path,
-    ).page.as_uri()
+
+    def render(outline: str, name: str = "mindmap") -> str:
+        return render_mindmap(
+            transcript.transcript_id,
+            outline,
+            cache_dir=cache_dir,
+            output_dir=tmp_path / name,
+        ).page.as_uri()
+
+    return render
+
+
+@pytest.fixture
+def mindmap_url(render_outline, outline):
+    return render_outline(outline)
 
 
 def overlapping_pairs(boxes: list[dict]) -> list[tuple[str, str]]:
@@ -124,9 +134,22 @@ MANY_GROUPS_OUTLINE = "# Lecture\n" + "".join(
 )
 
 
-def hue(colour: str) -> float:
+MIN_HUE_GAP = 20
+
+
+def hue_and_saturation(colour: str) -> tuple[float, float]:
     red, green, blue = (int(part) / 255 for part in re.findall(r"\d+", colour)[:3])
-    return colorsys.rgb_to_hls(red, green, blue)[0] * 360
+    hue, _, saturation = colorsys.rgb_to_hls(red, green, blue)
+    return hue * 360, saturation
+
+
+def hue(colour: str) -> float:
+    return hue_and_saturation(colour)[0]
+
+
+def hue_gap(first: float, second: float) -> float:
+    gap = abs(first - second) % 360
+    return min(gap, 360 - gap)
 
 
 def group_colours(page) -> dict[str, str]:
@@ -161,7 +184,7 @@ def test_at_least_fourteen_groups_get_clearly_different_hues(page, mindmap_url):
     close = [
         (round(first), round(second))
         for first, second in combinations(group_hues(page), 2)
-        if min(abs(first - second) % 360, 360 - abs(first - second) % 360) < 20
+        if hue_gap(first, second) < MIN_HUE_GAP
     ]
     assert close == []
 
@@ -172,6 +195,141 @@ def test_main_topic_colour_differs_from_every_group(page, mindmap_url):
     colours = group_colours(page)
     main_topic = colours.pop("Lecture")
     assert main_topic not in colours.values()
+
+
+# Examples and exercises are orange
+
+ORANGE_HUES = (25, 45)
+MIN_ORANGE_SATURATION = 0.5
+MANY_TOPICS = 40
+# Topic A is the first topic, which gets green, far from orange.
+EXAMPLE_OUTLINE = """# Matriser
+## A
+### Begrepp
+### Exempel: Rad gånger kolonn
+#### Steg 1
+"""
+
+
+def is_orange(colour: str) -> bool:
+    hue, saturation = hue_and_saturation(colour)
+    return ORANGE_HUES[0] <= hue <= ORANGE_HUES[1] and saturation >= MIN_ORANGE_SATURATION
+
+
+def show_every_node(page, url: str) -> None:
+    page.goto(f"{url}?depth=all")
+
+
+def edge_colours(page) -> list[str]:
+    return page.locator(".edge").evaluate_all("edges => edges.map(edge => getComputedStyle(edge).stroke)")
+
+
+@pytest.mark.parametrize("prefix", ["Övning:", "Exempel:"])
+@pytest.mark.parametrize(
+    "outline",
+    [
+        "# Matriser\n## {label}\n## B\n",
+        "# Matriser\n## A\n### {label}\n",
+        "# Matriser\n## A\n### Slide\n#### {label}\n",
+    ],
+    ids=["topic", "slide", "term"],
+)
+def test_example_or_exercise_node_is_orange(page, render_outline, prefix, outline):
+    """A node whose label starts with `Övning:` or `Exempel:` is orange, at whatever level it sits."""
+    show_every_node(page, render_outline(outline.format(label=f"{prefix} Rad gånger kolonn")))
+    assert is_orange(group_colours(page)[f"{prefix} Rad gånger kolonn"])
+
+
+def test_prefix_matches_in_any_case(page, render_outline):
+    """A label starting with `exempel:` in lower case is orange too."""
+    show_every_node(page, render_outline("# Matriser\n## A\n### exempel: Rad gånger kolonn\n"))
+    assert is_orange(group_colours(page)["exempel: Rad gånger kolonn"])
+
+
+def test_prefix_after_a_linked_stamp_is_orange(page, render_outline):
+    """A label that shows `Övning:` first once its leading linked stamp leaves it is orange."""
+    show_every_node(page, render_outline("# Matriser\n## A\n### [0:00] Övning: Rad gånger kolonn\n"))
+    assert is_orange(group_colours(page)["Övning: Rad gånger kolonn"])
+
+
+def test_prefix_behind_an_unlinked_stamp_keeps_topic_colour(page, render_outline):
+    """A label whose malformed stamp stays in front of `Övning:` keeps its topic's colour."""
+    show_every_node(page, render_outline("# Matriser\n## A\n### [9:99] Övning: Rad gånger kolonn\n"))
+    colours = group_colours(page)
+    assert colours["[9:99] Övning: Rad gånger kolonn"] == colours["A"]
+
+
+@pytest.mark.parametrize(
+    "label",
+    ["Om Exempel: rad gånger kolonn", "Övning 2: Rad gånger kolonn", "Övningar: Rad gånger kolonn", "Övning Rad"],
+    ids=["not-at-start", "numbered", "plural", "no-colon"],
+)
+def test_other_labels_keep_topic_colour(page, render_outline, label):
+    """A label that does not start with exactly `Övning:` or `Exempel:` keeps its topic's colour."""
+    show_every_node(page, render_outline(f"# Matriser\n## A\n### {label}\n"))
+    colours = group_colours(page)
+    assert colours[label] == colours["A"]
+
+
+def test_main_topic_stays_neutral_with_example_label(page, render_outline):
+    """A main topic labelled `Exempel:` keeps the main topic's neutral colours."""
+    show_every_node(page, render_outline("# Matriser\n## A\n", "plain"))
+    plain = group_colours(page)["Matriser"]
+    show_every_node(page, render_outline("# Exempel: Matriser\n## A\n", "example"))
+    assert group_colours(page)["Exempel: Matriser"] == plain
+
+
+def test_node_under_example_is_orange(page, render_outline):
+    """A node under an `Exempel:` node is orange too."""
+    show_every_node(page, render_outline(EXAMPLE_OUTLINE))
+    assert is_orange(group_colours(page)["Steg 1"])
+
+
+def test_branch_of_example_topic_is_orange(page, render_outline):
+    """Every node under a topic labelled `Övning:` is orange."""
+    show_every_node(page, render_outline("# Matriser\n## Övning: Rad gånger kolonn\n### Steg 1\n#### Steg 2\n"))
+    assert is_orange(group_colours(page)["Steg 2"])
+
+
+def test_sibling_of_example_keeps_topic_colour(page, render_outline):
+    """A node next to an `Exempel:` node, not under it, keeps its topic's colour."""
+    show_every_node(page, render_outline(EXAMPLE_OUTLINE))
+    colours = group_colours(page)
+    assert colours["Begrepp"] == colours["A"]
+
+
+def test_edge_into_top_example_keeps_topic_colour(page, render_outline):
+    """Only the edge from one orange node to another is orange when the example sits under a topic."""
+    show_every_node(page, render_outline(EXAMPLE_OUTLINE))
+    assert [is_orange(colour) for colour in edge_colours(page)].count(True) == 1
+
+
+def test_edges_in_example_topic_branch_are_orange(page, render_outline):
+    """Every edge in a topic-level `Övning:` branch is orange, the one from the main topic included."""
+    show_every_node(page, render_outline("# Matriser\n## Övning: Rad gånger kolonn\n### Steg 1\n"))
+    assert all(is_orange(colour) for colour in edge_colours(page))
+
+
+def test_example_topic_takes_no_topic_colour(page, render_outline):
+    """A topic after a topic-level `Övning:` gets the colour it would have had without it."""
+    show_every_node(page, render_outline("# Matriser\n## A\n", "alone"))
+    alone = group_colours(page)["A"]
+    show_every_node(page, render_outline("# Matriser\n## Övning: Rad gånger kolonn\n## A\n", "after-example"))
+    assert group_colours(page)["A"] == alone
+
+
+def test_no_topic_hue_comes_near_orange(page, render_outline):
+    """With more topics than the palette holds, every topic's hue is at least 20 degrees from the orange."""
+    topics = "".join(f"## Topic {number}\n" for number in range(1, MANY_TOPICS + 1))
+    show_every_node(page, render_outline(f"# Matriser\n{topics}### Exempel: Rad gånger kolonn\n"))
+    colours = group_colours(page)
+    orange = hue(colours["Exempel: Rad gånger kolonn"])
+    near = [
+        f"Topic {number}"
+        for number in range(1, MANY_TOPICS + 1)
+        if hue_gap(hue(colours[f"Topic {number}"]), orange) < MIN_HUE_GAP
+    ]
+    assert near == []
 
 
 EDGES_CROSSING_NODES = """() => {
@@ -303,6 +461,25 @@ def open_panel(page, url: str, label: str) -> None:
 
 def panel_images(page):
     return page.locator("#panel").get_by_role("img")
+
+
+def test_selected_example_fill_is_orange(page, render_outline):
+    """A selected `Exempel:` node is filled orange."""
+    open_panel(page, render_outline(EXAMPLE_OUTLINE), "Exempel: Rad gånger kolonn")
+    card = page.locator(".node", has=page.get_by_role("button", name="Explore Exempel: Rad gånger kolonn", exact=True))
+    assert is_orange(card.locator(".node-card").evaluate("card => getComputedStyle(card).backgroundColor"))
+
+
+def test_selected_example_panel_path_is_orange(page, render_outline):
+    """The panel path above a selected `Exempel:` node's title is orange."""
+    open_panel(page, render_outline(EXAMPLE_OUTLINE), "Exempel: Rad gånger kolonn")
+    assert is_orange(page.locator("#panel-path").evaluate("path => getComputedStyle(path).color"))
+
+
+def test_selected_example_panel_rule_is_orange(page, render_outline):
+    """The rule under a selected `Exempel:` node's panel title is orange."""
+    open_panel(page, render_outline(EXAMPLE_OUTLINE), "Exempel: Rad gånger kolonn")
+    assert is_orange(page.locator(".panel-rule").evaluate("rule => getComputedStyle(rule).borderTopColor"))
 
 
 def test_panel_shows_slides_in_slide_order(page, slides_url):
