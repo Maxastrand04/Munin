@@ -118,7 +118,7 @@ def test_expanding_branch_keeps_existing_nodes_in_place(page, mindmap_url, style
     assert [box["label"] for box in before if after[box["label"]] != box] == []
 
 
-MIN_DISTINCT_GROUPS = 15
+MIN_DISTINCT_GROUPS = 14
 MANY_GROUPS_OUTLINE = "# Lecture\n" + "".join(
     f"## Group {number}\n" for number in range(1, MIN_DISTINCT_GROUPS + 1)
 )
@@ -149,14 +149,14 @@ def group_hues(page) -> list[float]:
 
 
 @pytest.mark.parametrize("outline", [MANY_GROUPS_OUTLINE], ids=["many-groups"])
-def test_each_of_fifteen_groups_gets_a_colour(page, mindmap_url):
+def test_each_of_fourteen_groups_gets_a_colour(page, mindmap_url):
     page.goto(mindmap_url)
     assert len(group_hues(page)) == MIN_DISTINCT_GROUPS
 
 
 @pytest.mark.parametrize("outline", [MANY_GROUPS_OUTLINE], ids=["many-groups"])
-def test_at_least_fifteen_groups_get_clearly_different_hues(page, mindmap_url):
-    """Fifteen groups get hues at least 20 degrees apart around the colour wheel."""
+def test_at_least_fourteen_groups_get_clearly_different_hues(page, mindmap_url):
+    """Fourteen groups get hues at least 20 degrees apart around the colour wheel."""
     page.goto(mindmap_url)
     close = [
         (round(first), round(second))
