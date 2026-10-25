@@ -40,6 +40,10 @@ _Avoid_: notes, summary, mindmap (for the Markdown)
 The rendered HTML page built from an Outline, with each stamp turned into a Timestamp link. A malformed stamp, or one past the Source's end, stays as plain text and is reported back as unlinked. A node's panel shows the Slides its markers name, and a marker that is malformed, past the Deck's last Slide, or on a Transcript with no Deck is reported back as unlinked too.
 _Avoid_: map, graph, diagram
 
+**Example or exercise**:
+An Outline node whose label, as the Mindmap shows it, starts with `Exempel:` or `Övning:` in any case, plus every node under it. The Mindmap paints it in a reserved orange that no topic gets. `Övning 2:` and `Övningar:` don't count.
+_Avoid_: task, problem, worked example
+
 **Timestamp link**:
 A link that opens the Source at a given second, `&t=<s>s` for YouTube, `?st=<s>` on the fixed lecture address for KTH Play, and `#t=<s>` for local files.
 _Avoid_: jump link, deep link, seek link
@@ -54,6 +58,7 @@ _Avoid_: jump link, deep link, seek link
 - A **Transcript** has at most one **Deck**, which has one or more **Slides**
 - A node of an **Outline** lists any number of **Slides**, and a **Slide** can appear on any number of nodes
 - An **Outline** is written from exactly one **Transcript**
+- A node under an **Example or exercise** is part of it, so a topic that is one takes no topic colour
 - A **Mindmap** renders exactly one **Outline** and resolves its stamps against that **Transcript**'s **Source** and the Source's duration, and its Slide markers against that **Transcript**'s **Deck**
 
 ## Example dialogue

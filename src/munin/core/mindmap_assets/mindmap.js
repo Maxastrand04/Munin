@@ -16,10 +16,12 @@ const palette = [
 ];
 // Orange is reserved for examples and exercises, so no topic gets a hue near it.
 const orangeColors = ['#c27418','#fbebd6','#a8570f'],ORANGE_HUE=32.5,ORANGE_CLEARANCE=25;
+// Groups past the palette step round the colour wheel by the golden angle.
+const GOLDEN_ANGLE=137.508;
 // The main topic stays in the Linen neutrals so no group shares its colour.
 const mainTopicColors = ['#756a59','#f8f4ec','#433b31'];
 const nodes = DATA.map(n => ({...n,children:[],depth:0,group:-1,orange:false,x:0,y:0,w:220,h:96}));
-// An example or exercise starts with "Övning:" or "Exempel:", and so does everything under one.
+// An example or exercise starts with "Övning:" or "Exempel:", and everything under one counts as one.
 // Such a topic takes no topic colour, so it takes no palette slot either.
 const isExample = label => /^(övning|exempel):/i.test(label);
 let topics = 0;
@@ -36,15 +38,22 @@ function el(tag,attrs={}) {const e=document.createElementNS(svgNS,tag);Object.en
 function groupColors(group) {
   if (group < 0) return mainTopicColors;
   if (group < palette.length) return palette[group];
-  let hue = 0;
-  for (let i = palette.length, step = 0; i <= group; step++) {
-    hue = (step * 137.508 + palette.length * 137.508) % 360;
-    const gap = Math.abs(hue - ORANGE_HUE);
-    if (Math.min(gap, 360 - gap) >= ORANGE_CLEARANCE) i++;
-  }
+  const hue = generatedHue(group);
   return [`hsl(${hue} 24% 38%)`, `hsl(${hue} 26% 91%)`, `hsl(${hue} 30% 30%)`];
 }
+function generatedHue(group) {
+  let hue = 0;
+  for (let found = palette.length, step = 0; found <= group; step++) {
+    hue = (step * GOLDEN_ANGLE + palette.length * GOLDEN_ANGLE) % 360;
+    if (!nearOrange(hue)) found++;
+  }
+  return hue;
+}
+function nearOrange(hue) {const gap = Math.abs(hue - ORANGE_HUE);return Math.min(gap, 360 - gap) < ORANGE_CLEARANCE;}
 function nodeColors(n) {return n.orange ? orangeColors : groupColors(n.group);}
+// The edge into the top example of a branch keeps its topic's colour.
+function edgeColor(p,n) {return (n.orange&&(p.orange||p.parent===null)?orangeColors:groupColors(n.group))[0];}
+function showSelectedColor() {document.body.style.setProperty('--selected-color',(selected===null?mainTopicColors:nodeColors(nodes[selected]))[0]);}
 function visible(n){if(n.parent===null)return true;return !collapsed.has(n.parent)&&visible(nodes[n.parent]);}
 function resetDepth(){collapsed=new Set(nodes.filter(n=>n.children.length&&depth!=='all'&&n.depth>=Number(depth)).map(n=>n.id));}
 function coordinates(){
@@ -120,7 +129,7 @@ function render(){
   const world=$('world');world.replaceChildren();
   nodes.filter(visible).forEach(n=>{
     if(n.parent===null)return;
-    const p=nodes[n.parent];const edge=el('path',{class:'edge'});edge.style.setProperty('--group',(n.orange&&(p.orange||p.parent===null)?orangeColors:groupColors(n.group))[0]);
+    const p=nodes[n.parent];const edge=el('path',{class:'edge'});edge.style.setProperty('--group',edgeColor(p,n));
     edge.setAttribute('d',connection(p,n));
     world.append(edge);
   });
@@ -160,7 +169,7 @@ function fit(floor=minScale){
 function centre(n){const rect=$('canvas').getBoundingClientRect();tx=rect.width/2-n.x*scale;ty=rect.height/2-n.y*scale;transform();}
 function select(id){
   selected=id;const n=nodes[id];$('panel').hidden=false;
-  document.body.style.setProperty('--selected-color',nodeColors(n)[0]);
+  showSelectedColor();
   const path=[];let p=n.parent;while(p!==null){path.unshift(nodes[p].label);p=nodes[p].parent;}
   $('panel-path').textContent=path.join(' / ')||'Lecture overview';$('panel-title').textContent=n.label;$('explanation').textContent=n.explanation||'Open the Source to explore this idea in context.';
   $('slides').replaceChildren();
@@ -180,7 +189,7 @@ function select(id){
   $('panel').scrollTop=0;render();centre(n);
 }
 function zoom(factor,x,y){const rect=$('canvas').getBoundingClientRect();x??=rect.width/2;y??=rect.height/2;const next=Math.max(.02,Math.min(2,scale*factor));tx=x-(x-tx)*next/scale;ty=y-(y-ty)*next/scale;scale=next;transform();}
-function choose(key){variant=key;document.body.dataset.variant=key;document.body.style.setProperty('--selected-color',(selected===null?mainTopicColors:nodeColors(nodes[selected]))[0]);document.querySelectorAll('input[name="mindmap-style"]').forEach(input=>{input.checked=input.value===key;});syncURL();coordinates();render();fit(OPENING_MIN_SCALE);}
+function choose(key){variant=key;document.body.dataset.variant=key;showSelectedColor();document.querySelectorAll('input[name="mindmap-style"]').forEach(input=>{input.checked=input.value===key;});syncURL();coordinates();render();fit(OPENING_MIN_SCALE);}
 function setSettings(open,restoreFocus=false){
   $('mindmap-settings').hidden=!open;
   $('settings-toggle').setAttribute('aria-expanded',String(open));
