@@ -47,7 +47,10 @@ def create_server(
     fields as an object, `page` as an absolute path string and `unlinked` as a
     list of `label`, `stamp` and `reason` objects, and `unlinked_slides` as a
     list of `label`, `slide` and `reason` objects. Its description gives the
-    `[slide N]` marker format next to the stamp format.
+    `[slide N]` marker format next to the stamp format, and asks for an Outline
+    of topics, then Slides, then terms under the lecture title, grouped by
+    meaning, with each example and exercise written out under an `Övning:` or
+    `Exempel:` leaf.
     `read_slides(transcript_id: str, deck: str)` attaches the Deck through the
     core's `read_slides` and returns two content blocks per Slide in Slide
     order: a text block `Slide N:` followed by the Slide's text on the next
@@ -92,13 +95,31 @@ def create_server(
 
         Write the Outline in this format:
 
-        - Markdown headings (`#`, `##`, `###`) or nested list items, one node per
-          topic, two or three levels deep under a single top node.
+        - Markdown headings (`#` to `####`) or nested list items, with the lecture
+          title as the single top node and three levels under it: topics, then
+          Slides, then terms, methods and formulas.
+        - Group the lecture by meaning, not by time. A topic gathers every part of
+          the lecture about it, even parts far apart in time. Aim for 1 to 5 topics.
+        - Under each topic, one node per Slide. With no Deck, split the Transcript
+          into Slide-sized parts and write one node per part.
+        - Under each Slide node, one node per term, method or formula. Word a term
+          the same under every Slide node it appears on.
+        - Skip content that neither helps the student grasp an idea nor gives
+          concrete material. A Slide such as a title page or a schedule gets no node.
+        - Add every example and exercise in the lecture as a leaf under the node it
+          belongs to, at any level, with a label that starts with `Övning:` or
+          `Exempel:`. These count as neither topics nor terms.
         - One stamp at the end of each node label, copied from the
-          `get_transcript` line where that topic starts, such as
-          `## Gausselimination [4:34]`. Never invent or round a stamp.
-        - Optionally, a short prose paragraph under a node. It appears in that
-          node's explanation panel.
+          `get_transcript` line where that part starts, such as
+          `### Gausselimination [4:34]`. A topic gets one stamp for each separate
+          stretch of the lecture it gathers, such as
+          `## Linjära system [4:34] [38:10]`. Never invent or round a stamp.
+        - Under each `Övning:` or `Exempel:` node, a prose paragraph that writes
+          out the task and its solution steps, so the panel reads on its own
+          without the video or the Slide. Write each step as a plain line, such as
+          `Steg 1: ...`, never as list items, because a list item becomes a node.
+        - Optionally, a short prose paragraph under any other node. It appears in
+          that node's explanation panel.
 
         Returns `page`, the absolute path of the written HTML page, and `unlinked`,
         the stamps left as plain text. Each good stamp becomes a link that opens the
@@ -109,10 +130,11 @@ def create_server(
         replaces the old one. The page defaults to Radial rings, with Topic circles
         available in settings.
 
-        When the lecture has a Deck read with `read_slides`, a node label may also
-        carry one `[slide N]` marker for each Slide that covers the topic, such as
-        `## Gausselimination [4:34] [slide 2] [slide 3]`. N counts from 1. Clicking
-        the node then shows those Slides in its panel. `unlinked_slides` lists the
+        When the lecture has a Deck read with `read_slides`, base the topics on its
+        Slides. A node label may also carry one `[slide N]` marker for each Slide
+        that covers it, such as `### Gausselimination [4:34] [slide 2] [slide 3]`.
+        N counts from 1. Clicking the node then shows those Slides in its panel.
+        `unlinked_slides` lists the
         markers left as plain text. Each entry gives the node `label`, the `slide`
         marker as written, and a `reason`: `malformed`, `past_end` when N is past the
         Deck's last Slide, or `no_deck` when the Transcript has no Deck. Fix those in

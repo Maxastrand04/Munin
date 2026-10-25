@@ -62,11 +62,14 @@ def prompt_text(server, source: str, deck: str | None = None) -> str:
 
 
 def tool_description(server, name: str) -> str:
+    """Return a tool's description with every run of whitespace collapsed to one space, so phrases match across line wraps."""
+
     async def run():
         async with Client(server) as client:
             return await client.list_tools()
 
-    return next(tool.description for tool in asyncio.run(run()).tools if tool.name == name)
+    description = next(tool.description for tool in asyncio.run(run()).tools if tool.name == name)
+    return " ".join(description.split())
 
 
 def test_mcp_lists_all_tools(cache_dir: Path):
@@ -389,9 +392,67 @@ def test_mcp_render_description_puts_stamp_at_label_end(cache_dir: Path):
     assert "One stamp at the end of each node label" in tool_description(create_server(cache_dir=cache_dir), "render_mindmap")
 
 
-def test_mcp_render_description_asks_for_two_or_three_levels(cache_dir: Path):
-    """The render tool's description asks for an Outline two or three levels deep."""
-    assert "two or three levels deep" in tool_description(create_server(cache_dir=cache_dir), "render_mindmap")
+def test_mcp_render_description_lets_a_topic_carry_a_stamp_per_stretch(cache_dir: Path):
+    """The render tool's description gives a topic one stamp for each stretch of the lecture it gathers."""
+    assert "one stamp for each separate stretch" in tool_description(create_server(cache_dir=cache_dir), "render_mindmap")
+
+
+def test_mcp_render_description_asks_for_topics_slides_and_terms(cache_dir: Path):
+    """The render tool's description asks for topics, then Slides, then terms under the lecture title."""
+    description = tool_description(create_server(cache_dir=cache_dir), "render_mindmap")
+    assert "topics, then Slides, then terms, methods and formulas" in description
+
+
+def test_mcp_render_description_asks_for_one_to_five_topics(cache_dir: Path):
+    """The render tool's description asks for 1 to 5 topics."""
+    assert "1 to 5 topics" in tool_description(create_server(cache_dir=cache_dir), "render_mindmap")
+
+
+def test_mcp_render_description_groups_by_meaning(cache_dir: Path):
+    """The render tool's description asks topics to gather parts of the lecture far apart in time."""
+    description = tool_description(create_server(cache_dir=cache_dir), "render_mindmap")
+    assert "Group the lecture by meaning" in description
+    assert "far apart in time" in description
+
+
+def test_mcp_render_description_bases_topics_on_the_deck(cache_dir: Path):
+    """The render tool's description bases the grouping on the Slides when there is a Deck."""
+    assert "base the topics on its Slides" in tool_description(create_server(cache_dir=cache_dir), "render_mindmap")
+
+
+def test_mcp_render_description_splits_a_deckless_lecture_into_slide_sized_parts(cache_dir: Path):
+    """The render tool's description asks for Slide-sized parts when there is no Deck."""
+    assert "Slide-sized parts" in tool_description(create_server(cache_dir=cache_dir), "render_mindmap")
+
+
+def test_mcp_render_description_skips_content_that_does_not_help(cache_dir: Path):
+    """The render tool's description asks the LLM to skip content that neither explains nor gives material."""
+    description = tool_description(create_server(cache_dir=cache_dir), "render_mindmap")
+    assert "neither helps the student grasp an idea nor gives concrete material" in description
+
+
+def test_mcp_render_description_words_a_repeated_term_the_same(cache_dir: Path):
+    """The render tool's description asks for a repeated term to be worded the same under every Slide node."""
+    assert "Word a term the same under every Slide node" in tool_description(create_server(cache_dir=cache_dir), "render_mindmap")
+
+
+def test_mcp_render_description_labels_examples_and_exercises(cache_dir: Path):
+    """The render tool's description asks for example and exercise leaves labelled `Övning:` or `Exempel:`."""
+    description = tool_description(create_server(cache_dir=cache_dir), "render_mindmap")
+    assert "every example and exercise" in description
+    assert "`Övning:` or `Exempel:`" in description
+
+
+def test_mcp_render_description_writes_out_examples_and_exercises(cache_dir: Path):
+    """The render tool's description asks for each example and exercise's task and solution steps."""
+    description = tool_description(create_server(cache_dir=cache_dir), "render_mindmap")
+    assert "the task and its solution steps" in description
+    assert "without the video or the Slide" in description
+
+
+def test_mcp_render_description_keeps_solution_steps_out_of_lists(cache_dir: Path):
+    """The render tool's description warns that a list item in a solution becomes a node."""
+    assert "never as list items" in tool_description(create_server(cache_dir=cache_dir), "render_mindmap")
 
 
 def test_mcp_main_writes_pages_to_mindmaps_in_working_folder(source: Path, tmp_path: Path, monkeypatch):
