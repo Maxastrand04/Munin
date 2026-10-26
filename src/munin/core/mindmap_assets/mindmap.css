@@ -47,3 +47,9 @@
 .slides figure{margin:0 0 14px}
 .slides img{display:block;width:100%;height:auto;border:1px solid var(--line);border-radius:6px}
 .slides figcaption{font-size:11px;color:var(--muted);margin-top:5px}
+.copies{margin-top:35px}
+.copies h3{font-size:10px;letter-spacing:1px;text-transform:uppercase;color:var(--muted)}
+.copies ul{list-style:none;margin:0;padding:0}
+.copies li{border-bottom:1px solid var(--line);padding:12px 0;font-size:12px}
+.copies a{display:block;text-decoration:none}
+.copies a::after{content:'↗';float:right}

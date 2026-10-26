@@ -216,6 +216,7 @@ def _outline_nodes(
                 "label": shown,
                 "links": links,
                 "slides": slides,
+                "term": _term_key(label),
                 "explanation": "",
             }
         )
@@ -234,10 +235,17 @@ def _outline_nodes(
                 "label": "Lecture notes",
                 "links": [],
                 "slides": [],
+                "term": "",
                 "explanation": "",
             },
         )
     return nodes, tuple(unlinked), tuple(unlinked_slides)
+
+
+def _term_key(label: str) -> str:
+    """Return the label without any stamp or slide marker, in lower case, so copies of one term match."""
+    bare = _SLIDE_MARKER.sub(" ", STAMP.sub(" ", label))
+    return _SPACE_RUN.sub(" ", bare).strip().casefold()
 
 
 def _resolve_stamps(label: str, entry: CacheEntry) -> tuple[str, list[dict], list[UnlinkedStamp]]:
