@@ -2,9 +2,10 @@
 const $ = id => document.getElementById(id);
 const variants = {A: 'Radial rings', C: 'Topic circles'};
 // Each group has a readable accent, a quiet surface, and a saturated focus fill.
-// The 15 hues sit at least 20 degrees apart; neighbouring groups get far-apart hues.
+// The 14 hues sit at least 20 degrees apart and at least 20 from the reserved orange;
+// neighbouring groups get far-apart hues.
 const palette = [
- ['#58735a','#e7ece0','#3d5e42'],['#96713d','#f0e7d6','#795522'],
+ ['#58735a','#e7ece0','#3d5e42'],
  ['#62758e','#e5e9ef','#445d7d'],['#9a6870','#f1e3e3','#7b4752'],
  ['#80708d','#eae4ee','#645071'],['#547c75','#e1ece6','#38635a'],
  ['#5a7e87','#e2ecee','#39616a'],['#87635a','#eee4e2','#6a4339'],
@@ -13,10 +14,18 @@ const palette = [
  ['#87845a','#eeeee2','#6a6839'],['#865a87','#eee2ee','#69396a'],
  ['#67875a','#e5eee2','#486a39']
 ];
+// Orange is reserved for examples and exercises, so no topic gets a hue near it.
+const orangeColors = ['#c27418','#fbebd6','#a8570f'],ORANGE_HUE=32.5,ORANGE_CLEARANCE=25;
+// Groups past the palette step round the colour wheel by the golden angle.
+const GOLDEN_ANGLE=137.508;
 // The main topic stays in the Linen neutrals so no group shares its colour.
 const mainTopicColors = ['#756a59','#f8f4ec','#433b31'];
-const nodes = DATA.map(n => ({...n,children:[],depth:0,group:-1,x:0,y:0,w:220,h:96}));
-nodes.forEach(n=>{if(n.parent!==null){nodes[n.parent].children.push(n.id);n.depth=nodes[n.parent].depth+1;n.group=n.depth===1?nodes[0].children.indexOf(n.id):nodes[n.parent].group;}});
+const nodes = DATA.map(n => ({...n,children:[],depth:0,group:-1,orange:false,x:0,y:0,w:220,h:96}));
+// An example or exercise starts with "Övning:" or "Exempel:", and everything under one counts as one.
+// Such a topic takes no topic colour, so it takes no palette slot either.
+const isExample = label => /^(övning|exempel):/i.test(label);
+let topics = 0;
+nodes.forEach(n=>{if(n.parent!==null){const p=nodes[n.parent];p.children.push(n.id);n.depth=p.depth+1;n.orange=p.orange||isExample(n.label);n.group=n.depth===1?(n.orange?-1:topics++):p.group;}});
 let variant = new URLSearchParams(location.search).get('variant');
 if(!variants[variant]) variant='A';
 let depth = new URLSearchParams(location.search).get('depth') || '2';
@@ -29,9 +38,22 @@ function el(tag,attrs={}) {const e=document.createElementNS(svgNS,tag);Object.en
 function groupColors(group) {
   if (group < 0) return mainTopicColors;
   if (group < palette.length) return palette[group];
-  const hue = (group * 137.508) % 360;
+  const hue = generatedHue(group);
   return [`hsl(${hue} 24% 38%)`, `hsl(${hue} 26% 91%)`, `hsl(${hue} 30% 30%)`];
 }
+function generatedHue(group) {
+  let hue = 0;
+  for (let found = palette.length, step = 0; found <= group; step++) {
+    hue = (step * GOLDEN_ANGLE + palette.length * GOLDEN_ANGLE) % 360;
+    if (!nearOrange(hue)) found++;
+  }
+  return hue;
+}
+function nearOrange(hue) {const gap = Math.abs(hue - ORANGE_HUE);return Math.min(gap, 360 - gap) < ORANGE_CLEARANCE;}
+function nodeColors(n) {return n.orange ? orangeColors : groupColors(n.group);}
+// The edge into the top example of a branch keeps its topic's colour.
+function edgeColor(p,n) {return (n.orange&&(p.orange||p.parent===null)?orangeColors:groupColors(n.group))[0];}
+function showSelectedColor() {document.body.style.setProperty('--selected-color',(selected===null?mainTopicColors:nodeColors(nodes[selected]))[0]);}
 function visible(n){if(n.parent===null)return true;return !collapsed.has(n.parent)&&visible(nodes[n.parent]);}
 function resetDepth(){collapsed=new Set(nodes.filter(n=>n.children.length&&depth!=='all'&&n.depth>=Number(depth)).map(n=>n.id));}
 function coordinates(){
@@ -107,14 +129,14 @@ function render(){
   const world=$('world');world.replaceChildren();
   nodes.filter(visible).forEach(n=>{
     if(n.parent===null)return;
-    const p=nodes[n.parent];const edge=el('path',{class:'edge'});edge.style.setProperty('--group',groupColors(n.group)[0]);
+    const p=nodes[n.parent];const edge=el('path',{class:'edge'});edge.style.setProperty('--group',edgeColor(p,n));
     edge.setAttribute('d',connection(p,n));
     world.append(edge);
   });
   nodes.filter(visible).forEach(n=>{
     const group=el('foreignObject',{x:n.x-n.w/2,y:n.y-n.h/2,width:n.w,height:n.h,class:`node ${n.id===0?'root':''}`,'data-node':n.id,'data-depth':Math.min(n.depth,3)});
     const shell=document.createElement('div');shell.setAttribute('xmlns','http://www.w3.org/1999/xhtml');shell.className='node-shell';
-    const [color,tint]=groupColors(n.group);shell.style.setProperty('--group',color);shell.style.setProperty('--tint',tint);shell.style.setProperty('--fill',(groupColors(n.group))[2]);
+    const [color,tint,fill]=nodeColors(n);shell.style.setProperty('--group',color);shell.style.setProperty('--tint',tint);shell.style.setProperty('--fill',fill);
     const card=document.createElement('div');card.className='node-card'+(n.id===selected?' selected':'');
     const label=document.createElement('button');label.className='node-label';label.textContent=n.label;label.lang='sv';label.setAttribute('aria-label',`Explore ${n.label}`);label.setAttribute('aria-pressed',String(n.id===selected));label.onclick=()=>select(n.id);
     const footer=document.createElement('div');footer.className='node-footer';
@@ -147,7 +169,7 @@ function fit(floor=minScale){
 function centre(n){const rect=$('canvas').getBoundingClientRect();tx=rect.width/2-n.x*scale;ty=rect.height/2-n.y*scale;transform();}
 function select(id){
   selected=id;const n=nodes[id];$('panel').hidden=false;
-  document.body.style.setProperty('--selected-color',(groupColors(n.group))[0]);
+  showSelectedColor();
   const path=[];let p=n.parent;while(p!==null){path.unshift(nodes[p].label);p=nodes[p].parent;}
   $('panel-path').textContent=path.join(' / ')||'Lecture overview';$('panel-title').textContent=n.label;$('explanation').textContent=n.explanation||'Open the Source to explore this idea in context.';
   $('slides').replaceChildren();
@@ -167,7 +189,7 @@ function select(id){
   $('panel').scrollTop=0;render();centre(n);
 }
 function zoom(factor,x,y){const rect=$('canvas').getBoundingClientRect();x??=rect.width/2;y??=rect.height/2;const next=Math.max(.02,Math.min(2,scale*factor));tx=x-(x-tx)*next/scale;ty=y-(y-ty)*next/scale;scale=next;transform();}
-function choose(key){variant=key;document.body.dataset.variant=key;document.body.style.setProperty('--selected-color',groupColors(selected===null?-1:nodes[selected].group)[0]);document.querySelectorAll('input[name="mindmap-style"]').forEach(input=>{input.checked=input.value===key;});syncURL();coordinates();render();fit(OPENING_MIN_SCALE);}
+function choose(key){variant=key;document.body.dataset.variant=key;showSelectedColor();document.querySelectorAll('input[name="mindmap-style"]').forEach(input=>{input.checked=input.value===key;});syncURL();coordinates();render();fit(OPENING_MIN_SCALE);}
 function setSettings(open,restoreFocus=false){
   $('mindmap-settings').hidden=!open;
   $('settings-toggle').setAttribute('aria-expanded',String(open));

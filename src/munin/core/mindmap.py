@@ -111,6 +111,22 @@ def render_mindmap(
     base64 `data:image/png` URI, however many nodes list it, and embeds no
     Slide that no node links.
 
+    Each topic, meaning each node one level under the main topic, gives its
+    branch one colour. A node whose label, as the page shows it after linked
+    stamps and Slide markers leave it, starts with `Övning:` or `Exempel:` in
+    any case is an example or exercise, and so is every node under one. These
+    are orange: an orange of hue 25 to 45 degrees that no topic gets, since
+    every topic's hue sits at least 20 degrees from it however many topics the
+    Outline has. An orange node's border, background, selected fill, stamps,
+    and panel path and rule are orange, and so is the edge into it from
+    another orange node or from the main topic. The edge into the top example
+    or exercise node of a branch keeps its topic's colour. A topic that is
+    itself an example or exercise takes no topic colour, so the topics after
+    it get the colours they would have had without it. The main topic stays in
+    its neutral colours whatever its label. `Övning 2:`, `Övningar:`, and a
+    label with `Övning:` or `Exempel:` anywhere but the start are not examples
+    or exercises.
+
     The page is `<transcript_id>.html` in `output_dir`, replacing any earlier
     page for the same Transcript, and is written even when stamps go unlinked.
     CSS, JavaScript, Outline data and Slide images are embedded, so it opens straight from
