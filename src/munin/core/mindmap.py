@@ -127,6 +127,14 @@ def render_mindmap(
     label with `Övning:` or `Exempel:` anywhere but the start are not examples
     or exercises.
 
+    A term is a node three levels under the main topic, under a topic and a
+    Slide node, that is not an example or exercise. Terms whose labels match
+    once every stamp and slide marker leaves them, ignoring case, are copies of
+    one term. Clicking a copy of a term with two or more copies lists every
+    copy in its panel, in Outline order, as `topic › Slide` in its topic's
+    colour, linked to the copy's first linked stamp. A copy with no linked
+    stamp is listed without a link. A term with one copy shows no list.
+
     The page is `<transcript_id>.html` in `output_dir`, replacing any earlier
     page for the same Transcript, and is written even when stamps go unlinked.
     CSS, JavaScript, Outline data and Slide images are embedded, so it opens straight from
@@ -216,6 +224,7 @@ def _outline_nodes(
                 "label": shown,
                 "links": links,
                 "slides": slides,
+                "term": _term_key(label),
                 "explanation": "",
             }
         )
@@ -234,10 +243,17 @@ def _outline_nodes(
                 "label": "Lecture notes",
                 "links": [],
                 "slides": [],
+                "term": "",
                 "explanation": "",
             },
         )
     return nodes, tuple(unlinked), tuple(unlinked_slides)
+
+
+def _term_key(label: str) -> str:
+    """Return the label without any stamp or slide marker, in lower case, so copies of one term match."""
+    bare = _SLIDE_MARKER.sub(" ", STAMP.sub(" ", label))
+    return _SPACE_RUN.sub(" ", bare).strip().casefold()
 
 
 def _resolve_stamps(label: str, entry: CacheEntry) -> tuple[str, list[dict], list[UnlinkedStamp]]:

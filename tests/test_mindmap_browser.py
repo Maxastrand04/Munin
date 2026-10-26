@@ -530,3 +530,116 @@ def test_panel_slides_load_without_network(page, slides_url):
     open_panel(page, slides_url, "Gauss")
     loaded = panel_images(page).evaluate_all("images => images.map(image => image.complete && image.naturalWidth > 0)")
     assert loaded == [True, True]
+
+
+# A shared term links to every place it appears
+
+SHARED_OUTLINE = """# Matriser
+## A
+### Definition
+#### Matrisprodukt [0:01]
+Rad gånger kolonn.
+## B
+### Räkning
+#### Matrisprodukt [0:03]
+Summan av produkterna.
+"""
+
+
+def copy_entries(page) -> list[str]:
+    return page.locator("#copies li").all_text_contents()
+
+
+def copy_links(page):
+    return page.locator("#copies").get_by_role("link")
+
+
+def open_copy(page, url: str, index: int = 0) -> None:
+    """Show every node and open the panel of the `index`th node labelled Matrisprodukt."""
+    show_every_node(page, url)
+    page.get_by_role("button", name="Explore Matrisprodukt", exact=True).nth(index).dispatch_event("click")
+
+
+def test_shared_term_lists_every_copy_as_topic_and_slide(page, render_outline):
+    """A term under two Slide nodes lists both copies in its panel as topic › Slide."""
+    open_copy(page, render_outline(SHARED_OUTLINE))
+    assert copy_entries(page) == ["A › Definition", "B › Räkning"]
+
+
+def test_copies_match_ignoring_case_stamps_and_slide_markers(page, render_outline):
+    """Labels that differ only in case, stamps and Slide markers count as copies of one term."""
+    outline = SHARED_OUTLINE.replace("#### Matrisprodukt [0:03]", "#### matrisprodukt [slide 2] [9:99]")
+    open_copy(page, render_outline(outline))
+    assert copy_entries(page) == ["A › Definition", "B › Räkning"]
+
+
+def test_copy_panel_shows_its_own_explanation_beside_the_list(page, render_outline):
+    """Clicking the second copy shows that copy's explanation along with the list of copies."""
+    open_copy(page, render_outline(SHARED_OUTLINE), 1)
+    assert (page.locator("#explanation").text_content(), len(copy_entries(page))) == ("Summan av produkterna.", 2)
+
+
+def test_each_copy_entry_is_in_its_topics_colour(page, render_outline):
+    """Each entry in the list is drawn in its own topic's colour."""
+    open_copy(page, render_outline(SHARED_OUTLINE))
+    topics = group_colours(page)
+    entries = page.locator("#copies li").evaluate_all("items => items.map(item => getComputedStyle(item).color)")
+    assert entries == [topics["A"], topics["B"]]
+
+
+def test_each_copy_entry_links_to_its_copys_stamp(page, render_outline):
+    """Each entry links to the second its own copy's stamp names."""
+    open_copy(page, render_outline(SHARED_OUTLINE))
+    hrefs = copy_links(page).evaluate_all("links => links.map(link => link.href)")
+    assert [href.rsplit("#", 1)[1] for href in hrefs] == ["t=1", "t=3"]
+
+
+def test_clicking_a_copy_entry_opens_the_source_at_its_moment(page, render_outline):
+    """Clicking an entry opens the Source at the moment that copy's stamp names."""
+    open_copy(page, render_outline(SHARED_OUTLINE))
+    with page.expect_popup() as popup:
+        copy_links(page).nth(1).click()
+    assert popup.value.url.endswith("#t=3")
+
+
+@pytest.mark.parametrize(
+    "outline",
+    [
+        SHARED_OUTLINE + "## Matrisprodukt\n",
+        SHARED_OUTLINE + "### Matrisprodukt\n",
+        SHARED_OUTLINE + "### Exempel: Räkna\n#### Matrisprodukt\n",
+        SHARED_OUTLINE + "#### Exempel\n##### Matrisprodukt\n",
+    ],
+    ids=["topic", "slide", "example", "below-term"],
+)
+def test_only_term_level_nodes_count_as_copies(page, render_outline, outline):
+    """A topic, Slide node, example node or node below the term level with the term's label is not listed."""
+    open_copy(page, render_outline(outline))
+    assert copy_entries(page) == ["A › Definition", "B › Räkning"]
+
+
+def test_copy_without_linked_stamp_is_listed_without_a_link(page, render_outline):
+    """A copy with no stamp appears in the list with its topic and Slide but no link."""
+    outline = SHARED_OUTLINE.replace("#### Matrisprodukt [0:03]", "#### Matrisprodukt")
+    open_copy(page, render_outline(outline))
+    assert (copy_entries(page), copy_links(page).count()) == (["A › Definition", "B › Räkning"], 1)
+
+
+def test_copy_with_unlinked_stamp_is_listed_without_a_link(page, render_outline):
+    """A copy whose only stamp is unlinked appears in the list with no link."""
+    outline = SHARED_OUTLINE.replace("#### Matrisprodukt [0:03]", "#### Matrisprodukt [9:99]")
+    open_copy(page, render_outline(outline))
+    assert (copy_entries(page), copy_links(page).count()) == (["A › Definition", "B › Räkning"], 1)
+
+
+def test_term_that_appears_once_shows_one_link_and_no_list(page, render_outline):
+    """A term with no copies shows the single Source link and no list of copies."""
+    open_copy(page, render_outline("# Matriser\n## A\n### Definition\n#### Matrisprodukt [0:01]\n"))
+    assert (page.locator("#panel-source").is_visible(), copy_entries(page)) == (True, [])
+
+
+def test_two_copies_under_one_slide_both_appear(page, render_outline):
+    """Two copies under the same Slide node both appear in the list."""
+    outline = "# Matriser\n## A\n### Definition\n#### Matrisprodukt [0:01]\n#### Matrisprodukt [0:03]\n"
+    open_copy(page, render_outline(outline))
+    assert copy_entries(page) == ["A › Definition", "A › Definition"]

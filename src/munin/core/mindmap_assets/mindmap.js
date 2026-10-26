@@ -26,6 +26,10 @@ const nodes = DATA.map(n => ({...n,children:[],depth:0,group:-1,orange:false,x:0
 const isExample = label => /^(övning|exempel):/i.test(label);
 let topics = 0;
 nodes.forEach(n=>{if(n.parent!==null){const p=nodes[n.parent];p.children.push(n.id);n.depth=p.depth+1;n.orange=p.orange||isExample(n.label);n.group=n.depth===1?(n.orange?-1:topics++):p.group;}});
+// Term-level nodes outside examples share a term when their labels match without stamps, markers or case.
+const TERM_DEPTH=3,termCopies=new Map();
+const isTerm = n => n.depth===TERM_DEPTH&&!n.orange;
+nodes.filter(isTerm).forEach(n=>termCopies.set(n.term,[...(termCopies.get(n.term)||[]),n.id]));
 let variant = new URLSearchParams(location.search).get('variant');
 if(!variants[variant]) variant='A';
 let depth = new URLSearchParams(location.search).get('depth') || '2';
@@ -125,6 +129,10 @@ function connection(p,n){
   return `M ${p.x} ${p.y} Q ${p.x+dx*.5-dy*.06} ${p.y+dy*.5+dx*.06} ${n.x} ${n.y}`;
 }
 function syncURL(){const url=new URL(location.href);url.searchParams.set('variant',variant);url.searchParams.set('depth',depth);history.replaceState(null,'',url);}
+function sourceLink(timestamp,text,name=`Open Source at ${timestamp.text}`){
+  const link=document.createElement('a');link.href=timestamp.url;link.target='_blank';link.rel='noopener';
+  link.textContent=text;link.setAttribute('aria-label',name);return link;
+}
 function render(){
   const world=$('world');world.replaceChildren();
   nodes.filter(visible).forEach(n=>{
@@ -141,11 +149,7 @@ function render(){
     const label=document.createElement('button');label.className='node-label';label.textContent=n.label;label.lang='sv';label.setAttribute('aria-label',`Explore ${n.label}`);label.setAttribute('aria-pressed',String(n.id===selected));label.onclick=()=>select(n.id);
     const footer=document.createElement('div');footer.className='node-footer';
     const stamps=document.createElement('span');stamps.className='node-stamps';
-    n.links.forEach(timestamp=>{
-      const link=document.createElement('a');link.className='stamp';link.href=timestamp.url;
-      link.target='_blank';link.rel='noopener';link.textContent=timestamp.text;
-      link.setAttribute('aria-label',`Open Source at ${timestamp.text}`);stamps.append(link);
-    });
+    n.links.forEach(timestamp=>{const link=sourceLink(timestamp,timestamp.text);link.className='stamp';stamps.append(link);});
     footer.append(stamps);
     if(n.children.length){const toggle=document.createElement('button');toggle.className='branch-toggle';toggle.textContent=collapsed.has(n.id)?`+ ${n.children.length}`:'−';toggle.setAttribute('aria-expanded',String(!collapsed.has(n.id)));toggle.setAttribute('aria-label',`${collapsed.has(n.id)?'Reveal':'Hide'} children of ${n.label}`);toggle.onclick=()=>{if(collapsed.has(n.id))collapsed.delete(n.id);else collapsed.add(n.id);render();};footer.append(toggle);}
     card.append(label,footer);shell.append(card);group.append(shell);world.append(group);
@@ -182,11 +186,25 @@ function select(id){
   const timestamp=n.links[0];
   $('panel-source').href=timestamp?timestamp.url:PAGE.source_url;
   $('panel-source').textContent=timestamp?`▶  Open Source at ${timestamp.text} ↗`:'Open Source ↗';
+  showCopies(n);
   $('related').replaceChildren();
   const related=n.children.length?n.children:(n.parent===null?[]:nodes[n.parent].children.filter(c=>c!==id));
   related.slice(0,4).forEach(cid=>{const b=document.createElement('button');b.textContent=nodes[cid].label;b.lang='sv';b.onclick=()=>{let p=nodes[cid].parent;while(p!==null){collapsed.delete(p);p=nodes[p].parent;}select(cid);};$('related').append(b);});
   document.querySelector('.related').hidden=!related.length;
   $('panel').scrollTop=0;render();centre(n);
+}
+function showCopies(n){
+  const copies=isTerm(n)?termCopies.get(n.term):[];
+  $('copies-list').replaceChildren();
+  if(copies.length>1)copies.forEach(cid=>{
+    const copy=nodes[cid],slide=nodes[copy.parent],item=document.createElement('li'),text=`${nodes[slide.parent].label} › ${slide.label}`;
+    item.style.color=groupColors(copy.group)[0];item.lang='sv';
+    const timestamp=copy.links[0];
+    if(timestamp)item.append(sourceLink(timestamp,text,`Open Source at ${timestamp.text}, ${text}`));
+    else item.textContent=text;
+    $('copies-list').append(item);
+  });
+  $('copies').hidden=copies.length<2;
 }
 function zoom(factor,x,y){const rect=$('canvas').getBoundingClientRect();x??=rect.width/2;y??=rect.height/2;const next=Math.max(.02,Math.min(2,scale*factor));tx=x-(x-tx)*next/scale;ty=y-(y-ty)*next/scale;scale=next;transform();}
 function choose(key){variant=key;document.body.dataset.variant=key;showSelectedColor();document.querySelectorAll('input[name="mindmap-style"]').forEach(input=>{input.checked=input.value===key;});syncURL();coordinates();render();fit(OPENING_MIN_SCALE);}
