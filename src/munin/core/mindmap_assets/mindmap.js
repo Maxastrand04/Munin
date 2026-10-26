@@ -129,6 +129,10 @@ function connection(p,n){
   return `M ${p.x} ${p.y} Q ${p.x+dx*.5-dy*.06} ${p.y+dy*.5+dx*.06} ${n.x} ${n.y}`;
 }
 function syncURL(){const url=new URL(location.href);url.searchParams.set('variant',variant);url.searchParams.set('depth',depth);history.replaceState(null,'',url);}
+function sourceLink(timestamp,text,name=`Open Source at ${timestamp.text}`){
+  const link=document.createElement('a');link.href=timestamp.url;link.target='_blank';link.rel='noopener';
+  link.textContent=text;link.setAttribute('aria-label',name);return link;
+}
 function render(){
   const world=$('world');world.replaceChildren();
   nodes.filter(visible).forEach(n=>{
@@ -145,11 +149,7 @@ function render(){
     const label=document.createElement('button');label.className='node-label';label.textContent=n.label;label.lang='sv';label.setAttribute('aria-label',`Explore ${n.label}`);label.setAttribute('aria-pressed',String(n.id===selected));label.onclick=()=>select(n.id);
     const footer=document.createElement('div');footer.className='node-footer';
     const stamps=document.createElement('span');stamps.className='node-stamps';
-    n.links.forEach(timestamp=>{
-      const link=document.createElement('a');link.className='stamp';link.href=timestamp.url;
-      link.target='_blank';link.rel='noopener';link.textContent=timestamp.text;
-      link.setAttribute('aria-label',`Open Source at ${timestamp.text}`);stamps.append(link);
-    });
+    n.links.forEach(timestamp=>{const link=sourceLink(timestamp,timestamp.text);link.className='stamp';stamps.append(link);});
     footer.append(stamps);
     if(n.children.length){const toggle=document.createElement('button');toggle.className='branch-toggle';toggle.textContent=collapsed.has(n.id)?`+ ${n.children.length}`:'−';toggle.setAttribute('aria-expanded',String(!collapsed.has(n.id)));toggle.setAttribute('aria-label',`${collapsed.has(n.id)?'Reveal':'Hide'} children of ${n.label}`);toggle.onclick=()=>{if(collapsed.has(n.id))collapsed.delete(n.id);else collapsed.add(n.id);render();};footer.append(toggle);}
     card.append(label,footer);shell.append(card);group.append(shell);world.append(group);
@@ -200,7 +200,7 @@ function showCopies(n){
     const copy=nodes[cid],slide=nodes[copy.parent],item=document.createElement('li'),text=`${nodes[slide.parent].label} › ${slide.label}`;
     item.style.color=groupColors(copy.group)[0];item.lang='sv';
     const timestamp=copy.links[0];
-    if(timestamp){const link=document.createElement('a');link.href=timestamp.url;link.target='_blank';link.rel='noopener';link.textContent=text;link.setAttribute('aria-label',`Open Source at ${timestamp.text}, ${text}`);item.append(link);}
+    if(timestamp)item.append(sourceLink(timestamp,text,`Open Source at ${timestamp.text}, ${text}`));
     else item.textContent=text;
     $('copies-list').append(item);
   });

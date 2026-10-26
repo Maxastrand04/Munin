@@ -127,6 +127,14 @@ def render_mindmap(
     label with `Övning:` or `Exempel:` anywhere but the start are not examples
     or exercises.
 
+    A term is a node three levels under the main topic, under a topic and a
+    Slide node, that is not an example or exercise. Terms whose labels match
+    once every stamp and slide marker leaves them, ignoring case, are copies of
+    one term. Clicking a copy of a term with two or more copies lists every
+    copy in its panel, in Outline order, as `topic › Slide` in its topic's
+    colour, linked to the copy's first linked stamp. A copy with no linked
+    stamp is listed without a link. A term with one copy shows no list.
+
     The page is `<transcript_id>.html` in `output_dir`, replacing any earlier
     page for the same Transcript, and is written even when stamps go unlinked.
     CSS, JavaScript, Outline data and Slide images are embedded, so it opens straight from

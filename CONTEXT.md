@@ -37,7 +37,7 @@ The nested Markdown the LLM writes from a Transcript, where node labels carry `[
 _Avoid_: notes, summary, mindmap (for the Markdown)
 
 **Mindmap**:
-The rendered HTML page built from an Outline, with each stamp turned into a Timestamp link. A malformed stamp, or one past the Source's end, stays as plain text and is reported back as unlinked. A node's panel shows the Slides its markers name, and a marker that is malformed, past the Deck's last Slide, or on a Transcript with no Deck is reported back as unlinked too.
+The rendered HTML page built from an Outline, with each stamp turned into a Timestamp link. A malformed stamp, or one past the Source's end, stays as plain text and is reported back as unlinked. A node's panel shows the Slides its markers name, and a marker that is malformed, past the Deck's last Slide, or on a Transcript with no Deck is reported back as unlinked too. A term that appears under several Slide nodes, worded the same, lists every place it appears in each copy's panel.
 _Avoid_: map, graph, diagram
 
 **Example or exercise**:
