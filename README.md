@@ -21,6 +21,8 @@ Klang's [Pianissimo](https://huggingface.co/KlangAI/pianissimo-sv) model does th
 
 The `lecture_to_mindmap` prompt takes a Source, a Deck path, or both. With both, it adds a `read_slides` step before the Outline is written. With only a Deck path, it runs `read_deck` and `render_deck_mindmap` instead of transcribing. With neither, it is an error.
 
+The `slides_to_mindmap` prompt takes only a Deck path and runs the same `read_deck` and `render_deck_mindmap` steps. Use it from a slash command, since Claude Code fills prompt arguments by position and the first one always becomes `lecture_to_mindmap`'s Source.
+
 ## Measured on an M1 Pro (ONNX int8, CPU only)
 
 | Audio | Time | Peak RAM |

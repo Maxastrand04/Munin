@@ -92,6 +92,10 @@ def create_server(
     It never names `transcribe`. With neither, getting the prompt fails with
     an MCP error whose message is "Give a Source, a Deck, or both", and no
     step runs.
+    The `slides_to_mindmap(deck: str)` prompt takes only a Deck and lists the
+    same slides-only steps as `lecture_to_mindmap` with only a `deck`. It
+    exists because a client that fills prompt arguments by position, such as
+    a slash command, always puts the first argument in `source`.
     A `MuninError` comes back as an MCP tool error carrying its message.
     """
     server = MCPServer("munin")
@@ -232,16 +236,7 @@ def create_server(
         if not source and not deck:
             raise MCPError(code=INVALID_PARAMS, message="Give a Source, a Deck, or both")
         if not source:
-            slides_only = [
-                f"Call `read_deck` with this Deck path: {deck}.",
-                (
-                    "Write an Outline of the lecture from the Slides alone, in the format the "
-                    "`render_deck_mindmap` tool describes."
-                ),
-                "Call `render_deck_mindmap` with the Deck ID and the Outline.",
-                _REPLY_STEP,
-            ]
-            return f"Turn this slide deck into a Mindmap: {deck}\n\n{_numbered(slides_only)}"
+            return _slides_only_prompt(deck)
         steps = [
             "Call `transcribe` with that Source.",
             "Call `get_transcript` with the returned Transcript ID.",
@@ -258,6 +253,11 @@ def create_server(
             _REPLY_STEP,
         ]
         return f"Turn this lecture into a Mindmap: {source}\n\n{_numbered(steps)}"
+
+    @server.prompt(name="slides_to_mindmap")
+    def slides_to_mindmap_prompt(deck: str) -> str:
+        """Turn a lecture's slide PDF, with no recording, into a Mindmap page."""
+        return _slides_only_prompt(deck)
 
     return server
 
@@ -286,6 +286,17 @@ def _slide_blocks(slides: tuple[Slide, ...]) -> list[TextContent | Image]:
         blocks.append(TextContent(type="text", text=f"Slide {slide.number}:\n{slide.text}"))
         blocks.append(Image(data=slide.image, format="png"))
     return blocks
+
+
+def _slides_only_prompt(deck: str) -> str:
+    """Return the steps that read a Deck on its own and render a Mindmap from its Slides."""
+    steps = [
+        f"Call `read_deck` with this Deck path: {deck}.",
+        "Write an Outline of the lecture from the Slides alone, in the format the `render_deck_mindmap` tool describes.",
+        "Call `render_deck_mindmap` with the Deck ID and the Outline.",
+        _REPLY_STEP,
+    ]
+    return f"Turn this slide deck into a Mindmap: {deck}\n\n{_numbered(steps)}"
 
 
 def _numbered(steps: list[str]) -> str:

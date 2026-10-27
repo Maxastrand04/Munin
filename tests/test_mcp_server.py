@@ -656,6 +656,42 @@ def test_mcp_lecture_prompt_with_only_a_deck_reports_a_failed_step(cache_dir: Pa
     )
 
 
+def slides_prompt_text(server, deck: str) -> str:
+    async def run():
+        async with Client(server) as client:
+            return await client.get_prompt("slides_to_mindmap", {"deck": deck})
+
+    return asyncio.run(run()).messages[0].content.text
+
+
+def test_mcp_lists_slides_prompt_with_only_a_required_deck(cache_dir: Path):
+    """The server lists `slides_to_mindmap` with one required `deck`, so a positional first argument lands in it."""
+
+    async def run():
+        async with Client(create_server(cache_dir=cache_dir)) as client:
+            return await client.list_prompts()
+
+    prompts = {prompt.name: prompt for prompt in asyncio.run(run()).prompts}
+    assert [(arg.name, arg.required) for arg in prompts["slides_to_mindmap"].arguments] == [("deck", True)]
+
+
+def test_mcp_slides_prompt_matches_lecture_prompt_with_only_a_deck(cache_dir: Path):
+    """`slides_to_mindmap` gives the same text as `lecture_to_mindmap` with only a Deck."""
+    server = create_server(cache_dir=cache_dir)
+    assert slides_prompt_text(server, DECK_PATH) == prompt_text(server, deck=DECK_PATH)
+
+
+def test_mcp_slides_prompt_gives_read_deck_the_path(cache_dir: Path):
+    """The step in `slides_to_mindmap` that names read_deck carries the Deck path."""
+    lines = slides_prompt_text(create_server(cache_dir=cache_dir), DECK_PATH).splitlines()
+    assert any("`read_deck`" in line and DECK_PATH in line for line in lines)
+
+
+def test_mcp_slides_prompt_never_transcribes(cache_dir: Path):
+    """`slides_to_mindmap` never names transcribe."""
+    assert "`transcribe`" not in slides_prompt_text(create_server(cache_dir=cache_dir), DECK_PATH)
+
+
 def test_mcp_lecture_prompt_with_neither_is_an_error(cache_dir: Path):
     """With neither a Source nor a Deck, getting the prompt fails with an MCP error."""
     assert prompt_error(create_server(cache_dir=cache_dir)) is not None
