@@ -1,0 +1,21 @@
+# Checks every pull request. See PCR-0005, PCR-0006 and PCR-0007.
+name: CI
+
+on:
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  # Installs Python 3.12 and the dev group from uv.lock with --locked, then
+  # Chromium and ffmpeg, then runs `uv run pytest -m "not slow and not network"`.
+  # Passes or fails with pytest.
+  tests:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Not implemented
+        run: |
+          echo "tests check not implemented"
+          exit 1
