@@ -30,7 +30,7 @@ def create_server(
     output_dir: Path | None = None,
     download: Download | None = None,
 ) -> MCPServer:
-    """Build the MCP server with four tools and one prompt, passing its arguments to the core.
+    """Build the MCP server with six tools and one prompt, passing its arguments to the core.
 
     `transcribe(source: str, vocabulary: list[str] | None = None, alpha: float = 1.0)`
     takes a local file path, a YouTube URL or a KTH Play video URL, plus
@@ -55,13 +55,33 @@ def create_server(
     core's `read_slides` and returns two content blocks per Slide in Slide
     order: a text block `Slide N:` followed by the Slide's text on the next
     line, then the Slide's image as a PNG image block.
-    The `lecture_to_mindmap(source: str, deck: str | None = None)` prompt lists
-    the run's steps for one Source and leaves the Outline format to
-    `render_mindmap`'s description. With a `deck`, it adds a step between
+    `read_deck(deck: str)` reads a Deck on its own through the core's
+    `read_deck` and returns a text block `Deck ID: <id>` first, then the same
+    two blocks per Slide that `read_slides` returns.
+    `render_deck_mindmap(deck_id: str, outline: str)` returns the
+    `RenderResult` fields as `render_mindmap` does. Its description gives the
+    slides-only Outline format. It is the same shape as `render_mindmap`'s,
+    with 1 to 5 topics grouped by meaning, one node per Slide carrying its
+    `[slide N]` marker, title and schedule Slides skipped, terms worded the
+    same everywhere, and each example and exercise written out under an
+    `Övning:` or `Exempel:` leaf. It says to write no stamps, and asks for an
+    explanation of one to three sentences under every term node that gives
+    context and covers only what the Slides cover.
+    The `lecture_to_mindmap(source: str | None = None, deck: str | None = None)`
+    prompt takes a Source, a Deck, or both. With a Source, it lists the run's
+    steps for that Source and leaves the Outline format to `render_mindmap`'s
+    description. With a `deck` as well, it adds a step between
     `get_transcript` and writing the Outline that calls `read_slides` with the
     Transcript ID and that Deck path, and asks the LLM to match each Slide to
     the part of the Transcript covering the same content. Without one, its
-    text is the same as before Decks existed.
+    text is the same as before Decks existed. With only a `deck`, it lists the
+    slides-only steps: call `read_deck` with that Deck path, write an Outline
+    from the Slides in the format `render_deck_mindmap` describes, call
+    `render_deck_mindmap` with the Deck ID and the Outline, and reply with only
+    the page as a `file://` link, or with which step failed and the error.
+    It never names `transcribe`. With neither, getting the prompt fails with
+    an MCP error whose message is "Give a Source, a Deck, or both", and no
+    step runs.
     A `MuninError` comes back as an MCP tool error carrying its message.
     """
     server = MCPServer("munin")
@@ -154,9 +174,19 @@ def create_server(
             blocks.append(Image(data=slide.image, format="png"))
         return blocks
 
+    @server.tool(name="read_deck")
+    def read_deck_tool(deck: str) -> list[TextContent | Image]:
+        """Read a lecture's slide PDF on its own, with no recording, and return its Deck ID and every Slide's number, text and image."""
+        raise NotImplementedError
+
+    @server.tool(name="render_deck_mindmap")
+    def render_deck_mindmap_tool(deck_id: str, outline: str) -> RenderResult:
+        """Render an Outline written from a Deck read with `read_deck` into a Mindmap page."""
+        raise NotImplementedError
+
     @server.prompt(name="lecture_to_mindmap")
-    def lecture_to_mindmap_prompt(source: str, deck: str | None = None) -> str:
-        """Turn a lecture, given as a YouTube URL, a KTH Play video URL or a local file path, into a Mindmap page."""
+    def lecture_to_mindmap_prompt(source: str | None = None, deck: str | None = None) -> str:
+        """Turn a lecture, given as a YouTube URL, a KTH Play video URL or a local file path, a slide PDF, or both, into a Mindmap page."""
         steps = [
             "Call `transcribe` with that Source.",
             "Call `get_transcript` with the returned Transcript ID.",

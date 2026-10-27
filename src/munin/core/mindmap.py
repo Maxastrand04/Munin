@@ -34,13 +34,14 @@ class UnlinkedStamp:
     `label` is the node's label as written in the Outline, every stamp
     included, so `Gauss [0:02] [1:75]` stays whole. `stamp` is the stamp's text,
     brackets included, such as `[1:75]`. `reason` is `"malformed"` when
-    `stamp_seconds` rejects its shape, and `"past_end"` when it is well-formed
-    but later than the Source's duration.
+    `stamp_seconds` rejects its shape, `"past_end"` when it is well-formed
+    but later than the Source's duration, and `"no_source"` when the Outline
+    is rendered against a Deck read on its own, whatever the stamp's shape.
     """
 
     label: str
     stamp: str
-    reason: Literal["malformed", "past_end"]
+    reason: Literal["malformed", "past_end", "no_source"]
 
 
 @dataclass(frozen=True)
@@ -160,6 +161,35 @@ def render_mindmap(
     page.write_text(content, encoding="utf-8")
     return RenderResult(page, unlinked, unlinked_slides)
 
+
+def render_deck_mindmap(
+    deck_id: str,
+    outline: str,
+    *,
+    cache_dir: Path | None = None,
+    output_dir: Path | None = None,
+) -> RenderResult:
+    """Write the Mindmap page for an Outline written from a Deck read on its own, and return what `render_mindmap` returns.
+
+    Renders as `render_mindmap` does, with these differences. Slide markers
+    resolve against the copy `read_deck` stored under `deck_id`, so a marker
+    naming one of its Slides links that Slide, and a malformed marker or one
+    past its last Slide is reported in `unlinked_slides` as `"malformed"` or
+    `"past_end"`. A Slide node with no marker renders with no Slide image and
+    is not reported. There is no Source, so every stamp in a node label stays
+    as plain text and is reported in `unlinked` with reason `"no_source"`,
+    whatever its shape. The page has no link to a Source: no lecture link in
+    its header and no Source link in any node's panel.
+
+    The page is `<deck_id>.html` in `output_dir`, replacing any earlier page
+    for the same Deck. `cache_dir` and `output_dir` default as for
+    `render_mindmap`.
+
+    Raises `UnknownDeckError` when no Deck read on its own has this ID, and
+    `OutlineError` when the Outline has no headings or list items. Either way
+    it writes nothing.
+    """
+    raise NotImplementedError
 
 def _slide_images(deck: Path, numbers: list[int]) -> dict[str, str]:
     """Return each numbered Slide of the Deck as a PNG data URI, keyed by its number as text."""

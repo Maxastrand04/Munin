@@ -60,6 +60,17 @@ class UnknownTranscriptError(MuninError):
         super().__init__(f"No Transcript with ID {transcript_id}")
 
 
+class UnknownDeckError(MuninError):
+    """No Deck read on its own has this ID.
+
+    `deck_id` is the ID the caller gave, and the message names it, as in
+    "No Deck with ID 0123456789ab".
+    """
+
+    def __init__(self, deck_id: str) -> None:
+        raise NotImplementedError
+
+
 class VocabularyError(MuninError):
     """A Vocabulary's boost strength is outside 0 to 2.
 

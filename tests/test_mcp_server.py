@@ -73,14 +73,21 @@ def tool_description(server, name: str) -> str:
 
 
 def test_mcp_lists_all_tools(cache_dir: Path):
-    """The server exposes `transcribe`, `get_transcript`, `render_mindmap` and `read_slides`."""
+    """The server exposes `transcribe`, `get_transcript`, `render_mindmap`, `read_slides`, `read_deck` and `render_deck_mindmap`."""
 
     async def run():
         async with Client(create_server(cache_dir=cache_dir, recognize=two_sentences)) as client:
             return await client.list_tools()
 
     names = {tool.name for tool in asyncio.run(run()).tools}
-    assert names == {"transcribe", "get_transcript", "render_mindmap", "read_slides"}
+    assert names == {
+        "transcribe",
+        "get_transcript",
+        "render_mindmap",
+        "read_slides",
+        "read_deck",
+        "render_deck_mindmap",
+    }
 
 
 def test_mcp_transcribe_returns_result_fields(source: Path, cache_dir: Path):
@@ -301,8 +308,8 @@ def test_mcp_read_slides_unknown_id_is_tool_error(deck: Path, cache_dir: Path):
     assert result.is_error is True
 
 
-def test_mcp_lists_lecture_prompt_with_required_source_and_optional_deck(cache_dir: Path):
-    """The server lists `lecture_to_mindmap` with a required `source` and an optional `deck`."""
+def test_mcp_lists_lecture_prompt_with_optional_source_and_deck(cache_dir: Path):
+    """The server lists `lecture_to_mindmap` with an optional `source` and an optional `deck`."""
 
     async def run():
         async with Client(create_server(cache_dir=cache_dir, recognize=two_sentences)) as client:
@@ -310,7 +317,7 @@ def test_mcp_lists_lecture_prompt_with_required_source_and_optional_deck(cache_d
 
     prompts = {prompt.name: prompt for prompt in asyncio.run(run()).prompts}
     assert [(arg.name, arg.required) for arg in prompts["lecture_to_mindmap"].arguments] == [
-        ("source", True),
+        ("source", False),
         ("deck", False),
     ]
 

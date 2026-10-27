@@ -1,4 +1,4 @@
-"""Reading a Deck's Slides and attaching the Deck to a Transcript."""
+"""Reading a Deck's Slides, attached to a Transcript or on its own."""
 
 import os
 import shutil
@@ -65,6 +65,46 @@ def read_slides(
     shutil.copyfile(path, partial)
     partial.replace(target)
     return tuple(Slide(number, text, image) for number, (text, image) in enumerate(pages, start=1))
+
+
+@dataclass(frozen=True)
+class DeckResult:
+    """What `read_deck` tells the caller about a Deck read on its own.
+
+    `deck_id` names the stored copy for `render_deck_mindmap`. `slides` is
+    every Slide in page order.
+    """
+
+    deck_id: str
+    slides: tuple[Slide, ...]
+
+
+def read_deck(
+    deck: str | os.PathLike[str],
+    *,
+    cache_dir: Path | None = None,
+) -> DeckResult:
+    """Read a Deck on its own, with no Transcript, and return its ID and every Slide in page order.
+
+    `deck` is a path to a PDF. It has `~` expanded and is resolved to an
+    absolute path, as a local Source path is. The Deck ID is the first 12 hex
+    characters of the SHA-256 of that resolved path, so the same path always
+    gives the same ID, and a moved or renamed PDF gets a new one. The Deck is
+    copied into the cache under its ID, so a later `render_deck_mindmap` uses
+    the Deck as it was when read. Reading the same path again replaces the
+    copy, and the next render uses the new Slides.
+
+    A Deck read on its own and the same PDF attached to a Transcript with
+    `read_slides` are separate copies, and reading or replacing one leaves the
+    other as it was.
+
+    `cache_dir` defaults to the per-user cache folder for Munin.
+
+    Raises `DeckError` when `deck` is not a file, is not a readable PDF, or
+    has no pages. Then nothing is stored, and any copy stored before under
+    the same ID stays.
+    """
+    raise NotImplementedError
 
 
 def deck_path(transcript_id: str, cache_dir: Path) -> Path:
