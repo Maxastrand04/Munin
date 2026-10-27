@@ -15,6 +15,7 @@ from munin.core import (
     MuninError,
     Recognize,
     RenderResult,
+    Slide,
     TranscribeResult,
     Vocabulary,
     get_transcript,
@@ -23,6 +24,12 @@ from munin.core import (
     render_deck_mindmap,
     render_mindmap,
     transcribe,
+)
+
+_REPLY_STEP = (
+    "Reply with only the page as a `file://` link, such as `file:///path/to/page.html`. "
+    "Write nothing else: no Outline, no summary, no list of steps. "
+    "If a step fails, reply with only which step failed and the error."
 )
 
 
@@ -171,22 +178,14 @@ def create_server(
         """Attach a lecture's slide PDF to a Transcript and return every Slide's number, text and image."""
         with _core_errors_as_tool_errors():
             slides = read_slides(transcript_id, deck, cache_dir=cache_dir)
-        blocks: list[TextContent | Image] = []
-        for slide in slides:
-            blocks.append(TextContent(type="text", text=f"Slide {slide.number}:\n{slide.text}"))
-            blocks.append(Image(data=slide.image, format="png"))
-        return blocks
+        return _slide_blocks(slides)
 
     @server.tool(name="read_deck")
     def read_deck_tool(deck: str) -> list[TextContent | Image]:
         """Read a lecture's slide PDF on its own, with no recording, and return its Deck ID and every Slide's number, text and image."""
         with _core_errors_as_tool_errors():
             result = read_deck(deck, cache_dir=cache_dir)
-        blocks: list[TextContent | Image] = [TextContent(type="text", text=f"Deck ID: {result.deck_id}")]
-        for slide in result.slides:
-            blocks.append(TextContent(type="text", text=f"Slide {slide.number}:\n{slide.text}"))
-            blocks.append(Image(data=slide.image, format="png"))
-        return blocks
+        return [TextContent(type="text", text=f"Deck ID: {result.deck_id}"), *_slide_blocks(result.slides)]
 
     @server.tool(name="render_deck_mindmap")
     def render_deck_mindmap_tool(deck_id: str, outline: str) -> RenderResult:
@@ -235,17 +234,14 @@ def create_server(
         if not source:
             slides_only = [
                 f"Call `read_deck` with this Deck path: {deck}.",
-                "Write an Outline of the lecture from the Slides alone, in the format the "
-                "`render_deck_mindmap` tool describes.",
-                "Call `render_deck_mindmap` with the Deck ID and the Outline.",
                 (
-                    "Reply with only the page as a `file://` link, such as `file:///path/to/page.html`. "
-                    "Write nothing else: no Outline, no summary, no list of steps. "
-                    "If a step fails, reply with only which step failed and the error."
+                    "Write an Outline of the lecture from the Slides alone, in the format the "
+                    "`render_deck_mindmap` tool describes."
                 ),
+                "Call `render_deck_mindmap` with the Deck ID and the Outline.",
+                _REPLY_STEP,
             ]
-            numbered = "\n".join(f"{number}. {step}" for number, step in enumerate(slides_only, start=1))
-            return f"Turn this slide deck into a Mindmap: {deck}\n\n{numbered}"
+            return f"Turn this slide deck into a Mindmap: {deck}\n\n{_numbered(slides_only)}"
         steps = [
             "Call `transcribe` with that Source.",
             "Call `get_transcript` with the returned Transcript ID.",
@@ -259,14 +255,9 @@ def create_server(
             "Write an Outline of the lecture in the format the `render_mindmap` tool describes."
             + (" Put the matching Slide numbers on each node." if deck else ""),
             "Call `render_mindmap` with the Transcript ID and the Outline.",
-            (
-                "Reply with only the page as a `file://` link, such as `file:///path/to/page.html`. "
-                "Write nothing else: no Outline, no summary, no list of steps. "
-                "If a step fails, reply with only which step failed and the error."
-            ),
+            _REPLY_STEP,
         ]
-        numbered = "\n".join(f"{number}. {step}" for number, step in enumerate(steps, start=1))
-        return f"Turn this lecture into a Mindmap: {source}\n\n{numbered}"
+        return f"Turn this lecture into a Mindmap: {source}\n\n{_numbered(steps)}"
 
     return server
 
@@ -286,3 +277,17 @@ def _core_errors_as_tool_errors() -> Iterator[None]:
         yield
     except MuninError as error:
         raise ToolError(str(error)) from error
+
+
+def _slide_blocks(slides: tuple[Slide, ...]) -> list[TextContent | Image]:
+    """Return a `Slide N:` text block, then a PNG image block, for each Slide in order."""
+    blocks: list[TextContent | Image] = []
+    for slide in slides:
+        blocks.append(TextContent(type="text", text=f"Slide {slide.number}:\n{slide.text}"))
+        blocks.append(Image(data=slide.image, format="png"))
+    return blocks
+
+
+def _numbered(steps: list[str]) -> str:
+    """Return the steps as a numbered list, one per line, counting from 1."""
+    return "\n".join(f"{number}. {step}" for number, step in enumerate(steps, start=1))

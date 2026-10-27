@@ -1,15 +1,14 @@
 """Transcribing a Source and reading its Transcript back."""
 
-import hashlib
 import json
 import os
-import re
 import tempfile
 import time
 import wave
 from dataclasses import asdict, dataclass, replace
 from pathlib import Path
 
+from munin.core.cache_ids import cache_id, is_cache_id
 from munin.core.cache_paths import default_cache_dir
 from munin.core.decode import decode_to_wav
 from munin.core.errors import NoSpeechError, SourceError, UnknownTranscriptError
@@ -20,9 +19,6 @@ from munin.core.sources import Download, Source, Video, parse_source
 from munin.core.stamps import format_stamp
 from munin.core.vocabulary import Vocabulary
 from munin.core.youtube import YouTubeSource, download_audio
-
-_ID_LENGTH = 12
-_ID_PATTERN = re.compile(f"[0-9a-f]{{{_ID_LENGTH}}}")
 
 
 @dataclass(frozen=True)
@@ -122,7 +118,7 @@ def transcribe(
     """
     parsed = parse_source(source)
     resolved = parsed.expanduser().resolve() if isinstance(parsed, Path) else parsed
-    transcript_id = _transcript_id(_source_key(resolved))
+    transcript_id = cache_id(_source_key(resolved))
     entry_path = _entry_path(cache_dir, transcript_id)
     vocabulary = vocabulary if vocabulary and vocabulary.terms else None
     if vocabulary is None and entry_path.is_file():
@@ -158,17 +154,13 @@ def cached_entry(transcript_id: str, *, cache_dir: Path | None = None) -> CacheE
     Raises `UnknownTranscriptError` when no cached Transcript has this ID.
     """
     entry_path = _entry_path(cache_dir, transcript_id)
-    if not _ID_PATTERN.fullmatch(transcript_id) or not entry_path.is_file():
+    if not is_cache_id(transcript_id) or not entry_path.is_file():
         raise UnknownTranscriptError(transcript_id)
     return _read_entry(entry_path)
 
 
 def _source_key(source: Source) -> str:
     return source.url if isinstance(source, Video) else str(source)
-
-
-def _transcript_id(key: str) -> str:
-    return hashlib.sha256(key.encode()).hexdigest()[:_ID_LENGTH]
 
 
 def _entry_path(cache_dir: Path | None, transcript_id: str) -> Path:

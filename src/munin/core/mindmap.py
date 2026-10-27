@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Literal
 
 from munin.core import pdf
+from munin.core.cache_ids import is_cache_id
 from munin.core.cache_paths import default_cache_dir
 from munin.core.errors import OutlineError, UnknownDeckError
 from munin.core.slides import deck_path, standalone_deck_path
@@ -22,7 +23,6 @@ _DEFAULT_OUTPUT_DIR = _REPO_ROOT / "mindmaps"
 _ASSETS = Path(__file__).with_name("mindmap_assets")
 _HEADING = re.compile(r"^\s{0,3}(#{1,6})\s+(.+?)(?:\s+#+)?\s*$")
 _BULLET = re.compile(r"^(\s*)(?:[-+*]|\d+[.)])\s+(.+)$")
-_DECK_ID = re.compile(r"[0-9a-f]{12}")
 _SPACE_RUN = re.compile(r"\s{2,}")
 _SLIDE_MARKER = re.compile(r"\[slide(?:\s[^\]]*)?\]", re.IGNORECASE)
 _SLIDE_NUMBER = re.compile(r"\[slide\s+(\d+)\]", re.IGNORECASE)
@@ -30,7 +30,7 @@ _SLIDE_NUMBER = re.compile(r"\[slide\s+(\d+)\]", re.IGNORECASE)
 
 @dataclass(frozen=True)
 class UnlinkedStamp:
-    """A stamp in a node label that `render_mindmap` left as plain text.
+    """A stamp in a node label that `render_mindmap` or `render_deck_mindmap` left as plain text.
 
     `label` is the node's label as written in the Outline, every stamp
     included, so `Gauss [0:02] [1:75]` stays whole. `stamp` is the stamp's text,
@@ -47,7 +47,7 @@ class UnlinkedStamp:
 
 @dataclass(frozen=True)
 class UnlinkedSlide:
-    """A slide marker in a node label that `render_mindmap` could not link to a Slide.
+    """A slide marker in a node label that `render_mindmap` or `render_deck_mindmap` could not link to a Slide.
 
     `label` is the node's label as written in the Outline, every marker and
     stamp included. `slide` is the marker's text as written, brackets
@@ -64,7 +64,7 @@ class UnlinkedSlide:
 
 @dataclass(frozen=True)
 class RenderResult:
-    """What `render_mindmap` tells the caller about the page it wrote.
+    """What `render_mindmap` and `render_deck_mindmap` tell the caller about the page they wrote.
 
     `page` is the page's absolute path. `unlinked` holds one entry per bad stamp
     occurrence in node labels, in Outline order and left to right within a
@@ -153,14 +153,7 @@ def render_mindmap(
     """
     entry = cached_entry(transcript_id, cache_dir=cache_dir)
     deck = deck_path(transcript_id, cache_dir or default_cache_dir())
-    deck_pages = pdf.page_count(deck) if deck.is_file() else None
-    nodes, unlinked, unlinked_slides = _outline_nodes(outline, entry, deck_pages)
-    linked = sorted({number for node in nodes for number in node["slides"]})
-    content = _page_html(transcript_id, nodes, entry.source, _slide_images(deck, linked))
-    page = (output_dir or _DEFAULT_OUTPUT_DIR).resolve() / f"{transcript_id}.html"
-    page.parent.mkdir(parents=True, exist_ok=True)
-    page.write_text(content, encoding="utf-8")
-    return RenderResult(page, unlinked, unlinked_slides)
+    return _write_page(transcript_id, outline, entry, deck, output_dir)
 
 
 def render_deck_mindmap(
@@ -192,12 +185,24 @@ def render_deck_mindmap(
     """
     cache_dir = cache_dir or default_cache_dir()
     deck = standalone_deck_path(deck_id, cache_dir)
-    if not _DECK_ID.fullmatch(deck_id) or not deck.is_file():
+    if not is_cache_id(deck_id) or not deck.is_file():
         raise UnknownDeckError(deck_id)
-    nodes, unlinked, unlinked_slides = _outline_nodes(outline, None, pdf.page_count(deck))
+    return _write_page(deck_id, outline, None, deck, output_dir)
+
+
+def _write_page(
+    page_id: str, outline: str, entry: CacheEntry | None, deck: Path, output_dir: Path | None
+) -> RenderResult:
+    """Write `<page_id>.html` for the Outline, linking stamps to the entry's Source and markers to the Deck at `deck`.
+
+    `entry` is None when there is no Source, and `deck` need not exist.
+    """
+    deck_pages = pdf.page_count(deck) if deck.is_file() else None
+    nodes, unlinked, unlinked_slides = _outline_nodes(outline, entry, deck_pages)
     linked = sorted({number for node in nodes for number in node["slides"]})
-    content = _page_html(deck_id, nodes, None, _slide_images(deck, linked))
-    page = (output_dir or _DEFAULT_OUTPUT_DIR).resolve() / f"{deck_id}.html"
+    source = entry.source if entry else None
+    content = _page_html(page_id, nodes, source, _slide_images(deck, linked))
+    page = (output_dir or _DEFAULT_OUTPUT_DIR).resolve() / f"{page_id}.html"
     page.parent.mkdir(parents=True, exist_ok=True)
     page.write_text(content, encoding="utf-8")
     return RenderResult(page, unlinked, unlinked_slides)
@@ -225,7 +230,8 @@ def _outline_nodes(
     A single top-level node is the main topic. Multiple top-level nodes get a
     common main topic. All labels and explanations are displayed as plain text.
     Returns the nodes, and every node label's bad stamps and bad slide markers,
-    in Outline order. `deck_pages` is None when the Transcript has no Deck.
+    in Outline order. `entry` is None when there is no Source, and
+    `deck_pages` is None when there is no Deck.
     """
     nodes: list[dict] = []
     unlinked: list[UnlinkedStamp] = []
@@ -339,7 +345,7 @@ def _resolve_slides(
 
 def _page_html(page_id: str, nodes: list[dict], source: Source | None, slide_images: dict[str, str]) -> str:
     title = nodes[0]["label"] or "Mindmap"
-    source_url = None if source is None else source.url if isinstance(source, Video) else source.as_uri()
+    source_url = _source_url(source)
     source_link = (
         ""
         if source_url is None
@@ -361,6 +367,13 @@ def _page_html(page_id: str, nodes: list[dict], source: Source | None, slide_ima
         lambda match: replacements[match[0]],
         template,
     )
+
+
+def _source_url(source: Source | None) -> str | None:
+    """Return the address the page's Source links open, or None when there is no Source."""
+    if source is None:
+        return None
+    return source.url if isinstance(source, Video) else source.as_uri()
 
 
 def _script_safe_json(value: object) -> str:

@@ -1,12 +1,12 @@
 """Reading a Deck's Slides, attached to a Transcript or on its own."""
 
-import hashlib
 import os
 import shutil
 from dataclasses import dataclass
 from pathlib import Path
 
 from munin.core import pdf
+from munin.core.cache_ids import cache_id
 from munin.core.cache_paths import default_cache_dir
 from munin.core.errors import DeckError
 from munin.core.transcribe import cached_entry
@@ -49,23 +49,12 @@ def read_slides(
     file, is not a readable PDF, or has no pages. Either way nothing is
     attached, and any Deck attached before stays attached.
     """
-    given = str(deck)
     cache_dir = cache_dir or default_cache_dir()
     cached_entry(transcript_id, cache_dir=cache_dir)
-    path = Path(deck).expanduser().resolve()
-    if not path.is_file():
-        raise DeckError(given, "not a file")
-    try:
-        pages = pdf.read_pages(path)
-    except ValueError as error:
-        raise DeckError(given, "not a readable PDF") from error
-    if not pages:
-        raise DeckError(given, "has no pages")
-    target = deck_path(transcript_id, cache_dir)
-    partial = target.with_suffix(".pdf.part")
-    shutil.copyfile(path, partial)
-    partial.replace(target)
-    return tuple(Slide(number, text, image) for number, (text, image) in enumerate(pages, start=1))
+    path = _resolved(deck)
+    slides = _read_slides(deck, path)
+    _store_copy(path, deck_path(transcript_id, cache_dir))
+    return slides
 
 
 @dataclass(frozen=True)
@@ -105,24 +94,12 @@ def read_deck(
     has no pages. Then nothing is stored, and any copy stored before under
     the same ID stays.
     """
-    given = str(deck)
     cache_dir = cache_dir or default_cache_dir()
-    path = Path(deck).expanduser().resolve()
-    if not path.is_file():
-        raise DeckError(given, "not a file")
-    try:
-        pages = pdf.read_pages(path)
-    except ValueError as error:
-        raise DeckError(given, "not a readable PDF") from error
-    if not pages:
-        raise DeckError(given, "has no pages")
-    deck_id = hashlib.sha256(str(path).encode()).hexdigest()[:12]
-    target = standalone_deck_path(deck_id, cache_dir)
+    path = _resolved(deck)
+    slides = _read_slides(deck, path)
+    deck_id = cache_id(str(path))
     cache_dir.mkdir(parents=True, exist_ok=True)
-    partial = target.with_suffix(".pdf.part")
-    shutil.copyfile(path, partial)
-    partial.replace(target)
-    slides = tuple(Slide(number, text, image) for number, (text, image) in enumerate(pages, start=1))
+    _store_copy(path, standalone_deck_path(deck_id, cache_dir))
     return DeckResult(deck_id, slides)
 
 
@@ -134,3 +111,29 @@ def standalone_deck_path(deck_id: str, cache_dir: Path) -> Path:
 def deck_path(transcript_id: str, cache_dir: Path) -> Path:
     """Return where the Deck of a Transcript is kept, whether or not one is attached."""
     return cache_dir / f"{transcript_id}.deck.pdf"
+
+
+def _resolved(deck: str | os.PathLike[str]) -> Path:
+    """Return the Deck path with `~` expanded, as an absolute path."""
+    return Path(deck).expanduser().resolve()
+
+
+def _read_slides(deck: str | os.PathLike[str], path: Path) -> tuple[Slide, ...]:
+    """Return every Slide of the PDF at `path`, raising `DeckError` naming `deck` as the caller gave it."""
+    given = str(deck)
+    if not path.is_file():
+        raise DeckError(given, "not a file")
+    try:
+        pages = pdf.read_pages(path)
+    except ValueError as error:
+        raise DeckError(given, "not a readable PDF") from error
+    if not pages:
+        raise DeckError(given, "has no pages")
+    return tuple(Slide(number, text, image) for number, (text, image) in enumerate(pages, start=1))
+
+
+def _store_copy(path: Path, target: Path) -> None:
+    """Copy the PDF at `path` to `target`, replacing any earlier copy only once the new one is whole."""
+    partial = target.with_suffix(".pdf.part")
+    shutil.copyfile(path, partial)
+    partial.replace(target)
