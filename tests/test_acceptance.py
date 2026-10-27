@@ -367,6 +367,19 @@ def test_bigger_branch_gets_a_wider_share_of_the_ring(page, render_outline):
     assert min(beside_big) >= 2 * max(between_leaves)
 
 
+def test_ring_with_bigger_branches_has_a_wider_radius(page, render_outline):
+    """Subtopics of a top-level topic with thirty nodes under it sit farther out than those of one with eight."""
+
+    def ring_radius(outline, topic, subtopic, name):
+        open_topic_circles(page, render_outline(outline, name))
+        centres = node_centres(page)
+        return math.hypot(centres[subtopic]["x"] - centres[topic]["x"], centres[subtopic]["y"] - centres[topic]["y"])
+
+    crowded = ring_radius(CROWDED_OUTLINE, "Ämne 1", "Slide 1.1", "crowded")
+    sparse = ring_radius(RING_SHARES_OUTLINE, "Ämne", "Liten A", "sparse")
+    assert crowded > sparse
+
+
 # Deeper topics and their arcs
 
 
