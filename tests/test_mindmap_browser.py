@@ -1,14 +1,13 @@
 import colorsys
 import math
 import re
-from itertools import combinations
+from itertools import combinations, pairwise
 from pathlib import Path
 
 import pytest
 from playwright.sync_api import sync_playwright
 
 from munin.core import Fragment, read_slides, render_mindmap, transcribe
-
 
 NESTED_OUTLINE = """# Lecture
 ## Group
@@ -549,8 +548,8 @@ def outline_parents(outline: str) -> dict[str, str | None]:
 
 def outline_depths(parents: dict[str, str | None]) -> dict[str, int]:
     depths = {}
-    for label in parents:
-        depth, parent = 0, parents[label]
+    for label, parent in parents.items():
+        depth = 0
         while parent is not None:
             depth, parent = depth + 1, parents[parent]
         depths[label] = depth
@@ -654,11 +653,15 @@ def convex_hull(points):
 
 def hulls_overlap(first, second) -> bool:
     """Whether two convex polygons share any area, by the separating axis test."""
+
+    def project(normal, shape):
+        return [normal[0] * x + normal[1] * y for x, y in shape]
+
     for polygon in (first, second):
         for a, b in zip(polygon, polygon[1:] + polygon[:1]):
             normal = (b[1] - a[1], a[0] - b[0])
-            project = lambda shape: [normal[0] * x + normal[1] * y for x, y in shape]
-            if max(project(first)) <= min(project(second)) or max(project(second)) <= min(project(first)):
+            on_first, on_second = project(normal, first), project(normal, second)
+            if max(on_first) <= min(on_second) or max(on_second) <= min(on_first):
                 return False
     return True
 
@@ -681,8 +684,8 @@ def segments_cross(p1, p2, q1, q2) -> bool:
 def paths_cross(first, second) -> bool:
     return any(
         segments_cross(a, b, c, d)
-        for a, b in zip(first, first[1:])
-        for c, d in zip(second, second[1:])
+        for a, b in pairwise(first)
+        for c, d in pairwise(second)
     )
 
 
@@ -832,7 +835,7 @@ def test_bigger_branch_gets_a_wider_share_of_the_arc(page, render_outline):
     open_topic_circles(page, render_outline(ARC_OUTLINE))
     offsets = arc_offsets(node_centres(page), parents, "Andel")
     ordered = sorted(offsets, key=offsets.get)
-    gaps = {(a, b): offsets[b] - offsets[a] for a, b in zip(ordered, ordered[1:])}
+    gaps = {(a, b): offsets[b] - offsets[a] for a, b in pairwise(ordered)}
     beside_big = [gap for pair, gap in gaps.items() if "Andel Stor" in pair]
     between_leaves = [gap for pair, gap in gaps.items() if "Andel Stor" not in pair]
     assert min(beside_big) >= 2 * max(between_leaves)

@@ -23,7 +23,7 @@ def decode_to_wav(given: str | os.PathLike[str], media: Path, wav: Path) -> None
         "-ac", str(_MONO), "-ar", str(_SAMPLE_RATE_HZ), "-f", "wav", str(wav),
     ]
     try:
-        ffmpeg = subprocess.run(command, capture_output=True, text=True)
+        ffmpeg = subprocess.run(command, check=False, capture_output=True, text=True)
     except FileNotFoundError:
         raise SourceError(given, "ffmpeg is not installed") from None
     if ffmpeg.returncode != 0 or not wav.is_file():
