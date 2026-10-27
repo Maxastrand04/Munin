@@ -152,6 +152,16 @@ def test_read_deck_bad_deck_raises_deck_error(cache_dir: Path, tmp_path: Path, w
     assert error.value.reason == reason
 
 
+def test_read_deck_failure_stores_nothing(cache_dir: Path, tmp_path: Path):
+    """A failed read of a path never read before stores no copy, so rendering its ID raises `UnknownDeckError`."""
+    path = tmp_path / "bad.pdf"
+    path.write_bytes(b"not a pdf at all")
+    with pytest.raises(DeckError):
+        read_deck(path, cache_dir=cache_dir)
+    with pytest.raises(UnknownDeckError):
+        render(hashlib.sha256(str(path.resolve()).encode()).hexdigest()[:12], "# Matriser", cache_dir, tmp_path)
+
+
 def test_read_deck_failure_keeps_the_earlier_copy(deck: Path, cache_dir: Path, tmp_path: Path):
     """A failed re-read of a path leaves the copy stored before, so its Slides still reach the page."""
     first = read_deck(deck, cache_dir=cache_dir)
@@ -202,6 +212,20 @@ def test_render_deck_mindmap_shows_a_marked_slide(deck: Path, cache_dir: Path, t
     """A good `[slide N]` marker puts that Slide's image on the page."""
     result = read_deck(deck, cache_dir=cache_dir)
     assert encoded(result.slides[1]) in page_text(result.deck_id, "# Matriser\n- Gauss [slide 2]", cache_dir, tmp_path)
+
+
+def test_render_deck_mindmap_panel_shows_a_marked_slide(deck: Path, cache_dir: Path, tmp_path: Path):
+    """Clicking a node with a good `[slide N]` marker shows that Slide in its panel."""
+    deck_id = read_deck(deck, cache_dir=cache_dir).deck_id
+    url = render(deck_id, "# Matriser\n- Gauss [slide 2]", cache_dir, tmp_path).page.as_uri()
+    with sync_playwright() as playwright:
+        browser = playwright.chromium.launch()
+        page = browser.new_page(viewport={"width": 1200, "height": 800})
+        page.goto(url)
+        page.get_by_role("button", name="Explore Gauss", exact=True).dispatch_event("click")
+        alts = page.locator("#panel").get_by_role("img").evaluate_all("images => images.map(image => image.alt)")
+        browser.close()
+    assert alts == ["Slide 2"]
 
 
 def test_render_deck_mindmap_links_good_markers(deck: Path, cache_dir: Path, tmp_path: Path):
@@ -344,6 +368,18 @@ def test_mcp_render_deck_mindmap_unknown_id_error_names_it(cache_dir: Path, tmp_
 
 
 # The slides-only Outline format
+
+
+def test_mcp_deck_render_description_puts_the_title_on_top(cache_dir: Path):
+    """The slides-only format puts the lecture title as the single top node."""
+    description = tool_description(create_server(cache_dir=cache_dir), "render_deck_mindmap")
+    assert "lecture title as the single top node" in description
+
+
+def test_mcp_deck_render_description_asks_for_topics_slides_and_terms(cache_dir: Path):
+    """The slides-only format asks for topics, then Slides, then terms under the lecture title."""
+    description = tool_description(create_server(cache_dir=cache_dir), "render_deck_mindmap")
+    assert "topics, then Slides, then terms, methods and formulas" in description
 
 
 def test_mcp_deck_render_description_asks_for_term_explanations(cache_dir: Path):
