@@ -35,7 +35,7 @@ if(!variants[variant]) variant='A';
 let depth = new URLSearchParams(location.search).get('depth') || '2';
 if(!['1','2','all'].includes(depth)) depth='2';
 // The opening view never zooms out past the point where group labels stop being readable.
-const OPENING_MIN_SCALE=.55,WHOLE_MIN_SCALE=.02;
+const OPENING_MIN_SCALE=.25,WHOLE_MIN_SCALE=.02;
 let collapsed=new Set(),selected=null,scale=1,tx=0,ty=0,drag=null,minScale=OPENING_MIN_SCALE;
 const svgNS='http://www.w3.org/2000/svg';
 function el(tag,attrs={}) {const e=document.createElementNS(svgNS,tag);Object.entries(attrs).forEach(([k,v])=>e.setAttribute(k,v));return e;}
@@ -61,7 +61,9 @@ function showSelectedColor() {document.body.style.setProperty('--selected-color'
 function visible(n){if(n.parent===null)return true;return !collapsed.has(n.parent)&&visible(nodes[n.parent]);}
 function resetDepth(){collapsed=new Set(nodes.filter(n=>n.children.length&&depth!=='all'&&n.depth>=Number(depth)).map(n=>n.id));}
 function coordinates(){
-  const sizes=[[400,190],[310,148],[260,120],[220,100]];
+  // Layout distances leave the same gaps between these boxes at any size, so larger boxes
+  // read larger when zoomed out instead of pushing the whole Mindmap further away.
+  const sizes=[[860,450],[620,290],[450,210],[230,106]];
   nodes.forEach(n=>{n.x=0;n.y=0;[n.w,n.h]=sizes[Math.min(n.depth,sizes.length-1)];});
   if(variant==='A')radialRings();else topicCircles();
   separateNodes();
@@ -72,14 +74,14 @@ function radialRings(){
   // Reserve angular sectors for the complete tree, including folded descendants.
   const total=leaves(0),step=Math.PI*2/total;
   const place=(id,start)=>{const n=nodes[id],count=leaves(id);n.angle=-Math.PI/2+(start+count/2)*step;
-    if(id!==0)polar(n,(n.depth < 3 ? [0,520,1040][n.depth] : 1480+(n.depth-3)*440),n.angle);
+    if(id!==0)polar(n,(n.depth < 3 ? [0,905,1675][n.depth] : 2215+(n.depth-3)*440),n.angle);
     let cursor=start;n.children.forEach(c=>{place(c,cursor);cursor+=leaves(c);});};
   place(0,0);
 }
 // A top-level topic surrounds itself with a full ring of subtopics. Every deeper topic
 // fans its children over an arc facing away from its own parent. Shares follow branch size.
 function topicCircles(){
-  const UNIT=260,BASE=400,ARC_STEP=.6,ARC_MAX=Math.PI*.85,TOP_MARGIN=300,TOP_MIN=1200,LEAF_REACH=130;
+  const UNIT=270,BASE=650,ARC_STEP=.6,ARC_MAX=Math.PI*.85,TOP_MARGIN=300,TOP_MIN=1585,LEAF_REACH=135;
   const hasRing=n=>n.depth===1;
   const childBranches=n=>n.children.reduce((sum,c)=>sum+branch(c),0);
   const branch=id=>1+childBranches(nodes[id]);
