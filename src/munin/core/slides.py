@@ -1,5 +1,6 @@
 """Reading a Deck's Slides, attached to a Transcript or on its own."""
 
+import hashlib
 import os
 import shutil
 from dataclasses import dataclass
@@ -104,7 +105,30 @@ def read_deck(
     has no pages. Then nothing is stored, and any copy stored before under
     the same ID stays.
     """
-    raise NotImplementedError
+    given = str(deck)
+    cache_dir = cache_dir or default_cache_dir()
+    path = Path(deck).expanduser().resolve()
+    if not path.is_file():
+        raise DeckError(given, "not a file")
+    try:
+        pages = pdf.read_pages(path)
+    except ValueError as error:
+        raise DeckError(given, "not a readable PDF") from error
+    if not pages:
+        raise DeckError(given, "has no pages")
+    deck_id = hashlib.sha256(str(path).encode()).hexdigest()[:12]
+    target = standalone_deck_path(deck_id, cache_dir)
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    partial = target.with_suffix(".pdf.part")
+    shutil.copyfile(path, partial)
+    partial.replace(target)
+    slides = tuple(Slide(number, text, image) for number, (text, image) in enumerate(pages, start=1))
+    return DeckResult(deck_id, slides)
+
+
+def standalone_deck_path(deck_id: str, cache_dir: Path) -> Path:
+    """Return where a Deck read on its own is kept, whether or not one was read."""
+    return cache_dir / f"{deck_id}.standalone.pdf"
 
 
 def deck_path(transcript_id: str, cache_dir: Path) -> Path:

@@ -68,7 +68,7 @@ class UnknownDeckError(MuninError):
     """
 
     def __init__(self, deck_id: str) -> None:
-        raise NotImplementedError
+        super().__init__(f"No Deck with ID {deck_id}")
 
 
 class VocabularyError(MuninError):

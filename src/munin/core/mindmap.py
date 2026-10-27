@@ -10,8 +10,8 @@ from typing import Literal
 
 from munin.core import pdf
 from munin.core.cache_paths import default_cache_dir
-from munin.core.errors import OutlineError
-from munin.core.slides import deck_path
+from munin.core.errors import OutlineError, UnknownDeckError
+from munin.core.slides import deck_path, standalone_deck_path
 from munin.core.sources import Source, Video
 from munin.core.stamps import STAMP, display_stamp, stamp_seconds
 from munin.core.transcribe import CacheEntry, cached_entry
@@ -22,6 +22,7 @@ _DEFAULT_OUTPUT_DIR = _REPO_ROOT / "mindmaps"
 _ASSETS = Path(__file__).with_name("mindmap_assets")
 _HEADING = re.compile(r"^\s{0,3}(#{1,6})\s+(.+?)(?:\s+#+)?\s*$")
 _BULLET = re.compile(r"^(\s*)(?:[-+*]|\d+[.)])\s+(.+)$")
+_DECK_ID = re.compile(r"[0-9a-f]{12}")
 _SPACE_RUN = re.compile(r"\s{2,}")
 _SLIDE_MARKER = re.compile(r"\[slide(?:\s[^\]]*)?\]", re.IGNORECASE)
 _SLIDE_NUMBER = re.compile(r"\[slide\s+(\d+)\]", re.IGNORECASE)
@@ -189,7 +190,18 @@ def render_deck_mindmap(
     `OutlineError` when the Outline has no headings or list items. Either way
     it writes nothing.
     """
-    raise NotImplementedError
+    cache_dir = cache_dir or default_cache_dir()
+    deck = standalone_deck_path(deck_id, cache_dir)
+    if not _DECK_ID.fullmatch(deck_id) or not deck.is_file():
+        raise UnknownDeckError(deck_id)
+    nodes, unlinked, unlinked_slides = _outline_nodes(outline, None, pdf.page_count(deck))
+    linked = sorted({number for node in nodes for number in node["slides"]})
+    content = _page_html(deck_id, nodes, None, _slide_images(deck, linked))
+    page = (output_dir or _DEFAULT_OUTPUT_DIR).resolve() / f"{deck_id}.html"
+    page.parent.mkdir(parents=True, exist_ok=True)
+    page.write_text(content, encoding="utf-8")
+    return RenderResult(page, unlinked, unlinked_slides)
+
 
 def _slide_images(deck: Path, numbers: list[int]) -> dict[str, str]:
     """Return each numbered Slide of the Deck as a PNG data URI, keyed by its number as text."""
@@ -206,7 +218,7 @@ def _timestamp_url(source: Source, offset_s: int) -> str:
 
 
 def _outline_nodes(
-    outline: str, entry: CacheEntry, deck_pages: int | None
+    outline: str, entry: CacheEntry | None, deck_pages: int | None
 ) -> tuple[list[dict], tuple[UnlinkedStamp, ...], tuple[UnlinkedSlide, ...]]:
     """Read heading/list hierarchy and optional prose without interpreting HTML.
 
@@ -286,10 +298,13 @@ def _term_key(label: str) -> str:
     return _SPACE_RUN.sub(" ", bare).strip().casefold()
 
 
-def _resolve_stamps(label: str, entry: CacheEntry) -> tuple[str, list[dict], list[UnlinkedStamp]]:
+def _resolve_stamps(label: str, entry: CacheEntry | None) -> tuple[str, list[dict], list[UnlinkedStamp]]:
     """Return the label without its linked stamps, their links, and its bad stamps."""
     shown, links, unlinked = label, [], []
     for stamp in STAMP.finditer(label):
+        if entry is None:
+            unlinked.append(UnlinkedStamp(label, stamp[0], "no_source"))
+            continue
         offset = stamp_seconds(stamp[0])
         if offset is None:
             unlinked.append(UnlinkedStamp(label, stamp[0], "malformed"))
@@ -322,22 +337,27 @@ def _resolve_slides(
     return _SPACE_RUN.sub(" ", shown).strip(), sorted(numbers), unlinked
 
 
-def _page_html(transcript_id: str, nodes: list[dict], source: Source, slide_images: dict[str, str]) -> str:
+def _page_html(page_id: str, nodes: list[dict], source: Source | None, slide_images: dict[str, str]) -> str:
     title = nodes[0]["label"] or "Mindmap"
-    source_url = source.url if isinstance(source, Video) else source.as_uri()
+    source_url = None if source is None else source.url if isinstance(source, Video) else source.as_uri()
+    source_link = (
+        ""
+        if source_url is None
+        else f'<a class="source-link" href="{escape(source_url, quote=True)}" target="_blank" rel="noopener">Open Source ↗</a>'
+    )
     replacements = {
         "__CSS__": (_ASSETS / "mindmap.css").read_text(encoding="utf-8"),
         "__JS__": (_ASSETS / "mindmap.js").read_text(encoding="utf-8"),
         "__DATA__": _script_safe_json(nodes),
         "__PAGE__": _script_safe_json(
-            {"title": title, "source_url": source_url, "transcript_id": transcript_id, "slides": slide_images}
+            {"title": title, "source_url": source_url, "transcript_id": page_id, "slides": slide_images}
         ),
         "__TITLE__": escape(title),
-        "__SOURCE__": escape(source_url, quote=True),
+        "__SOURCE_LINK__": source_link,
     }
     template = (_ASSETS / "mindmap.html").read_text(encoding="utf-8")
     return re.sub(
-        r"__(?:CSS|JS|DATA|PAGE|TITLE|SOURCE)__",
+        r"__(?:CSS|JS|DATA|PAGE|TITLE|SOURCE_LINK)__",
         lambda match: replacements[match[0]],
         template,
     )

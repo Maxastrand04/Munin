@@ -7,7 +7,8 @@ from pathlib import Path
 from mcp.server import MCPServer
 from mcp.server.mcpserver import Image
 from mcp.server.mcpserver.exceptions import ToolError
-from mcp.types import TextContent
+from mcp.shared.exceptions import MCPError
+from mcp.types import INVALID_PARAMS, TextContent
 
 from munin.core import (
     Download,
@@ -17,7 +18,9 @@ from munin.core import (
     TranscribeResult,
     Vocabulary,
     get_transcript,
+    read_deck,
     read_slides,
+    render_deck_mindmap,
     render_mindmap,
     transcribe,
 )
@@ -177,16 +180,72 @@ def create_server(
     @server.tool(name="read_deck")
     def read_deck_tool(deck: str) -> list[TextContent | Image]:
         """Read a lecture's slide PDF on its own, with no recording, and return its Deck ID and every Slide's number, text and image."""
-        raise NotImplementedError
+        with _core_errors_as_tool_errors():
+            result = read_deck(deck, cache_dir=cache_dir)
+        blocks: list[TextContent | Image] = [TextContent(type="text", text=f"Deck ID: {result.deck_id}")]
+        for slide in result.slides:
+            blocks.append(TextContent(type="text", text=f"Slide {slide.number}:\n{slide.text}"))
+            blocks.append(Image(data=slide.image, format="png"))
+        return blocks
 
     @server.tool(name="render_deck_mindmap")
     def render_deck_mindmap_tool(deck_id: str, outline: str) -> RenderResult:
-        """Render an Outline written from a Deck read with `read_deck` into a Mindmap page."""
-        raise NotImplementedError
+        """Render an Outline written from a Deck read with `read_deck` into a Mindmap page.
+
+        Write the Outline in this format:
+
+        - Markdown headings (`#` to `####`) or nested list items, with the lecture
+          title as the single top node and three levels under it: topics, then
+          Slides, then terms, methods and formulas.
+        - Group the lecture by meaning, not by Slide order. A topic gathers every
+          Slide about it, even Slides far apart in the Deck. Aim for 1 to 5 topics.
+        - Under each topic, one node per Slide, carrying its `[slide N]`
+          marker, such as `### Gausselimination [slide 2]`. N counts from 1. A Slide that covers
+          the same node as another carries a marker for each.
+        - Under each Slide node, one node per term, method or formula. Word a term
+          the same under every Slide node it appears on.
+        - Skip content that neither helps the student grasp an idea nor gives
+          concrete material. A Slide such as a title page or a schedule gets no node.
+        - Add every example and exercise on the Slides as a leaf under the node it
+          belongs to, at any level, with a label that starts with `Övning:` or
+          `Exempel:`. These count as neither topics nor terms.
+        - Under each `Övning:` or `Exempel:` node, a prose paragraph that writes
+          out the task and its solution steps, so the panel reads on its own
+          without the Slide. Write each step as a plain line, such as
+          `Steg 1: ...`, never as list items, because a list item becomes a node.
+        - Write, under every term node, a prose paragraph of one to three sentences that
+          explains the term and gives context, covering only what the Slides cover.
+        - There is no recording, so write no stamps. A stamp stays as plain text.
+
+        Returns `page`, the absolute path of the written HTML page, `unlinked`, the
+        stamps left as plain text, each with the reason `no_source`, and
+        `unlinked_slides`, the markers left as plain text. Each `unlinked_slides`
+        entry gives the node `label`, the `slide` marker as written, and a
+        `reason`: `malformed`, or `past_end` when N is past the Deck's last Slide.
+        Fix those in the Outline and render again; the new page replaces the old one.
+        """
+        with _core_errors_as_tool_errors():
+            return render_deck_mindmap(deck_id, outline, cache_dir=cache_dir, output_dir=output_dir)
 
     @server.prompt(name="lecture_to_mindmap")
     def lecture_to_mindmap_prompt(source: str | None = None, deck: str | None = None) -> str:
         """Turn a lecture, given as a YouTube URL, a KTH Play video URL or a local file path, a slide PDF, or both, into a Mindmap page."""
+        if not source and not deck:
+            raise MCPError(code=INVALID_PARAMS, message="Give a Source, a Deck, or both")
+        if not source:
+            slides_only = [
+                f"Call `read_deck` with this Deck path: {deck}.",
+                "Write an Outline of the lecture from the Slides alone, in the format the "
+                "`render_deck_mindmap` tool describes.",
+                "Call `render_deck_mindmap` with the Deck ID and the Outline.",
+                (
+                    "Reply with only the page as a `file://` link, such as `file:///path/to/page.html`. "
+                    "Write nothing else: no Outline, no summary, no list of steps. "
+                    "If a step fails, reply with only which step failed and the error."
+                ),
+            ]
+            numbered = "\n".join(f"{number}. {step}" for number, step in enumerate(slides_only, start=1))
+            return f"Turn this slide deck into a Mindmap: {deck}\n\n{numbered}"
         steps = [
             "Call `transcribe` with that Source.",
             "Call `get_transcript` with the returned Transcript ID.",
