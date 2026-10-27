@@ -32,5 +32,13 @@ jobs:
   lint:
     runs-on: ubuntu-latest
     steps:
-      - name: Not implemented
-        run: exit 1
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10.3.2
+        with:
+          enable-cache: true
+      - name: Install Python
+        run: uv python install
+      - name: Install dependencies
+        run: uv sync --locked
+      - name: Run lint
+        run: uv run ruff check

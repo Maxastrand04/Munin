@@ -7,8 +7,8 @@ import pytest
 from mcp import Client
 from mcp.server import MCPServer
 
-from munin.core import Fragment, Video, Vocabulary, get_transcript, transcribe
 from munin import mcp_server
+from munin.core import Fragment, Video, Vocabulary, get_transcript, transcribe
 from munin.mcp_server import create_server
 
 SPEECH = Path(__file__).parent / "fixtures" / "sv_short.m4a"

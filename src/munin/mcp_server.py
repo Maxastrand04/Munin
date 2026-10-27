@@ -170,9 +170,11 @@ def create_server(
             "Write an Outline of the lecture in the format the `render_mindmap` tool describes."
             + (" Put the matching Slide numbers on each node." if deck else ""),
             "Call `render_mindmap` with the Transcript ID and the Outline.",
-            "Reply with only the page as a `file://` link, such as `file:///path/to/page.html`. "
-            "Write nothing else: no Outline, no summary, no list of steps. "
-            "If a step fails, reply with only which step failed and the error.",
+            (
+                "Reply with only the page as a `file://` link, such as `file:///path/to/page.html`. "
+                "Write nothing else: no Outline, no summary, no list of steps. "
+                "If a step fails, reply with only which step failed and the error."
+            ),
         ]
         numbered = "\n".join(f"{number}. {step}" for number, step in enumerate(steps, start=1))
         return f"Turn this lecture into a Mindmap: {source}\n\n{numbered}"

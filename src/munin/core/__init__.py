@@ -11,7 +11,12 @@ from munin.core.errors import (
     VocabularyError,
 )
 from munin.core.kthplay import KthPlaySource, download_smallest_video, parse_kthplay_url
-from munin.core.mindmap import RenderResult, UnlinkedSlide, UnlinkedStamp, render_mindmap
+from munin.core.mindmap import (
+    RenderResult,
+    UnlinkedSlide,
+    UnlinkedStamp,
+    render_mindmap,
+)
 from munin.core.model import Recognize, load_recognizer
 from munin.core.segments import Fragment, Segment, merge_fragments
 from munin.core.slides import Slide, read_slides
