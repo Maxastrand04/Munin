@@ -20,6 +20,7 @@ munin = "munin.mcp_server:main"
 dev = [
     "playwright>=1.64.1",
     "pytest>=8.0",
+    "ruff==0.17.3",
 ]
 
 [build-system]
@@ -28,6 +29,9 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/munin"]
+
+[tool.ruff]
+extend-exclude = ["src/munin/core/_vendor"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
