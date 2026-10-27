@@ -76,7 +76,8 @@ def create_server(
     same everywhere, and each example and exercise written out under an
     `Övning:` or `Exempel:` leaf. It says to write no stamps, and asks for an
     explanation of one to three sentences under every term node that gives
-    context and covers only what the Slides cover.
+    context and covers only what the Slides cover, and allows a short prose
+    paragraph under any other node.
     The `lecture_to_mindmap(source: str | None = None, deck: str | None = None)`
     prompt takes a Source, a Deck, or both. With a Source, it lists the run's
     steps for that Source and leaves the Outline format to `render_mindmap`'s
@@ -218,6 +219,8 @@ def create_server(
           `Steg 1: ...`, never as list items, because a list item becomes a node.
         - Write, under every term node, a prose paragraph of one to three sentences that
           explains the term and gives context, covering only what the Slides cover.
+        - Optionally, a short prose paragraph under any other node. It appears in
+          that node's explanation panel.
         - There is no recording, so write no stamps. A stamp stays as plain text.
 
         Returns `page`, the absolute path of the written HTML page, `unlinked`, the

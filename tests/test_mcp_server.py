@@ -613,6 +613,12 @@ def test_mcp_deck_render_description_asks_for_no_stamps(cache_dir: Path):
     assert "no stamps" in tool_description(create_server(cache_dir=cache_dir), "render_deck_mindmap")
 
 
+def test_mcp_deck_render_description_allows_prose_under_any_node(cache_dir: Path):
+    """The slides-only format allows a short prose paragraph under any other node, as the transcript format does."""
+    description = tool_description(create_server(cache_dir=cache_dir), "render_deck_mindmap")
+    assert "Optionally, a short prose paragraph under any other node" in description
+
+
 def test_mcp_deck_render_description_skips_title_and_schedule_slides(cache_dir: Path):
     """The slides-only format skips Slides such as a title page or a schedule."""
     assert "title page or a schedule" in tool_description(create_server(cache_dir=cache_dir), "render_deck_mindmap")
