@@ -7,3 +7,4 @@
 **Consequence:** `pyproject.toml` lists `ruff==<version>` and has no rule selection under `[tool.ruff]`, only path exclusions. Raising the ruff version is its own change and fixes whatever the new version reports. Enabling or ignoring a rule, or a lint check that runs anything but `uv run ruff check`, requires challenging this record first.
 
 **Date:** 2026-10-27
+
