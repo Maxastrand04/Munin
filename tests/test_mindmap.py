@@ -10,12 +10,15 @@ from munin.core import (
     Fragment,
     OutlineError,
     Slide,
+    UnknownDeckError,
     UnknownTranscriptError,
     UnlinkedSlide,
     UnlinkedStamp,
     Video,
     Vocabulary,
+    read_deck,
     read_slides,
+    render_deck_mindmap,
     render_mindmap,
     transcribe,
 )
@@ -539,6 +542,119 @@ def test_unknown_transcript_id_writes_nothing(cache_dir: Path, tmp_path: Path):
     with pytest.raises(UnknownTranscriptError):
         render_page("deadbeef0000", "# Matriser", cache_dir=cache_dir, output_dir=output_dir)
     assert not output_dir.exists()
+
+
+# Rendering against a Deck read on its own
+
+
+@pytest.fixture
+def standalone_deck(deck: Path, cache_dir: Path):
+    """The three-page Deck read on its own, with no Transcript."""
+    return read_deck(deck, cache_dir=cache_dir)
+
+
+def test_deck_render_shows_a_marked_slide(standalone_deck, cache_dir: Path, tmp_path: Path):
+    """A good `[slide N]` marker puts that Slide's image on the page."""
+    outline = "# Matriser\n- Gauss [slide 2]"
+    page = render_deck_mindmap(standalone_deck.deck_id, outline, cache_dir=cache_dir, output_dir=tmp_path).page
+    assert encoded(standalone_deck.slides[1]) in page.read_text(encoding="utf-8")
+
+
+def test_deck_render_links_good_markers(standalone_deck, cache_dir: Path, tmp_path: Path):
+    """Good `[slide N]` markers are not reported as unlinked."""
+    outline = "# Matriser\n- Gauss [slide 2]"
+    result = render_deck_mindmap(standalone_deck.deck_id, outline, cache_dir=cache_dir, output_dir=tmp_path)
+    assert result.unlinked_slides == ()
+
+
+def test_deck_render_writes_page_named_by_deck_id(standalone_deck, cache_dir: Path, tmp_path: Path):
+    """The page is `<deck_id>.html` in the output folder."""
+    deck_id = standalone_deck.deck_id
+    page = render_deck_mindmap(deck_id, "# Matriser", cache_dir=cache_dir, output_dir=tmp_path / "out").page
+    assert page == (tmp_path / "out" / f"{deck_id}.html").resolve()
+
+
+def test_deck_render_reports_a_stamp_as_no_source(standalone_deck, cache_dir: Path, tmp_path: Path):
+    """A well-formed stamp comes back as unlinked with reason `no_source`."""
+    outline = "# Matriser\n- Gauss [1:00]"
+    result = render_deck_mindmap(standalone_deck.deck_id, outline, cache_dir=cache_dir, output_dir=tmp_path)
+    assert [(entry.stamp, entry.reason) for entry in result.unlinked] == [("[1:00]", "no_source")]
+
+
+def test_deck_render_reports_a_malformed_stamp_as_no_source(standalone_deck, cache_dir: Path, tmp_path: Path):
+    """A malformed stamp also comes back as `no_source`, not `malformed`."""
+    outline = "# Matriser\n- Gauss [1:75]"
+    result = render_deck_mindmap(standalone_deck.deck_id, outline, cache_dir=cache_dir, output_dir=tmp_path)
+    assert [entry.reason for entry in result.unlinked] == ["no_source"]
+
+
+def test_deck_render_reports_a_marker_past_the_last_slide(standalone_deck, cache_dir: Path, tmp_path: Path):
+    """A marker past the Deck's last Slide comes back as unlinked with reason `past_end`."""
+    outline = "# Matriser\n- Gauss [slide 4]"
+    result = render_deck_mindmap(standalone_deck.deck_id, outline, cache_dir=cache_dir, output_dir=tmp_path)
+    assert [entry.reason for entry in result.unlinked_slides] == ["past_end"]
+
+
+def test_deck_render_reports_a_malformed_marker(standalone_deck, cache_dir: Path, tmp_path: Path):
+    """A malformed marker comes back as unlinked with reason `malformed`."""
+    outline = "# Matriser\n- Gauss [slide x]"
+    result = render_deck_mindmap(standalone_deck.deck_id, outline, cache_dir=cache_dir, output_dir=tmp_path)
+    assert [entry.reason for entry in result.unlinked_slides] == ["malformed"]
+
+
+def test_deck_render_accepts_a_slide_node_with_no_marker(standalone_deck, cache_dir: Path, tmp_path: Path):
+    """A Slide node with no marker renders, with nothing reported."""
+    outline = "# Matriser\n## Rader\n### Gauss\n#### Pivot"
+    result = render_deck_mindmap(standalone_deck.deck_id, outline, cache_dir=cache_dir, output_dir=tmp_path)
+    assert (result.unlinked, result.unlinked_slides) == ((), ())
+
+
+def test_deck_page_has_no_lecture_link(standalone_deck, cache_dir: Path, tmp_path: Path):
+    """The page's header carries no link to a Source."""
+    outline = "# Matriser\n- Gauss [slide 2]"
+    page = render_deck_mindmap(standalone_deck.deck_id, outline, cache_dir=cache_dir, output_dir=tmp_path).page
+    assert 'class="source-link"' not in page.read_text(encoding="utf-8")
+
+
+def test_unknown_deck_id_raises(cache_dir: Path, tmp_path: Path):
+    """An ID with no Deck read on its own raises `UnknownDeckError`."""
+    with pytest.raises(UnknownDeckError):
+        render_deck_mindmap("deadbeef0000", "# Matriser", cache_dir=cache_dir, output_dir=tmp_path)
+
+
+def test_unknown_deck_error_message_names_the_id(cache_dir: Path, tmp_path: Path):
+    """The `UnknownDeckError` message reads `No Deck with ID <id>`."""
+    with pytest.raises(UnknownDeckError) as error:
+        render_deck_mindmap("deadbeef0000", "# Matriser", cache_dir=cache_dir, output_dir=tmp_path)
+    assert str(error.value) == "No Deck with ID deadbeef0000"
+
+
+def test_unknown_deck_id_writes_nothing(cache_dir: Path, tmp_path: Path):
+    """An unknown Deck ID writes no page."""
+    with pytest.raises(UnknownDeckError):
+        render_deck_mindmap("deadbeef0000", "# Matriser", cache_dir=cache_dir, output_dir=tmp_path)
+    assert not (tmp_path / "deadbeef0000.html").exists()
+
+
+def test_deck_render_rejects_id_that_is_not_12_hex(deck: Path, cache_dir: Path, tmp_path: Path):
+    """An ID outside the 12-hex form raises `UnknownDeckError`, even if a Deck sits at that name."""
+    cache_dir.mkdir()
+    shutil.copy(deck, tmp_path / "outside.standalone.pdf")
+    with pytest.raises(UnknownDeckError):
+        render_deck_mindmap("../outside", "# Matriser", cache_dir=cache_dir, output_dir=tmp_path / "out")
+
+
+def test_deck_outline_without_nodes_raises(standalone_deck, cache_dir: Path, tmp_path: Path):
+    """An Outline with no headings or list items raises instead of rendering an empty Mindmap."""
+    with pytest.raises(OutlineError, match="no headings or list items"):
+        render_deck_mindmap(standalone_deck.deck_id, "Just prose.", cache_dir=cache_dir, output_dir=tmp_path)
+
+
+def test_deck_outline_without_nodes_writes_nothing(standalone_deck, cache_dir: Path, tmp_path: Path):
+    """An Outline with no headings or list items writes no page."""
+    with pytest.raises(OutlineError):
+        render_deck_mindmap(standalone_deck.deck_id, "Just prose.", cache_dir=cache_dir, output_dir=tmp_path)
+    assert not (tmp_path / f"{standalone_deck.deck_id}.html").exists()
 
 
 HIERARCHY = """# Lecture [0:01]
