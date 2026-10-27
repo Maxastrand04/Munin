@@ -40,7 +40,7 @@ def create_server(
     output_dir: Path | None = None,
     download: Download | None = None,
 ) -> MCPServer:
-    """Build the MCP server with six tools and one prompt, passing its arguments to the core.
+    """Build the MCP server with six tools and two prompts, passing its arguments to the core.
 
     `transcribe(source: str, vocabulary: list[str] | None = None, alpha: float = 1.0)`
     takes a local file path, a YouTube URL or a KTH Play video URL, plus

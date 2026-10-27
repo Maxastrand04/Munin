@@ -356,7 +356,7 @@ def _page_html(page_id: str, nodes: list[dict], source: Source | None, slide_ima
         "__JS__": (_ASSETS / "mindmap.js").read_text(encoding="utf-8"),
         "__DATA__": _script_safe_json(nodes),
         "__PAGE__": _script_safe_json(
-            {"title": title, "source_url": source_url, "transcript_id": page_id, "slides": slide_images}
+            {"title": title, "source_url": source_url, "page_id": page_id, "slides": slide_images}
         ),
         "__TITLE__": escape(title),
         "__SOURCE_LINK__": source_link,
