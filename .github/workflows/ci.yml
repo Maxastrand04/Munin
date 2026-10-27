@@ -9,9 +9,7 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  # Installs Python 3.12 and the dev group from uv.lock with --locked, then
-  # Chromium and ffmpeg, then runs `uv run pytest -m "not slow and not network"`.
-  # Passes or fails with pytest.
+  # Runs the fast test suite and passes or fails with pytest.
   tests:
     runs-on: ubuntu-latest
     steps:
