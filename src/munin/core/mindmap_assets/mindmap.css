@@ -11,14 +11,22 @@
 @media(prefers-reduced-motion:no-preference){.node-card{transition:background-color .15s,border-color .15s,box-shadow .15s}}
 
 /* Node area and label size decrease together at each level from the main topic. */
-.node[data-depth="0"] .node-label{font-size:32px;font-weight:650;padding:32px 40px 0}
-.node[data-depth="0"] .node-footer{height:42px;padding:0 65px 24px}
-.node[data-depth="0"] .stamp{font-size:13px}
-.node[data-depth="1"] .node-label{font-size:21px;font-weight:600;padding:25px 32px 0}
-.node[data-depth="1"] .node-footer{height:37px;padding:0 44px 20px}
-.node[data-depth="2"] .node-label{font-size:17px;padding:20px 28px 0}
-.node[data-depth="3"] .node-label{font-size:15px;padding:14px 25px 0}
-.node[data-depth="3"] .node-footer{height:28px;padding:0 32px 14px}
+.node[data-depth="0"] .node-label{font-size:58px;font-weight:650;padding:58px 72px 0}
+.node[data-depth="0"] .node-footer{height:76px;padding:0 118px 44px}
+.node[data-depth="0"] .stamp{font-size:20px}
+.node[data-depth="0"] .branch-toggle{font-size:22px}
+.node[data-depth="1"] .node-label{font-size:46px;font-weight:600;padding:55px 70px 0}
+.node[data-depth="1"] .node-footer{height:81px;padding:0 96px 44px}
+.node[data-depth="1"] .stamp{font-size:24px}
+.node[data-depth="1"] .branch-toggle{font-size:26px}
+.node[data-depth="2"] .node-label{font-size:30px;padding:35px 49px 0}
+.node[data-depth="2"] .node-footer{height:56px;padding:0 65px 32px}
+.node[data-depth="2"] .stamp{font-size:19px}
+.node[data-depth="2"] .branch-toggle{font-size:21px}
+.node[data-depth="3"] .node-label{font-size:16px;padding:15px 27px 0}
+.node[data-depth="3"] .node-footer{height:30px;padding:0 34px 15px}
+.node[data-depth="3"] .stamp{font-size:12px}
+.node[data-depth="3"] .branch-toggle{font-size:13px}
 .node[data-depth="0"] .node-card{border-width:2.5px}
 .node[data-depth="1"] .node-card{border-width:2px}
 

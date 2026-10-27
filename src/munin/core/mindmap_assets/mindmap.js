@@ -35,7 +35,7 @@ if(!variants[variant]) variant='A';
 let depth = new URLSearchParams(location.search).get('depth') || '2';
 if(!['1','2','all'].includes(depth)) depth='2';
 // The opening view never zooms out past the point where group labels stop being readable.
-const OPENING_MIN_SCALE=.55,WHOLE_MIN_SCALE=.02;
+const OPENING_MIN_SCALE=.25,WHOLE_MIN_SCALE=.02;
 let collapsed=new Set(),selected=null,scale=1,tx=0,ty=0,drag=null,minScale=OPENING_MIN_SCALE;
 const svgNS='http://www.w3.org/2000/svg';
 function el(tag,attrs={}) {const e=document.createElementNS(svgNS,tag);Object.entries(attrs).forEach(([k,v])=>e.setAttribute(k,v));return e;}
@@ -61,43 +61,63 @@ function showSelectedColor() {document.body.style.setProperty('--selected-color'
 function visible(n){if(n.parent===null)return true;return !collapsed.has(n.parent)&&visible(nodes[n.parent]);}
 function resetDepth(){collapsed=new Set(nodes.filter(n=>n.children.length&&depth!=='all'&&n.depth>=Number(depth)).map(n=>n.id));}
 function coordinates(){
-  const sizes=[[400,190],[310,148],[260,120],[220,100]];
+  // Layout distances leave the same gaps between these boxes at any size, so larger boxes
+  // read larger when zoomed out instead of pushing the whole Mindmap further away.
+  const sizes=[[860,450],[620,290],[450,210],[230,106]];
   nodes.forEach(n=>{n.x=0;n.y=0;[n.w,n.h]=sizes[Math.min(n.depth,sizes.length-1)];});
+  if(variant==='A')radialRings();else topicCircles();
+  separateNodes();
+}
+function radialRings(){
   const leaves=id=>nodes[id].children.length?nodes[id].children.reduce((sum,c)=>sum+leaves(c),0):1;
   const polar=(n,r,a)=>{n.x=Math.cos(a)*r;n.y=Math.sin(a)*r*.76;};
-  if(variant==='A'){
-    // Reserve angular sectors for the complete tree, including folded descendants.
-    const total=leaves(0),step=Math.PI*2/total;
-    const place=(id,start)=>{const n=nodes[id],count=leaves(id);n.angle=-Math.PI/2+(start+count/2)*step;
-      if(id!==0)polar(n,(n.depth < 3 ? [0,520,1040][n.depth] : 1480+(n.depth-3)*440),n.angle);
-      let cursor=start;n.children.forEach(c=>{place(c,cursor);cursor+=leaves(c);});};
-    place(0,0);
-  }else{
-    // Each topic is the centre of a complete local ring of its own children.
-    // The same rule applies recursively to subtopics such as the exercise group.
-    const surround=id=>{
-      const n=nodes[id],p=nodes[n.parent],count=n.children.length;
-      const radiusX=Math.max(n.children.some(c=>nodes[c].children.length)?560:350,count*70);
-      const radiusY=Math.max(260,count*45);
-      // The edge from the parent arrives along `inward`. Rotating the ring so that
-      // direction falls midway between two children keeps the edge off them.
-      const inward=Math.atan2(p.y-n.y,p.x-n.x);
-      const start=Math.atan2(Math.sin(inward)*radiusX,Math.cos(inward)*radiusY)+Math.PI/count;
-      n.children.forEach((cid,j)=>{
-        const angle=start+j*Math.PI*2/count,c=nodes[cid];
-        c.x=n.x+Math.cos(angle)*radiusX;c.y=n.y+Math.sin(angle)*radiusY;
-        surround(cid);
-      });
-    };
-    nodes[0].children.forEach((id,i)=>{
-      const angle=-Math.PI/2+i*Math.PI*2/nodes[0].children.length,n=nodes[id];
-      const radius=Math.max(1200,nodes[0].children.length*200);
-      n.x=Math.cos(angle)*radius;n.y=Math.sin(angle)*radius*.75;
-      // Pairs sit either side of the parent's edge; larger groups form a complete ring.
-      surround(id);
+  // Reserve angular sectors for the complete tree, including folded descendants.
+  const total=leaves(0),step=Math.PI*2/total;
+  const place=(id,start)=>{const n=nodes[id],count=leaves(id);n.angle=-Math.PI/2+(start+count/2)*step;
+    if(id!==0)polar(n,(n.depth < 3 ? [0,905,1675][n.depth] : 2215+(n.depth-3)*440),n.angle);
+    let cursor=start;n.children.forEach(c=>{place(c,cursor);cursor+=leaves(c);});};
+  place(0,0);
+}
+// A top-level topic surrounds itself with a full ring of subtopics. Every deeper topic
+// fans its children over an arc facing away from its own parent. Shares follow branch size.
+function topicCircles(){
+  const UNIT=270,BASE=650,ARC_STEP=.6,ARC_MAX=Math.PI*.85,TOP_MARGIN=300,TOP_MIN=1585,LEAF_REACH=135;
+  const hasRing=n=>n.depth===1;
+  const childBranches=n=>n.children.reduce((sum,c)=>sum+branch(c),0);
+  const branch=id=>1+childBranches(nodes[id]);
+  const arcWidth=n=>hasRing(n)?Math.PI*2:Math.min(n.children.length*ARC_STEP,ARC_MAX);
+  // The ring or arc grows until every child's share holds a unit of length per node in its branch.
+  const reach=n=>{const count=n.children.length;
+    if(!count)return 0;
+    const need=count>1?childBranches(n)*UNIT/arcWidth(n):0;
+    return Math.max(BASE,need);};
+  // How far a branch reaches from its topic, whichever way it faces.
+  const extent=id=>{const n=nodes[id];
+    return n.children.length?reach(n)+Math.max(...n.children.map(extent)):LEAF_REACH;};
+  // A ring starts where the edge from the parent arrives, so that edge falls between two children.
+  const startAngle=(n,p,width)=>hasRing(n)?Math.atan2(p.y-n.y,p.x-n.x):Math.atan2(n.y-p.y,n.x-p.x)-width/2;
+  const spread=id=>{
+    const n=nodes[id];
+    if(!n.children.length)return;
+    const radius=reach(n),width=arcWidth(n),total=childBranches(n),from=startAngle(n,nodes[n.parent],width);
+    let used=0;
+    n.children.forEach(cid=>{
+      const c=nodes[cid],share=branch(cid);
+      const angle=from+(used+share/2)/total*width;used+=share;
+      c.x=n.x+Math.cos(angle)*radius;c.y=n.y+Math.sin(angle)*radius;
+      spread(cid);
     });
-  }
-  separateNodes();
+  };
+  // Neighbouring top-level topics sit this many radii apart.
+  const tops=nodes[0].children,neighbourChord=tops.length>1?2*Math.sin(Math.PI/tops.length):0;
+  const extents=tops.map(extent);
+  const neighboursClear=neighbourChord?extents.map((e,i)=>(e+extents[(i+1)%extents.length]+TOP_MARGIN)/neighbourChord):[];
+  const far=Math.max(TOP_MIN,...extents.map(e=>e+TOP_MARGIN),...neighboursClear);
+  tops.forEach((id,i)=>{
+    const angle=-Math.PI/2+i*Math.PI*2/tops.length,n=nodes[id];
+    n.x=Math.cos(angle)*far;n.y=Math.sin(angle)*far;
+    spread(id);
+  });
 }
 function separateNodes(){
   const gapX=24,gapY=20,placed=[];
