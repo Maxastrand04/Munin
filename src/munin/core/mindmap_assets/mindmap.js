@@ -63,55 +63,59 @@ function resetDepth(){collapsed=new Set(nodes.filter(n=>n.children.length&&depth
 function coordinates(){
   const sizes=[[400,190],[310,148],[260,120],[220,100]];
   nodes.forEach(n=>{n.x=0;n.y=0;[n.w,n.h]=sizes[Math.min(n.depth,sizes.length-1)];});
+  if(variant==='A')radialRings();else topicCircles();
+  separateNodes();
+}
+function radialRings(){
   const leaves=id=>nodes[id].children.length?nodes[id].children.reduce((sum,c)=>sum+leaves(c),0):1;
   const polar=(n,r,a)=>{n.x=Math.cos(a)*r;n.y=Math.sin(a)*r*.76;};
-  if(variant==='A'){
-    // Reserve angular sectors for the complete tree, including folded descendants.
-    const total=leaves(0),step=Math.PI*2/total;
-    const place=(id,start)=>{const n=nodes[id],count=leaves(id);n.angle=-Math.PI/2+(start+count/2)*step;
-      if(id!==0)polar(n,(n.depth < 3 ? [0,520,1040][n.depth] : 1480+(n.depth-3)*440),n.angle);
-      let cursor=start;n.children.forEach(c=>{place(c,cursor);cursor+=leaves(c);});};
-    place(0,0);
-  }else{
-    // A top-level topic surrounds itself with a full ring of subtopics. Every deeper topic
-    // fans its children over an arc facing away from its own parent. Shares follow branch size.
-    const UNIT=260,BASE=400,ARC_STEP=.6,ARC_MAX=Math.PI*.85,TOP_MARGIN=300,LEAF_REACH=130;
-    const branch=id=>1+nodes[id].children.reduce((sum,c)=>sum+branch(c),0);
-    const arcWidth=(count,full)=>full?Math.PI*2:Math.min(count*ARC_STEP,ARC_MAX);
-    // The ring or arc grows until every child's share holds a unit of length per node in its branch.
-    const reach=(id,full)=>{const n=nodes[id],count=n.children.length;
-      if(!count)return 0;
-      const need=count>1?n.children.reduce((sum,c)=>sum+branch(c),0)*UNIT/arcWidth(count,full):0;
-      return Math.max(BASE,need);};
-    // How far a branch reaches from its topic, whichever way it faces.
-    const extent=(id,full=false)=>{const n=nodes[id];
-      return n.children.length?reach(id,full)+Math.max(...n.children.map(c=>extent(c))):LEAF_REACH;};
-    const spread=(id,full)=>{
-      const n=nodes[id],p=nodes[n.parent],count=n.children.length;
-      if(!count)return;
-      const radius=reach(id,full),width=arcWidth(count,full),total=n.children.reduce((sum,c)=>sum+branch(c),0);
-      // The ring starts where the edge from the parent arrives, so that edge falls between two children.
-      const from=(full?Math.atan2(p.y-n.y,p.x-n.x):Math.atan2(n.y-p.y,n.x-p.x)-width/2);
-      let used=0;
-      n.children.forEach(cid=>{
-        const c=nodes[cid],share=branch(cid);
-        const angle=from+(used+share/2)/total*width;used+=share;
-        c.x=n.x+Math.cos(angle)*radius;c.y=n.y+Math.sin(angle)*radius;
-        spread(cid,false);
-      });
-    };
-    const tops=nodes[0].children,gap=tops.length>1?2*Math.sin(Math.PI/tops.length):0;
-    // Place top-level topics far enough out that neighbouring branches never meet.
-    const reaches=tops.map(id=>extent(id,true));
-    const far=Math.max(1200,...reaches.map(e=>e+TOP_MARGIN),
-      ...(gap?reaches.map((e,i)=>(e+reaches[(i+1)%reaches.length]+TOP_MARGIN)/gap):[]));
-    tops.forEach((id,i)=>{
-      const angle=-Math.PI/2+i*Math.PI*2/tops.length,n=nodes[id];
-      n.x=Math.cos(angle)*far;n.y=Math.sin(angle)*far;
-      spread(id,true);
+  // Reserve angular sectors for the complete tree, including folded descendants.
+  const total=leaves(0),step=Math.PI*2/total;
+  const place=(id,start)=>{const n=nodes[id],count=leaves(id);n.angle=-Math.PI/2+(start+count/2)*step;
+    if(id!==0)polar(n,(n.depth < 3 ? [0,520,1040][n.depth] : 1480+(n.depth-3)*440),n.angle);
+    let cursor=start;n.children.forEach(c=>{place(c,cursor);cursor+=leaves(c);});};
+  place(0,0);
+}
+// A top-level topic surrounds itself with a full ring of subtopics. Every deeper topic
+// fans its children over an arc facing away from its own parent. Shares follow branch size.
+function topicCircles(){
+  const UNIT=260,BASE=400,ARC_STEP=.6,ARC_MAX=Math.PI*.85,TOP_MARGIN=300,TOP_MIN=1200,LEAF_REACH=130;
+  const hasRing=n=>n.depth===1;
+  const childBranches=n=>n.children.reduce((sum,c)=>sum+branch(c),0);
+  const branch=id=>1+childBranches(nodes[id]);
+  const arcWidth=n=>hasRing(n)?Math.PI*2:Math.min(n.children.length*ARC_STEP,ARC_MAX);
+  // The ring or arc grows until every child's share holds a unit of length per node in its branch.
+  const reach=n=>{const count=n.children.length;
+    if(!count)return 0;
+    const need=count>1?childBranches(n)*UNIT/arcWidth(n):0;
+    return Math.max(BASE,need);};
+  // How far a branch reaches from its topic, whichever way it faces.
+  const extent=id=>{const n=nodes[id];
+    return n.children.length?reach(n)+Math.max(...n.children.map(extent)):LEAF_REACH;};
+  // A ring starts where the edge from the parent arrives, so that edge falls between two children.
+  const startAngle=(n,p,width)=>hasRing(n)?Math.atan2(p.y-n.y,p.x-n.x):Math.atan2(n.y-p.y,n.x-p.x)-width/2;
+  const spread=id=>{
+    const n=nodes[id];
+    if(!n.children.length)return;
+    const radius=reach(n),width=arcWidth(n),total=childBranches(n),from=startAngle(n,nodes[n.parent],width);
+    let used=0;
+    n.children.forEach(cid=>{
+      const c=nodes[cid],share=branch(cid);
+      const angle=from+(used+share/2)/total*width;used+=share;
+      c.x=n.x+Math.cos(angle)*radius;c.y=n.y+Math.sin(angle)*radius;
+      spread(cid);
     });
-  }
-  separateNodes();
+  };
+  // Neighbouring top-level topics sit this many radii apart.
+  const tops=nodes[0].children,neighbourChord=tops.length>1?2*Math.sin(Math.PI/tops.length):0;
+  const extents=tops.map(extent);
+  const neighboursClear=neighbourChord?extents.map((e,i)=>(e+extents[(i+1)%extents.length]+TOP_MARGIN)/neighbourChord):[];
+  const far=Math.max(TOP_MIN,...extents.map(e=>e+TOP_MARGIN),...neighboursClear);
+  tops.forEach((id,i)=>{
+    const angle=-Math.PI/2+i*Math.PI*2/tops.length,n=nodes[id];
+    n.x=Math.cos(angle)*far;n.y=Math.sin(angle)*far;
+    spread(id);
+  });
 }
 function separateNodes(){
   const gapX=24,gapY=20,placed=[];
