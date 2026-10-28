@@ -6,7 +6,7 @@ Klang's [Pianissimo](https://huggingface.co/KlangAI/pianissimo-sv) model does th
 
 ## Status
 
-`transcribe`, `get_transcript`, `read_slides` and `render_mindmap` work on local files, YouTube URLs and KTH Play video URLs, and `transcribe` takes an optional Vocabulary of course terms to spell correctly. The MVP target is the 7:11 clip [SF1624, Föreläsning 4: Matriser](https://www.youtube.com/watch?v=sZipb-R1hfg).
+`transcribe`, `get_transcript`, `read_slides` and `render_mindmap` work on local files, YouTube URLs and KTH Play video URLs, and `transcribe` takes an optional Vocabulary of course terms to spell correctly. `read_deck` and `render_deck_mindmap` make a Mindmap from a slide PDF alone, for courses with no recording. The MVP target is the 7:11 clip [SF1624, Föreläsning 4: Matriser](https://www.youtube.com/watch?v=sZipb-R1hfg).
 
 ## Tools
 
@@ -16,8 +16,12 @@ Klang's [Pianissimo](https://huggingface.co/KlangAI/pianissimo-sv) model does th
 | `get_transcript(id)` | Returns `[m:ss] text` lines for the LLM |
 | `read_slides(id, deck)` | Attaches a PDF of lecture slides (a Deck) to a Transcript, replacing any earlier Deck, and returns each Slide's number, text and image for the LLM to match against the Transcript |
 | `render_mindmap(id, outline)` | Writes an interactive HTML Mindmap with Topic circles and Radial rings, turning each `[m:ss]` or `[h:mm:ss]` into a link to the Source and showing the Slides named by `[slide N]` markers in the node's panel. Returns the page path, the stamps it left unlinked (malformed or past the Source's end) and the Slide markers it left unlinked (malformed, past the Deck's last Slide, or no Deck) |
+| `read_deck(deck)` | Reads a PDF of lecture slides on its own, with no recording, keeps a copy in the cache, and returns its Deck ID and each Slide's number, text and image |
+| `render_deck_mindmap(deck_id, outline)` | Writes the same Mindmap from an Outline written from the Slides alone, showing the Slides named by `[slide N]` markers. The page has no Source links. Returns the page path, every stamp as unlinked with reason `no_source`, and the Slide markers it left unlinked (malformed or past the Deck's last Slide) |
 
-The `lecture_to_mindmap` prompt takes the Source and an optional Deck path. With a Deck path it adds a `read_slides` step before the Outline is written.
+The `lecture_to_mindmap` prompt takes a Source, a Deck path, or both. With both, it adds a `read_slides` step before the Outline is written. With only a Deck path, it runs `read_deck` and `render_deck_mindmap` instead of transcribing. With neither, it is an error.
+
+The `slides_to_mindmap` prompt takes only a Deck path and runs the same `read_deck` and `render_deck_mindmap` steps. Use it from a slash command, since Claude Code fills prompt arguments by position and the first one always becomes `lecture_to_mindmap`'s Source.
 
 ## Measured on an M1 Pro (ONNX int8, CPU only)
 

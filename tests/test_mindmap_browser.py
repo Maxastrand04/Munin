@@ -7,7 +7,14 @@ from pathlib import Path
 import pytest
 from playwright.sync_api import sync_playwright
 
-from munin.core import Fragment, read_slides, render_mindmap, transcribe
+from munin.core import (
+    Fragment,
+    read_deck,
+    read_slides,
+    render_deck_mindmap,
+    render_mindmap,
+    transcribe,
+)
 
 NESTED_OUTLINE = """# Lecture
 ## Group
@@ -1049,6 +1056,27 @@ def test_panel_slides_load_without_network(page, slides_url):
     open_panel(page, slides_url, "Gauss")
     loaded = panel_images(page).evaluate_all("images => images.map(image => image.complete && image.naturalWidth > 0)")
     assert loaded == [True, True]
+
+
+@pytest.fixture
+def deck_url(deck: Path, cache_dir: Path, tmp_path: Path):
+    """The page for `# Matriser` and `- Gauss [slide 2]` rendered against the three-page Deck read on its own."""
+    deck_id = read_deck(deck, cache_dir=cache_dir).deck_id
+    return render_deck_mindmap(
+        deck_id, "# Matriser\n- Gauss [slide 2]", cache_dir=cache_dir, output_dir=tmp_path
+    ).page.as_uri()
+
+
+def test_deck_page_panel_shows_a_marked_slide(page, deck_url):
+    """On a page rendered from a Deck alone, a node's panel shows the Slide its marker names."""
+    open_panel(page, deck_url, "Gauss")
+    assert panel_images(page).evaluate_all("images => images.map(image => image.alt)") == ["Slide 2"]
+
+
+def test_deck_page_panel_has_no_source_link(page, deck_url):
+    """On a page rendered from a Deck alone, a node's panel shows no Source link."""
+    open_panel(page, deck_url, "Gauss")
+    assert page.locator("#panel-source").is_visible() is False
 
 
 # A shared term links to every place it appears

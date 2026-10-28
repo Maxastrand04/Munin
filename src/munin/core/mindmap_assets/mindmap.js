@@ -204,7 +204,8 @@ function select(id){
   });
   $('slides').hidden=!n.slides.length;
   const timestamp=n.links[0];
-  $('panel-source').href=timestamp?timestamp.url:PAGE.source_url;
+  $('panel-source').hidden=!PAGE.source_url;
+  $('panel-source').href=timestamp?timestamp.url:PAGE.source_url||'';
   $('panel-source').textContent=timestamp?`▶  Open Source at ${timestamp.text} ↗`:'Open Source ↗';
   showCopies(n);
   $('related').replaceChildren();

@@ -25,7 +25,7 @@ A list of terms, plus a boost strength (alpha) from 0 to 2, that steers Pianissi
 _Avoid_: glossary, keywords, hotwords
 
 **Deck**:
-The PDF of lecture slides attached to one Transcript. A Transcript has at most one Deck, and attaching a new one replaces the old.
+The PDF of lecture slides, either attached to one Transcript or read on its own with no Source. A Transcript has at most one Deck, and attaching a new one replaces the old. A Deck read on its own is a standalone Deck, identified by a Deck ID derived from its resolved PDF path, so a moved or renamed PDF is a new Deck. A standalone Deck and the same PDF attached to a Transcript are separate copies.
 _Avoid_: slideshow, presentation, PDF
 
 **Slide**:
@@ -33,11 +33,11 @@ One page of a Deck, numbered from 1.
 _Avoid_: page, frame
 
 **Outline**:
-The nested Markdown the LLM writes from a Transcript, where node labels carry `[m:ss]` or `[h:mm:ss]` stamps and `[slide N]` markers.
+The nested Markdown the LLM writes from a Transcript, or from a standalone Deck's Slides alone, where node labels carry `[m:ss]` or `[h:mm:ss]` stamps and `[slide N]` markers. An Outline written from a standalone Deck carries no stamps and gives every term node a one to three sentence explanation.
 _Avoid_: notes, summary, mindmap (for the Markdown)
 
 **Mindmap**:
-The rendered HTML page built from an Outline, with each stamp turned into a Timestamp link. A malformed stamp, or one past the Source's end, stays as plain text and is reported back as unlinked. A node's panel shows the Slides its markers name, and a marker that is malformed, past the Deck's last Slide, or on a Transcript with no Deck is reported back as unlinked too. A term that appears under several Slide nodes, worded the same, lists every place it appears in each copy's panel.
+The rendered HTML page built from an Outline, with each stamp turned into a Timestamp link. A malformed stamp, or one past the Source's end, stays as plain text and is reported back as unlinked. A node's panel shows the Slides its markers name, and a marker that is malformed, past the Deck's last Slide, or on a Transcript with no Deck is reported back as unlinked too. A Mindmap rendered against a standalone Deck has no Source, so it has no Timestamp links and reports every stamp as unlinked with reason "no source". A term that appears under several Slide nodes, worded the same, lists every place it appears in each copy's panel.
 _Avoid_: map, graph, diagram
 
 **Example or exercise**:
@@ -57,7 +57,7 @@ _Avoid_: jump link, deep link, seek link
 - A cached **Transcript** records the **Vocabulary** it was made with, or none. Transcribing with a **Vocabulary** replaces the cached **Transcript** and keeps its ID
 - A **Transcript** has at most one **Deck**, which has one or more **Slides**
 - A node of an **Outline** lists any number of **Slides**, and a **Slide** can appear on any number of nodes
-- An **Outline** is written from exactly one **Transcript**
+- An **Outline** is written from exactly one **Transcript**, or from exactly one standalone **Deck**
 - A node under an **Example or exercise** is part of it, so a topic that is one takes no topic colour
 - A **Mindmap** renders exactly one **Outline** and resolves its stamps against that **Transcript**'s **Source** and the Source's duration, and its Slide markers against that **Transcript**'s **Deck**
 

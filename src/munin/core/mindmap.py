@@ -9,9 +9,10 @@ from pathlib import Path
 from typing import Literal
 
 from munin.core import pdf
+from munin.core.cache_ids import is_cache_id
 from munin.core.cache_paths import default_cache_dir
-from munin.core.errors import OutlineError
-from munin.core.slides import deck_path
+from munin.core.errors import OutlineError, UnknownDeckError
+from munin.core.slides import deck_path, standalone_deck_path
 from munin.core.sources import Source, Video
 from munin.core.stamps import STAMP, display_stamp, stamp_seconds
 from munin.core.transcribe import CacheEntry, cached_entry
@@ -29,23 +30,24 @@ _SLIDE_NUMBER = re.compile(r"\[slide\s+(\d+)\]", re.IGNORECASE)
 
 @dataclass(frozen=True)
 class UnlinkedStamp:
-    """A stamp in a node label that `render_mindmap` left as plain text.
+    """A stamp in a node label that `render_mindmap` or `render_deck_mindmap` left as plain text.
 
     `label` is the node's label as written in the Outline, every stamp
     included, so `Gauss [0:02] [1:75]` stays whole. `stamp` is the stamp's text,
     brackets included, such as `[1:75]`. `reason` is `"malformed"` when
-    `stamp_seconds` rejects its shape, and `"past_end"` when it is well-formed
-    but later than the Source's duration.
+    `stamp_seconds` rejects its shape, `"past_end"` when it is well-formed
+    but later than the Source's duration, and `"no_source"` when the Outline
+    is rendered against a Deck read on its own, whatever the stamp's shape.
     """
 
     label: str
     stamp: str
-    reason: Literal["malformed", "past_end"]
+    reason: Literal["malformed", "past_end", "no_source"]
 
 
 @dataclass(frozen=True)
 class UnlinkedSlide:
-    """A slide marker in a node label that `render_mindmap` could not link to a Slide.
+    """A slide marker in a node label that `render_mindmap` or `render_deck_mindmap` could not link to a Slide.
 
     `label` is the node's label as written in the Outline, every marker and
     stamp included. `slide` is the marker's text as written, brackets
@@ -62,7 +64,7 @@ class UnlinkedSlide:
 
 @dataclass(frozen=True)
 class RenderResult:
-    """What `render_mindmap` tells the caller about the page it wrote.
+    """What `render_mindmap` and `render_deck_mindmap` tell the caller about the page they wrote.
 
     `page` is the page's absolute path. `unlinked` holds one entry per bad stamp
     occurrence in node labels, in Outline order and left to right within a
@@ -151,11 +153,56 @@ def render_mindmap(
     """
     entry = cached_entry(transcript_id, cache_dir=cache_dir)
     deck = deck_path(transcript_id, cache_dir or default_cache_dir())
+    return _write_page(transcript_id, outline, entry, deck, output_dir)
+
+
+def render_deck_mindmap(
+    deck_id: str,
+    outline: str,
+    *,
+    cache_dir: Path | None = None,
+    output_dir: Path | None = None,
+) -> RenderResult:
+    """Write the Mindmap page for an Outline written from a Deck read on its own, and return what `render_mindmap` returns.
+
+    Renders as `render_mindmap` does, with these differences. Slide markers
+    resolve against the copy `read_deck` stored under `deck_id`, so a marker
+    naming one of its Slides links that Slide, and a malformed marker or one
+    past its last Slide is reported in `unlinked_slides` as `"malformed"` or
+    `"past_end"`. A Slide node with no marker renders with no Slide image and
+    is not reported. There is no Source, so every stamp in a node label stays
+    as plain text and is reported in `unlinked` with reason `"no_source"`,
+    whatever its shape. The page has no link to a Source: no lecture link in
+    its header and no Source link in any node's panel.
+
+    The page is `<deck_id>.html` in `output_dir`, replacing any earlier page
+    for the same Deck. `cache_dir` and `output_dir` default as for
+    `render_mindmap`.
+
+    Raises `UnknownDeckError` when no Deck read on its own has this ID, and
+    `OutlineError` when the Outline has no headings or list items. Either way
+    it writes nothing.
+    """
+    cache_dir = cache_dir or default_cache_dir()
+    deck = standalone_deck_path(deck_id, cache_dir)
+    if not is_cache_id(deck_id) or not deck.is_file():
+        raise UnknownDeckError(deck_id)
+    return _write_page(deck_id, outline, None, deck, output_dir)
+
+
+def _write_page(
+    page_id: str, outline: str, entry: CacheEntry | None, deck: Path, output_dir: Path | None
+) -> RenderResult:
+    """Write `<page_id>.html` for the Outline, linking stamps to the entry's Source and markers to the Deck at `deck`.
+
+    `entry` is None when there is no Source, and `deck` need not exist.
+    """
     deck_pages = pdf.page_count(deck) if deck.is_file() else None
     nodes, unlinked, unlinked_slides = _outline_nodes(outline, entry, deck_pages)
     linked = sorted({number for node in nodes for number in node["slides"]})
-    content = _page_html(transcript_id, nodes, entry.source, _slide_images(deck, linked))
-    page = (output_dir or _DEFAULT_OUTPUT_DIR).resolve() / f"{transcript_id}.html"
+    source = entry.source if entry else None
+    content = _page_html(page_id, nodes, source, _slide_images(deck, linked))
+    page = (output_dir or _DEFAULT_OUTPUT_DIR).resolve() / f"{page_id}.html"
     page.parent.mkdir(parents=True, exist_ok=True)
     page.write_text(content, encoding="utf-8")
     return RenderResult(page, unlinked, unlinked_slides)
@@ -176,14 +223,15 @@ def _timestamp_url(source: Source, offset_s: int) -> str:
 
 
 def _outline_nodes(
-    outline: str, entry: CacheEntry, deck_pages: int | None
+    outline: str, entry: CacheEntry | None, deck_pages: int | None
 ) -> tuple[list[dict], tuple[UnlinkedStamp, ...], tuple[UnlinkedSlide, ...]]:
     """Read heading/list hierarchy and optional prose without interpreting HTML.
 
     A single top-level node is the main topic. Multiple top-level nodes get a
     common main topic. All labels and explanations are displayed as plain text.
     Returns the nodes, and every node label's bad stamps and bad slide markers,
-    in Outline order. `deck_pages` is None when the Transcript has no Deck.
+    in Outline order. `entry` is None when there is no Source, and
+    `deck_pages` is None when there is no Deck.
     """
     nodes: list[dict] = []
     unlinked: list[UnlinkedStamp] = []
@@ -256,10 +304,13 @@ def _term_key(label: str) -> str:
     return _SPACE_RUN.sub(" ", bare).strip().casefold()
 
 
-def _resolve_stamps(label: str, entry: CacheEntry) -> tuple[str, list[dict], list[UnlinkedStamp]]:
+def _resolve_stamps(label: str, entry: CacheEntry | None) -> tuple[str, list[dict], list[UnlinkedStamp]]:
     """Return the label without its linked stamps, their links, and its bad stamps."""
     shown, links, unlinked = label, [], []
     for stamp in STAMP.finditer(label):
+        if entry is None:
+            unlinked.append(UnlinkedStamp(label, stamp[0], "no_source"))
+            continue
         offset = stamp_seconds(stamp[0])
         if offset is None:
             unlinked.append(UnlinkedStamp(label, stamp[0], "malformed"))
@@ -292,25 +343,37 @@ def _resolve_slides(
     return _SPACE_RUN.sub(" ", shown).strip(), sorted(numbers), unlinked
 
 
-def _page_html(transcript_id: str, nodes: list[dict], source: Source, slide_images: dict[str, str]) -> str:
+def _page_html(page_id: str, nodes: list[dict], source: Source | None, slide_images: dict[str, str]) -> str:
     title = nodes[0]["label"] or "Mindmap"
-    source_url = source.url if isinstance(source, Video) else source.as_uri()
+    source_url = _source_url(source)
+    source_link = (
+        ""
+        if source_url is None
+        else f'<a class="source-link" href="{escape(source_url, quote=True)}" target="_blank" rel="noopener">Open Source ↗</a>'
+    )
     replacements = {
         "__CSS__": (_ASSETS / "mindmap.css").read_text(encoding="utf-8"),
         "__JS__": (_ASSETS / "mindmap.js").read_text(encoding="utf-8"),
         "__DATA__": _script_safe_json(nodes),
         "__PAGE__": _script_safe_json(
-            {"title": title, "source_url": source_url, "transcript_id": transcript_id, "slides": slide_images}
+            {"title": title, "source_url": source_url, "page_id": page_id, "slides": slide_images}
         ),
         "__TITLE__": escape(title),
-        "__SOURCE__": escape(source_url, quote=True),
+        "__SOURCE_LINK__": source_link,
     }
     template = (_ASSETS / "mindmap.html").read_text(encoding="utf-8")
     return re.sub(
-        r"__(?:CSS|JS|DATA|PAGE|TITLE|SOURCE)__",
+        r"__(?:CSS|JS|DATA|PAGE|TITLE|SOURCE_LINK)__",
         lambda match: replacements[match[0]],
         template,
     )
+
+
+def _source_url(source: Source | None) -> str | None:
+    """Return the address the page's Source links open, or None when there is no Source."""
+    if source is None:
+        return None
+    return source.url if isinstance(source, Video) else source.as_uri()
 
 
 def _script_safe_json(value: object) -> str:
