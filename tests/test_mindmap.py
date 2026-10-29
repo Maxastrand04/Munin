@@ -1,5 +1,4 @@
 import base64
-import json
 import re
 import shutil
 from pathlib import Path
@@ -81,16 +80,6 @@ def render_page(*args, **kwargs) -> Path:
 
 def links_in(page: Path) -> list[str]:
     return TIMESTAMP_LINK.findall(page.read_text(encoding="utf-8"))
-
-
-def embedded_nodes(page: Path) -> list[dict]:
-    return json.JSONDecoder().raw_decode(page.read_text().split("const DATA = ", 1)[1])[
-        0
-    ]
-
-
-def labels_in(page: Path) -> list[str]:
-    return [node["label"] for node in embedded_nodes(page)]
 
 
 def encoded(slide: Slide) -> str:
@@ -408,60 +397,6 @@ def test_deck_render_rejects_id_that_is_not_12_hex(deck: Path, cache_dir: Path, 
         render_deck_mindmap("../outside", lecture(), cache_dir=cache_dir, output_dir=tmp_path / "out")
 
 
-HIERARCHY = node(
-    "main-topic",
-    "Lecture",
-    node(
-        "topic",
-        "First group",
-        node(
-            "slide",
-            "First idea",
-            term("Detail", stamps=["0:04"], explanation="A simple explanation of the detail."),
-            stamps=["0:03"],
-        ),
-        node("slide", "Second idea"),
-        stamps=["0:02"],
-    ),
-    node("topic", "Second group", node("slide", "Another idea")),
-    stamps=["0:01"],
-    explanation="An explanation of the lecture.",
-)
-
-
-@pytest.fixture
-def hierarchy_page(source: Path, cache_dir: Path, tmp_path: Path) -> Path:
-    return render_page(transcript_of(source, cache_dir), HIERARCHY, cache_dir=cache_dir, output_dir=tmp_path)
-
-
-def test_nodes_nest_under_their_parents(hierarchy_page: Path):
-    assert [node["parent"] for node in embedded_nodes(hierarchy_page)] == [None, 0, 1, 2, 1, 0, 5]
-
-
-def test_nodes_keep_their_labels_in_outline_order(hierarchy_page: Path):
-    assert labels_in(hierarchy_page) == [
-        "Lecture",
-        "First group",
-        "First idea",
-        "Detail",
-        "Second idea",
-        "Second group",
-        "Another idea",
-    ]
-
-
-def test_explanation_of_the_main_topic_reaches_the_page(hierarchy_page: Path):
-    assert embedded_nodes(hierarchy_page)[0]["explanation"] == "An explanation of the lecture."
-
-
-def test_explanation_of_a_term_reaches_the_page(hierarchy_page: Path):
-    assert embedded_nodes(hierarchy_page)[3]["explanation"] == "A simple explanation of the detail."
-
-
-def test_node_with_empty_explanation_has_empty_explanation(hierarchy_page: Path):
-    assert embedded_nodes(hierarchy_page)[4]["explanation"] == ""
-
-
 INJECTED_LABEL = '</script><img src=x onerror=alert(1)> __CSS__ & "lecture"'
 INJECTED_EXPLANATION = "</script> __JS__ __TITLE__"
 
@@ -486,14 +421,6 @@ def test_outline_text_cannot_inject_html(injected_page: Path):
 
 def test_outline_text_is_html_escaped_outside_script(injected_page: Path):
     assert "&lt;/script&gt;" in injected_page.read_text()
-
-
-def test_label_with_template_tokens_reaches_page_as_written(injected_page: Path):
-    assert embedded_nodes(injected_page)[0]["label"] == INJECTED_LABEL
-
-
-def test_explanation_with_template_tokens_reaches_page_as_written(injected_page: Path):
-    assert embedded_nodes(injected_page)[0]["explanation"] == INJECTED_EXPLANATION
 
 
 @pytest.fixture

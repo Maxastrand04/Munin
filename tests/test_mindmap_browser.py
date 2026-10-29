@@ -1163,3 +1163,25 @@ def test_two_copies_under_one_slide_both_appear(page, render_outline):
     outline = node("main-topic", "Matriser", node("topic", "A", node("slide", "Definition", *copies)))
     open_copy(page, render_outline(outline))
     assert copy_entries(page) == ["A › Definition", "A › Definition"]
+
+
+TEMPLATE_TOKEN_LABEL = "Matriser __CSS__ __JS__"
+TEMPLATE_TOKEN_EXPLANATION = "Radoperationer __TITLE__ __DATA__"
+
+
+@pytest.fixture
+def template_token_url(render_outline):
+    return render_outline(node("main-topic", TEMPLATE_TOKEN_LABEL, explanation=TEMPLATE_TOKEN_EXPLANATION))
+
+
+def test_label_with_template_tokens_shows_as_written(page, template_token_url):
+    """A label holding the page template's tokens shows on its card exactly as written."""
+    page.goto(template_token_url)
+    assert page.locator(".node-label").first.text_content() == TEMPLATE_TOKEN_LABEL
+
+
+def test_explanation_with_template_tokens_shows_as_written(page, template_token_url):
+    """An explanation holding the page template's tokens shows in the panel exactly as written."""
+    page.goto(template_token_url)
+    page.get_by_role("button", name=f"Explore {TEMPLATE_TOKEN_LABEL}", exact=True).click()
+    assert page.locator("#explanation").text_content() == TEMPLATE_TOKEN_EXPLANATION
