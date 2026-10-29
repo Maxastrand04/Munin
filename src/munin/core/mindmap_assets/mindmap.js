@@ -20,15 +20,15 @@ const orangeColors = ['#c27418','#fbebd6','#a8570f'],ORANGE_HUE=32.5,ORANGE_CLEA
 const GOLDEN_ANGLE=137.508;
 // The main topic stays in the Linen neutrals so no group shares its colour.
 const mainTopicColors = ['#756a59','#f8f4ec','#433b31'];
-const nodes = DATA.map(n => ({...n,children:[],depth:0,group:-1,orange:false,x:0,y:0,w:220,h:96}));
-// An example or exercise starts with "Övning:" or "Exempel:", and everything under one counts as one.
-// Such a topic takes no topic colour, so it takes no palette slot either.
-const isExample = label => /^(övning|exempel):/i.test(label);
+// An exempel or övning is orange because of its type, and the page names it with its type's prefix.
+const prefixes = {'exempel':'Exempel: ','övning':'Övning: '};
+const nodes = DATA.map(n => ({...n,label:(prefixes[n.type]||'')+n.label,children:[],depth:0,group:-1,orange:n.type in prefixes,x:0,y:0,w:220,h:96}));
+// An exempel or övning directly under the main topic takes no topic colour, so it takes no palette slot either.
 let topics = 0;
-nodes.forEach(n=>{if(n.parent!==null){const p=nodes[n.parent];p.children.push(n.id);n.depth=p.depth+1;n.orange=p.orange||isExample(n.label);n.group=n.depth===1?(n.orange?-1:topics++):p.group;}});
-// Term-level nodes outside examples share a term when their labels match without stamps, markers or case.
-const TERM_DEPTH=3,termCopies=new Map();
-const isTerm = n => n.depth===TERM_DEPTH&&!n.orange;
+nodes.forEach(n=>{if(n.parent!==null){const p=nodes[n.parent];p.children.push(n.id);n.depth=p.depth+1;n.group=n.depth===1?(n.orange?-1:topics++):p.group;}});
+// Term nodes share a term when their labels match ignoring case and runs of whitespace.
+const termCopies=new Map();
+const isTerm = n => n.type==='term';
 nodes.filter(isTerm).forEach(n=>termCopies.set(n.term,[...(termCopies.get(n.term)||[]),n.id]));
 let variant = new URLSearchParams(location.search).get('variant');
 if(!variants[variant]) variant='A';
@@ -55,8 +55,8 @@ function generatedHue(group) {
 }
 function nearOrange(hue) {const gap = Math.abs(hue - ORANGE_HUE);return Math.min(gap, 360 - gap) < ORANGE_CLEARANCE;}
 function nodeColors(n) {return n.orange ? orangeColors : groupColors(n.group);}
-// The edge into the top example of a branch keeps its topic's colour.
-function edgeColor(p,n) {return (n.orange&&(p.orange||p.parent===null)?orangeColors:groupColors(n.group))[0];}
+// The edge into an exempel or övning keeps its topic's colour, unless it hangs from the main topic.
+function edgeColor(p,n) {return (n.orange&&p.parent===null?orangeColors:groupColors(n.group))[0];}
 function showSelectedColor() {document.body.style.setProperty('--selected-color',(selected===null?mainTopicColors:nodeColors(nodes[selected]))[0]);}
 function visible(n){if(n.parent===null)return true;return !collapsed.has(n.parent)&&visible(nodes[n.parent]);}
 function resetDepth(){collapsed=new Set(nodes.filter(n=>n.children.length&&depth!=='all'&&n.depth>=Number(depth)).map(n=>n.id));}

@@ -102,7 +102,12 @@ class OutlineSyntaxError(OutlineError):
     """
 
     def __init__(self, line: int, column: int, reason: str) -> None:
-        raise NotImplementedError
+        self.line = line
+        self.column = column
+        self.reason = reason
+        super().__init__(
+            f"Outline is not JSON: line {line}, column {column}: {reason}. {_SCHEMA_HINT}"
+        )
 
 
 @dataclass(frozen=True)
@@ -134,4 +139,9 @@ class OutlineStructureError(OutlineError):
     """
 
     def __init__(self, problems: tuple[OutlineProblem, ...]) -> None:
-        raise NotImplementedError
+        self.problems = problems
+        lines = [f"{' › '.join(problem.path) or 'Outline'}: {problem.message}" for problem in problems]
+        super().__init__("\n".join([*lines, _SCHEMA_HINT]))
+
+
+_SCHEMA_HINT = "Call get_outline_schema to see the Outline format."

@@ -1,6 +1,58 @@
 """The Outline's JSON format: its schema, its samples, and the check every render runs first."""
 
+import re
 from dataclasses import dataclass
+
+from munin.core.errors import OutlineProblem
+from munin.core.stamps import display_stamp, stamp_seconds
+
+# Each part's kind says what its value holds. `text` and `prose` are strings,
+# and only `prose` may hold control characters, such as newlines.
+_TREE_PARTS = {
+    "label": ("text", True),
+    "explanation": ("prose", False),
+    "stamps": ("stamps", False),
+    "slides": ("slides", False),
+    "children": ("nodes", False),
+}
+_WORKED_PARTS = {
+    "label": ("text", True),
+    "stamps": ("stamps", False),
+    "slides": ("slides", False),
+    "task": ("text", True),
+    "steps": ("steps", False),
+    "answer": ("text", False),
+}
+_STEP_PARTS = {
+    "calculation": ("text", True),
+    "reason": ("text", False),
+}
+# The parts table: every node type, its parts, and for each part its kind and
+# whether it must be non-blank. The schema and the check are both built from it.
+PARTS: dict[str, dict[str, tuple[str, bool]]] = {
+    "main-topic": _TREE_PARTS,
+    "topic": _TREE_PARTS,
+    "slide": _TREE_PARTS,
+    "term": _TREE_PARTS,
+    "exempel": _WORKED_PARTS,
+    "övning": _WORKED_PARTS,
+}
+_TREE_TYPES = ("main-topic", "topic", "slide", "term")
+# Which parent types each type may sit under. The main-topic sits only at the root.
+PARENTS: dict[str, tuple[str, ...]] = {
+    "main-topic": (),
+    "topic": ("main-topic",),
+    "slide": ("topic",),
+    "term": ("slide",),
+    "exempel": _TREE_TYPES,
+    "övning": _TREE_TYPES,
+}
+
+_CONTROL = re.compile(r"[\x00-\x1f\x7f-\x9f]")
+_NO_CONTROL = "^[^\\u0000-\\u001f\\u007f-\\u009f]*$"
+_NON_BLANK = "\\S"
+_STAMP = "^(\\d+:[0-5]\\d|\\d+:[0-5]\\d:[0-5]\\d)$"
+_SCHEMA_ID = "https://json-schema.org/draft/2020-12/schema"
 
 
 @dataclass(frozen=True)
@@ -50,4 +102,223 @@ def get_outline_schema() -> OutlineSchema:
     check when placed under a slide node. Calling this twice returns equal
     values.
     """
-    raise NotImplementedError
+    return OutlineSchema(_schema(), _samples())
+
+
+def check_outline(
+    outline: object, *, duration_s: float | None, deck_pages: int | None
+) -> tuple[OutlineProblem, ...]:
+    """Return every problem with a parsed Outline, in Outline order, as `render_mindmap` describes them.
+
+    `duration_s` is the Source's length in seconds, or None when there is no
+    Source, so any stamp is a problem. `deck_pages` is the Deck's Slide count,
+    or None when there is no Deck, so any Slide number is a problem.
+    """
+    check = _Check(duration_s, deck_pages)
+    if not isinstance(outline, dict):
+        check.add((), "the Outline must be one main-topic node, not a list or a value")
+        return tuple(check.problems)
+    if outline.get("type") != "main-topic":
+        check.add((), "the root must be a main-topic node")
+    check.node(outline, (), 1, None)
+    return tuple(check.problems)
+
+
+def node_path_label(node: object, position: int) -> str:
+    """Return how a node stands in a label path: its label, or `#N` when the label is missing or blank."""
+    label = node.get("label") if isinstance(node, dict) else None
+    return label if isinstance(label, str) and label.strip() else f"#{position}"
+
+
+class _Check:
+    """Collects problems while walking an Outline, parents before children."""
+
+    def __init__(self, duration_s: float | None, deck_pages: int | None) -> None:
+        self.duration_s = duration_s
+        self.deck_pages = deck_pages
+        self.problems: list[OutlineProblem] = []
+
+    def add(self, path: tuple[str, ...], message: str) -> None:
+        self.problems.append(OutlineProblem(path, message))
+
+    def node(self, node: object, parent_path: tuple[str, ...], position: int, parent: str | None) -> None:
+        path = (*parent_path, node_path_label(node, position))
+        if not isinstance(node, dict):
+            self.add(path, "a node must be an object")
+            return
+        kind = node.get("type")
+        if kind not in PARTS:
+            self.add(path, "missing type" if "type" not in node else f"unknown type {_quoted(kind)}")
+            return
+        if parent is not None and parent not in PARENTS[kind]:
+            self.add(path, f"a {kind} node cannot sit under a {parent} node")
+        parts = PARTS[kind]
+        for key in node:
+            if key != "type" and key not in parts:
+                self.add(path, f"{kind} nodes have no {_quoted(key)} part")
+        for key, (part_kind, required) in parts.items():
+            if key not in node:
+                self.add(path, f"missing {key}")
+            else:
+                self.part(path, key, node[key], part_kind, required)
+        children = node.get("children") if "children" in parts else None
+        if isinstance(children, list):
+            for index, child in enumerate(children, start=1):
+                self.node(child, path, index, kind)
+
+    def part(self, path: tuple[str, ...], key: str, value: object, kind: str, required: bool) -> None:
+        if not _has_kind(value, kind):
+            self.add(path, f"{key} must be {_KIND_NAMES[kind]}")
+        elif kind in ("text", "prose"):
+            self.text(path, key, value, kind, required)
+        elif kind == "stamps":
+            self.stamps(path, value)
+        elif kind == "slides":
+            self.slides(path, value)
+        elif kind == "steps":
+            for number, step in enumerate(value, start=1):
+                self.step(path, number, step)
+
+    def text(self, path: tuple[str, ...], key: str, value: str, kind: str, required: bool) -> None:
+        if required and not value.strip():
+            self.add(path, f"{key} is blank")
+        if kind == "text" and _CONTROL.search(value):
+            self.add(path, f"{key} holds a control character; escape every LaTeX backslash as \\\\")
+
+    def step(self, path: tuple[str, ...], number: int, step: dict) -> None:
+        for key in step:
+            if key not in _STEP_PARTS:
+                self.add(path, f"step {number} has no {_quoted(key)} part")
+        for key, (kind, required) in _STEP_PARTS.items():
+            if key not in step:
+                self.add(path, f"step {number} is missing {key}")
+            else:
+                self.part(path, f"step {number} {key}", step[key], kind, required)
+
+    def stamps(self, path: tuple[str, ...], stamps: list[str]) -> None:
+        for stamp in stamps:
+            seconds = stamp_seconds(f"[{stamp}]")
+            if self.duration_s is None:
+                self.add(path, f"stamp {_quoted(stamp)} has no Source to link to, so leave stamps empty")
+            elif seconds is None:
+                self.add(path, f"stamp {_quoted(stamp)} is malformed")
+            elif seconds > self.duration_s:
+                end = display_stamp(self.duration_s)
+                self.add(path, f"stamp {_quoted(stamp)} is past the Source's end at {end}")
+
+    def slides(self, path: tuple[str, ...], slides: list[int]) -> None:
+        seen: set[int] = set()
+        for number in slides:
+            if self.deck_pages is None:
+                self.add(path, f"Slide {number} has no Deck to link to, so leave slides empty")
+            elif number < 1:
+                self.add(path, f"Slide {number} is below 1")
+            elif number > self.deck_pages:
+                self.add(path, f"Slide {number} is past the Deck's last Slide, {self.deck_pages}")
+            elif number in seen:
+                self.add(path, f"Slide {number} is listed twice")
+            seen.add(number)
+
+
+_KIND_NAMES = {
+    "text": "a string",
+    "prose": "a string",
+    "stamps": "a list of stamp strings",
+    "slides": "a list of integer Slide numbers",
+    "nodes": "a list of nodes",
+    "steps": "a list of step objects",
+}
+
+
+def _has_kind(value: object, kind: str) -> bool:
+    if kind in ("text", "prose"):
+        return isinstance(value, str)
+    if not isinstance(value, list):
+        return False
+    if kind == "stamps":
+        return all(isinstance(item, str) for item in value)
+    if kind == "slides":
+        return all(isinstance(item, int) and not isinstance(item, bool) for item in value)
+    if kind == "steps":
+        return all(isinstance(item, dict) for item in value)
+    return True
+
+
+def _quoted(value: object) -> str:
+    return f'"{value}"' if isinstance(value, str) else repr(value)
+
+
+def _schema() -> dict:
+    """Return the JSON Schema built from the parts table and the nesting rules."""
+    defs = {kind: _node_schema(kind) for kind in PARTS}
+    defs["step"] = _object_schema(_STEP_PARTS, {})
+    return {
+        "$schema": _SCHEMA_ID,
+        "title": "Munin Outline",
+        "description": (
+            "One main-topic node at the root. Every node carries every part its type has; "
+            "a part that may be empty is written as \"\" or []. Stamps are \"m:ss\" or \"h:mm:ss\" "
+            "without brackets, and Slide numbers count from 1. Task, step calculations and "
+            "answer are LaTeX, so escape every backslash as \\\\ in JSON. Reasons are short Swedish."
+        ),
+        "$ref": "#/$defs/main-topic",
+        "$defs": defs,
+    }
+
+
+def _node_schema(kind: str) -> dict:
+    children = [child for child, parents in PARENTS.items() if kind in parents]
+    nodes = {"type": "array", "items": {"oneOf": [{"$ref": f"#/$defs/{child}"} for child in children]}}
+    return _object_schema(PARTS[kind], {"type": {"const": kind}}, nodes)
+
+
+def _object_schema(parts: dict[str, tuple[str, bool]], extra: dict, nodes: dict | None = None) -> dict:
+    properties = dict(extra)
+    for key, (kind, required) in parts.items():
+        properties[key] = _part_schema(kind, required, nodes)
+    return {
+        "type": "object",
+        "properties": properties,
+        "required": list(properties),
+        "additionalProperties": False,
+    }
+
+
+def _part_schema(kind: str, required: bool, nodes: dict | None) -> dict:
+    if kind == "prose":
+        return {"type": "string"}
+    if kind == "text":
+        text = {"type": "string", "pattern": _NO_CONTROL}
+        return {"allOf": [text, {"pattern": _NON_BLANK}]} if required else text
+    if kind == "stamps":
+        return {"type": "array", "items": {"type": "string", "pattern": _STAMP}}
+    if kind == "slides":
+        return {"type": "array", "items": {"type": "integer", "minimum": 1}, "uniqueItems": True}
+    if kind == "steps":
+        return {"type": "array", "items": {"$ref": "#/$defs/step"}}
+    return nodes
+
+
+def _samples() -> tuple[dict, dict]:
+    exempel = {
+        "type": "exempel",
+        "label": "Förenkla ett bråk",
+        "stamps": [],
+        "slides": [],
+        "task": "Förenkla \\frac{6}{8}",
+        "steps": [
+            {"calculation": "\\frac{6}{8} = \\frac{2 \\cdot 3}{2 \\cdot 4}", "reason": "faktorisera"},
+            {"calculation": "\\frac{2 \\cdot 3}{2 \\cdot 4} = \\frac{3}{4}", "reason": "förkorta med 2"},
+        ],
+        "answer": "\\frac{3}{4}",
+    }
+    ovning = {
+        "type": "övning",
+        "label": "Matrisprodukt",
+        "stamps": [],
+        "slides": [],
+        "task": "Beräkna \\begin{pmatrix} 1 & 2 \\end{pmatrix} \\begin{pmatrix} 3 \\\\ 4 \\end{pmatrix}",
+        "steps": [{"calculation": "1 \\cdot 3 + 2 \\cdot 4", "reason": "rad gånger kolonn"}],
+        "answer": "\\begin{pmatrix} 11 \\end{pmatrix}",
+    }
+    return exempel, ovning

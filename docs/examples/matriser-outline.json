@@ -1,0 +1,288 @@
+{
+  "type": "main-topic",
+  "label": "Matriser",
+  "explanation": "En matris samlar tal i rader och kolumner. I den här föreläsningen går vi igenom hur matriser ser ut, hur vi beskriver deras storlek och hur vi hittar ett visst tal.",
+  "stamps": [
+    "0:00"
+  ],
+  "slides": [],
+  "children": [
+    {
+      "type": "topic",
+      "label": "Vad är en matris?",
+      "explanation": "En matris är ett rektangulärt schema med tal. Varje tal har en bestämd plats, och varje rad innehåller lika många tal.",
+      "stamps": [
+        "0:00"
+      ],
+      "slides": [],
+      "children": [
+        {
+          "type": "slide",
+          "label": "Ett schema med tal",
+          "explanation": "Talen ordnas i vågräta rader och lodräta kolumner. Den ordningen hjälper oss att beskriva och arbeta med många tal samtidigt.",
+          "stamps": [
+            "0:00"
+          ],
+          "slides": [],
+          "children": []
+        },
+        {
+          "type": "slide",
+          "label": "Parenteser",
+          "explanation": "En parentes runt hela uppställningen visar vilka tal som hör till matrisen.",
+          "stamps": [
+            "0:06"
+          ],
+          "slides": [],
+          "children": []
+        }
+      ]
+    },
+    {
+      "type": "topic",
+      "label": "Användningsområden",
+      "explanation": "Matriser används för att beskriva bland annat ekvationssystem, grafer och digitala bilder. Samma sätt att ordna tal kan alltså användas i flera olika sammanhang.",
+      "stamps": [
+        "0:12"
+      ],
+      "slides": [],
+      "children": [
+        {
+          "type": "slide",
+          "label": "Ekvationssystem",
+          "explanation": "Talen framför de obekanta i ett linjärt ekvationssystem kan samlas i en matris. Det gör systemet lättare att arbeta med vid Gausselimination.",
+          "stamps": [
+            "0:12"
+          ],
+          "slides": [],
+          "children": []
+        },
+        {
+          "type": "slide",
+          "label": "Grafer",
+          "explanation": "En graf beskriver punkter och förbindelser mellan dem. En matris kan hålla reda på vilka punkter som är förbundna.",
+          "stamps": [
+            "0:30"
+          ],
+          "slides": [],
+          "children": []
+        },
+        {
+          "type": "slide",
+          "label": "Pentominopussel",
+          "explanation": "Även pussel kan beskrivas med matriser. Här är det ett exempel på hur en konkret uppgift kan översättas till en ordnad uppställning.",
+          "stamps": [
+            "0:47"
+          ],
+          "slides": [],
+          "children": []
+        },
+        {
+          "type": "slide",
+          "label": "Digitala bilder",
+          "explanation": "En digital bild består av små bildpunkter. Deras värden kan ordnas i en matris, där varje plats motsvarar en plats i bilden.",
+          "stamps": [
+            "1:29"
+          ],
+          "slides": [],
+          "children": []
+        },
+        {
+          "type": "slide",
+          "label": "Bildkomprimering",
+          "explanation": "Genom att beskriva en bildmatris med hjälp av andra matriser kan man i vissa fall lagra en förenklad bild med mindre information.",
+          "stamps": [
+            "1:35"
+          ],
+          "slides": [],
+          "children": []
+        }
+      ]
+    },
+    {
+      "type": "topic",
+      "label": "Storlek",
+      "explanation": "Matrisens storlek beskriver hur många rader och kolumner den har. Antalet rader anges först, sedan antalet kolumner.",
+      "stamps": [
+        "2:06"
+      ],
+      "slides": [],
+      "children": [
+        {
+          "type": "slide",
+          "label": "Rader och kolumner",
+          "explanation": "Rader läser du vågrätt och kolumner lodrätt. Räkna dem var för sig för att bestämma matrisens storlek.",
+          "stamps": [
+            "2:10"
+          ],
+          "slides": [],
+          "children": []
+        },
+        {
+          "type": "slide",
+          "label": "Ett exempel",
+          "explanation": "Exemplet i föreläsningen har tre rader och fyra kolumner. Varje rad innehåller alltså fyra tal.",
+          "stamps": [
+            "2:17"
+          ],
+          "slides": [],
+          "children": []
+        }
+      ]
+    },
+    {
+      "type": "topic",
+      "label": "Element",
+      "explanation": "Ett enskilt tal i en matris kallas ett element. Vi hittar det genom att först välja rad och sedan kolumn.",
+      "stamps": [
+        "2:27"
+      ],
+      "slides": [],
+      "children": [
+        {
+          "type": "slide",
+          "label": "Hitta ett element",
+          "explanation": "Börja med att gå till rätt rad. Följ sedan den raden till rätt kolumn. Talet där raden och kolumnen möts är elementet du söker.",
+          "stamps": [
+            "2:36"
+          ],
+          "slides": [],
+          "children": []
+        },
+        {
+          "type": "slide",
+          "label": "Övning",
+          "explanation": "Öva på att skilja mellan matrisens storlek och platsen för ett visst element. Kontrollera att den efterfrågade raden och kolumnen faktiskt finns.",
+          "stamps": [
+            "2:54"
+          ],
+          "slides": [],
+          "children": [
+            {
+              "type": "term",
+              "label": "Två rader",
+              "explanation": "I föreläsningens matris med två rader och fyra kolumner är talet på andra raden och tredje kolumnen sju.",
+              "stamps": [
+                "3:12"
+              ],
+              "slides": [],
+              "children": []
+            },
+            {
+              "type": "term",
+              "label": "Finns platsen?",
+              "explanation": "En matris med bara en rad har ingen tredje rad. Därför kan ett element på tredje raden inte finnas, även om kolumnen finns.",
+              "stamps": [
+                "3:47"
+              ],
+              "slides": [],
+              "children": []
+            },
+            {
+              "type": "term",
+              "label": "En kolumn",
+              "explanation": "När matrisen bara har en kolumn står alla element under varandra. Här finns tre rader att välja mellan.",
+              "stamps": [
+                "4:22"
+              ],
+              "slides": [],
+              "children": []
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "topic",
+      "label": "Särskilda matriser",
+      "explanation": "Vissa matriser får egna namn utifrån sin form. Namnet berättar något om hur raderna och kolumnerna är ordnade.",
+      "stamps": [
+        "4:43"
+      ],
+      "slides": [],
+      "children": [
+        {
+          "type": "slide",
+          "label": "Rad och kolonn",
+          "explanation": "En radmatris har bara en rad. En kolonnmatris har bara en kolumn.",
+          "stamps": [
+            "4:43"
+          ],
+          "slides": [],
+          "children": []
+        },
+        {
+          "type": "slide",
+          "label": "Kvadratisk matris",
+          "explanation": "En kvadratisk matris har lika många rader som kolumner. Uppställningen är därför kvadratisk.",
+          "stamps": [
+            "4:48"
+          ],
+          "slides": [],
+          "children": []
+        },
+        {
+          "type": "slide",
+          "label": "Diagonalen",
+          "explanation": "Huvuddiagonalen går från övre vänstra hörnet snett ned åt höger. På dessa platser är radnumret och kolumnnumret lika.",
+          "stamps": [
+            "5:05"
+          ],
+          "slides": [],
+          "children": []
+        }
+      ]
+    },
+    {
+      "type": "topic",
+      "label": "Beteckningar",
+      "explanation": "Vi använder bokstäver och platsnummer för att beskriva matriser och deras element utan att skriva ut varje tal.",
+      "stamps": [
+        "5:30"
+      ],
+      "slides": [],
+      "children": [
+        {
+          "type": "slide",
+          "label": "Namn på element",
+          "explanation": "En liten bokstav tillsammans med radnummer och kolumnnummer kan ange ett bestämt element i en namngiven matris.",
+          "stamps": [
+            "5:36"
+          ],
+          "slides": [],
+          "children": []
+        },
+        {
+          "type": "slide",
+          "label": "En allmän matris",
+          "explanation": "En allmän matris visar hur elementen är placerade med hjälp av bokstäver. Den beskriver formen utan att låsa oss till vissa tal.",
+          "stamps": [
+            "5:47"
+          ],
+          "slides": [],
+          "children": []
+        },
+        {
+          "type": "slide",
+          "label": "Öva på beteckningar",
+          "explanation": "Övningen handlar om att skriva upp en matris med två rader och tre kolumner och ge varje plats rätt beteckning.",
+          "stamps": [
+            "6:05"
+          ],
+          "slides": [],
+          "children": []
+        },
+        {
+          "type": "slide",
+          "label": "Tydliga platsnummer",
+          "explanation": "När platsnumren får flera siffror kan ett kommatecken skilja radnumret från kolumnnumret, så att beteckningen blir entydig.",
+          "stamps": [
+            "7:00"
+          ],
+          "slides": [],
+          "children": []
+        }
+      ]
+    }
+  ]
+}

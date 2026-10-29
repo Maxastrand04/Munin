@@ -8,7 +8,14 @@ from html import escape
 from pathlib import Path
 
 from munin.core import pdf
+from munin.core.cache_ids import is_cache_id
+from munin.core.cache_paths import default_cache_dir
+from munin.core.errors import OutlineStructureError, OutlineSyntaxError, UnknownDeckError
+from munin.core.outline import check_outline
+from munin.core.slides import deck_path, standalone_deck_path
 from munin.core.sources import Source, Video
+from munin.core.stamps import display_stamp, stamp_seconds
+from munin.core.transcribe import CacheEntry, cached_entry
 
 _REPO_ROOT = Path(__file__).resolve().parents[3]
 _DEFAULT_OUTPUT_DIR = _REPO_ROOT / "mindmaps"
@@ -120,7 +127,9 @@ def render_mindmap(
     before the Outline is read, then `OutlineSyntaxError` or
     `OutlineStructureError` as above. Any of them means nothing is written.
     """
-    raise NotImplementedError
+    entry = cached_entry(transcript_id, cache_dir=cache_dir)
+    deck = deck_path(transcript_id, cache_dir or default_cache_dir())
+    return _write_page(transcript_id, outline, entry, deck, output_dir)
 
 
 def render_deck_mindmap(
@@ -147,7 +156,83 @@ def render_deck_mindmap(
     the Outline is read, then `OutlineSyntaxError` or `OutlineStructureError`
     as `render_mindmap` does. Any of them means nothing is written.
     """
-    raise NotImplementedError
+    cache_dir = cache_dir or default_cache_dir()
+    deck = standalone_deck_path(deck_id, cache_dir)
+    if not is_cache_id(deck_id) or not deck.is_file():
+        raise UnknownDeckError(deck_id)
+    return _write_page(deck_id, outline, None, deck, output_dir)
+
+
+def _write_page(
+    page_id: str, outline: dict | str, entry: CacheEntry | None, deck: Path, output_dir: Path | None
+) -> RenderResult:
+    """Check the Outline, then write `<page_id>.html`, linking stamps to the entry's Source and Slide numbers to the Deck at `deck`.
+
+    `entry` is None when there is no Source, and `deck` need not exist.
+    """
+    parsed = _parsed(outline)
+    deck_pages = pdf.page_count(deck) if deck.is_file() else None
+    problems = check_outline(parsed, duration_s=entry.duration_s if entry else None, deck_pages=deck_pages)
+    if problems:
+        raise OutlineStructureError(problems)
+    source = entry.source if entry else None
+    nodes = _flat_nodes(parsed, source)
+    linked = sorted({number for node in nodes for number in node["slides"]})
+    content = _page_html(page_id, nodes, source, _slide_images(deck, linked))
+    page = (output_dir or _DEFAULT_OUTPUT_DIR).resolve() / f"{page_id}.html"
+    page.parent.mkdir(parents=True, exist_ok=True)
+    page.write_text(content, encoding="utf-8")
+    return RenderResult(page)
+
+
+def _parsed(outline: dict | str) -> object:
+    """Return the Outline as parsed JSON, raising `OutlineSyntaxError` when text is not JSON."""
+    if not isinstance(outline, str):
+        return outline
+    try:
+        return json.loads(outline)
+    except json.JSONDecodeError as error:
+        raise OutlineSyntaxError(error.lineno, error.colno, error.msg) from error
+
+
+def _flat_nodes(outline: dict, source: Source | None) -> list[dict]:
+    """Return the checked Outline's nodes in Outline order, each pointing at its parent by index."""
+    nodes: list[dict] = []
+
+    def add(node: dict, parent: int | None) -> None:
+        index = len(nodes)
+        links = []
+        for stamp in node["stamps"]:
+            offset = stamp_seconds(f"[{stamp}]")
+            links.append({"text": display_stamp(offset), "url": _timestamp_url(source, offset)})
+        nodes.append(
+            {
+                "id": index,
+                "parent": parent,
+                "type": node["type"],
+                "label": node["label"],
+                "links": links,
+                "slides": sorted(node["slides"]),
+                "term": " ".join(node["label"].split()).casefold(),
+                "explanation": node["explanation"] if "explanation" in node else _worked_text(node),
+            }
+        )
+        for child in node.get("children", []):
+            add(child, index)
+
+    add(outline, None)
+    return nodes
+
+
+def _worked_text(node: dict) -> str:
+    """Return an exempel's or övning's task, steps and answer as the lines its panel shows."""
+    lines = [node["task"]]
+    for number, step in enumerate(node["steps"], start=1):
+        reason = f" ({step['reason']})" if step["reason"] else ""
+        lines.append(f"Steg {number}: {step['calculation']}{reason}")
+    if node["answer"]:
+        lines.append(f"Svar: {node['answer']}")
+    return "\n".join(lines)
 
 
 def _slide_images(deck: Path, numbers: list[int]) -> dict[str, str]:
