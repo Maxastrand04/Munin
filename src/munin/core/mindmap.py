@@ -10,7 +10,11 @@ from pathlib import Path
 from munin.core import pdf
 from munin.core.cache_ids import is_cache_id
 from munin.core.cache_paths import default_cache_dir
-from munin.core.errors import OutlineStructureError, OutlineSyntaxError, UnknownDeckError
+from munin.core.errors import (
+    OutlineStructureError,
+    OutlineSyntaxError,
+    UnknownDeckError,
+)
 from munin.core.outline import check_outline
 from munin.core.slides import deck_path, standalone_deck_path
 from munin.core.sources import Source, Video

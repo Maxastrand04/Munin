@@ -29,7 +29,7 @@ _STEP_PARTS = {
 }
 # The parts table: every node type, its parts, and for each part its kind and
 # whether it must be non-blank. The schema and the check are both built from it.
-PARTS: dict[str, dict[str, tuple[str, bool]]] = {
+_PARTS: dict[str, dict[str, tuple[str, bool]]] = {
     "main-topic": _TREE_PARTS,
     "topic": _TREE_PARTS,
     "slide": _TREE_PARTS,
@@ -39,7 +39,7 @@ PARTS: dict[str, dict[str, tuple[str, bool]]] = {
 }
 _TREE_TYPES = ("main-topic", "topic", "slide", "term")
 # Which parent types each type may sit under. The main-topic sits only at the root.
-PARENTS: dict[str, tuple[str, ...]] = {
+_PARENTS: dict[str, tuple[str, ...]] = {
     "main-topic": (),
     "topic": ("main-topic",),
     "slide": ("topic",),
@@ -124,7 +124,7 @@ def check_outline(
     return tuple(check.problems)
 
 
-def node_path_label(node: object, position: int) -> str:
+def _node_path_label(node: object, position: int) -> str:
     """Return how a node stands in a label path: its label, or `#N` when the label is missing or blank."""
     label = node.get("label") if isinstance(node, dict) else None
     return label if isinstance(label, str) and label.strip() else f"#{position}"
@@ -142,17 +142,17 @@ class _Check:
         self.problems.append(OutlineProblem(path, message))
 
     def node(self, node: object, parent_path: tuple[str, ...], position: int, parent: str | None) -> None:
-        path = (*parent_path, node_path_label(node, position))
+        path = (*parent_path, _node_path_label(node, position))
         if not isinstance(node, dict):
             self.add(path, "a node must be an object")
             return
         kind = node.get("type")
-        if kind not in PARTS:
+        if kind not in _PARTS:
             self.add(path, "missing type" if "type" not in node else f"unknown type {_quoted(kind)}")
             return
-        if parent is not None and parent not in PARENTS[kind]:
+        if parent is not None and parent not in _PARENTS[kind]:
             self.add(path, f"a {kind} node cannot sit under a {parent} node")
-        parts = PARTS[kind]
+        parts = _PARTS[kind]
         for key in node:
             if key != "type" and key not in parts:
                 self.add(path, f"{kind} nodes have no {_quoted(key)} part")
@@ -250,7 +250,7 @@ def _quoted(value: object) -> str:
 
 def _schema() -> dict:
     """Return the JSON Schema built from the parts table and the nesting rules."""
-    defs = {kind: _node_schema(kind) for kind in PARTS}
+    defs = {kind: _node_schema(kind) for kind in _PARTS}
     defs["step"] = _object_schema(_STEP_PARTS, {})
     return {
         "$schema": _SCHEMA_ID,
@@ -267,9 +267,9 @@ def _schema() -> dict:
 
 
 def _node_schema(kind: str) -> dict:
-    children = [child for child, parents in PARENTS.items() if kind in parents]
+    children = [child for child, parents in _PARENTS.items() if kind in parents]
     nodes = {"type": "array", "items": {"oneOf": [{"$ref": f"#/$defs/{child}"} for child in children]}}
-    return _object_schema(PARTS[kind], {"type": {"const": kind}}, nodes)
+    return _object_schema(_PARTS[kind], {"type": {"const": kind}}, nodes)
 
 
 def _object_schema(parts: dict[str, tuple[str, bool]], extra: dict, nodes: dict | None = None) -> dict:

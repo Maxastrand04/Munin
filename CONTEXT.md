@@ -59,7 +59,7 @@ _Avoid_: jump link, deep link, seek link
 - A node of an **Outline** lists any number of **Slides**, and a **Slide** can appear on any number of nodes
 - An **Outline** is written from exactly one **Transcript**, or from exactly one standalone **Deck**
 - A node under an **Example or exercise** is part of it, so a topic that is one takes no topic colour
-- A **Mindmap** renders exactly one **Outline** and resolves its stamps against that **Transcript**'s **Source** and the Source's duration, and its Slide markers against that **Transcript**'s **Deck**
+- A **Mindmap** renders exactly one **Outline** and resolves its stamps against that **Transcript**'s **Source** and the Source's duration, and its Slide numbers against that **Transcript**'s **Deck**
 
 ## Example dialogue
 
@@ -70,5 +70,5 @@ _Avoid_: jump link, deep link, seek link
 
 ## Flagged ambiguities
 
-- "mindmap" was used for both the LLM's Markdown and the rendered page. Resolved: the Markdown is the **Outline**, the page is the **Mindmap**.
+- "mindmap" was used for both what the LLM writes and the rendered page. Resolved: what the LLM writes is the **Outline**, the page is the **Mindmap**.
 - "transcription" means the act of running Pianissimo. The stored result is the **Transcript**.

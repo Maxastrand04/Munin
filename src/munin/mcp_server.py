@@ -309,8 +309,10 @@ def _slides_only_prompt(deck: str) -> str:
     steps = [
         f"Call `read_deck` with this Deck path: {deck}.",
         "Call `get_outline_schema`.",
-        "Write an Outline of the lecture from the Slides alone as JSON, in the format `get_outline_schema` gives,"
-        " following the guidance in the `render_deck_mindmap` tool's description.",
+        (
+            "Write an Outline of the lecture from the Slides alone as JSON, in the format `get_outline_schema` gives,"
+            " following the guidance in the `render_deck_mindmap` tool's description."
+        ),
         "Call `render_deck_mindmap` with the Deck ID and the Outline.",
         _REPLY_STEP,
     ]
