@@ -16,6 +16,7 @@ SPEECH = Path(__file__).parent / "fixtures" / "sv_short.m4a"
 WATCH_URL = "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
 KTHPLAY_URL = "https://play.kth.se/media/Föreläsning+4A+Matriser/0_1zk8obn5"
 DECK_PATH = "/tmp/matriser.pdf"
+OUTLINE = {"type": "main-topic", "label": "Matriser", "explanation": "", "stamps": [], "slides": [], "children": []}
 
 
 def two_sentences(wav: Path, vocabulary: Vocabulary | None):
@@ -96,7 +97,7 @@ def deck_id_of(result) -> str:
 
 
 def test_mcp_lists_all_tools(cache_dir: Path):
-    """The server exposes `transcribe`, `get_transcript`, `render_mindmap`, `read_slides`, `read_deck` and `render_deck_mindmap`."""
+    """The server exposes `transcribe`, `get_transcript`, `get_outline_schema`, `render_mindmap`, `read_slides`, `read_deck` and `render_deck_mindmap`."""
 
     async def run():
         async with Client(create_server(cache_dir=cache_dir, recognize=two_sentences)) as client:
@@ -106,6 +107,7 @@ def test_mcp_lists_all_tools(cache_dir: Path):
     assert names == {
         "transcribe",
         "get_transcript",
+        "get_outline_schema",
         "render_mindmap",
         "read_slides",
         "read_deck",
@@ -194,7 +196,6 @@ def test_mcp_transcribe_accepts_youtube_url(cache_dir: Path):
     assert result.structured_content["transcript_id"] == hashlib.sha256(WATCH_URL.encode()).hexdigest()[:12]
 
 
-
 def test_mcp_transcribe_accepts_kthplay_url(cache_dir: Path):
     """The transcribe tool takes a KTH Play link as `source` and returns its Transcript ID."""
     server = create_server(cache_dir=cache_dir, recognize=two_sentences, download=fake_download)
@@ -238,7 +239,7 @@ def test_mcp_render_mindmap_returns_page_path(source: Path, cache_dir: Path, tmp
     output_dir = tmp_path / "out"
     server = create_server(cache_dir=cache_dir, recognize=two_sentences, output_dir=output_dir)
     transcript_id = call(server, "transcribe", {"source": str(source)}).structured_content["transcript_id"]
-    result = call(server, "render_mindmap", {"transcript_id": transcript_id, "outline": "# Matriser [0:01]"})
+    result = call(server, "render_mindmap", {"transcript_id": transcript_id, "outline": OUTLINE})
     assert result.structured_content["page"] == str(output_dir / f"{transcript_id}.html")
 
 
@@ -247,7 +248,7 @@ def test_mcp_render_mindmap_writes_page(source: Path, cache_dir: Path, tmp_path:
     output_dir = tmp_path / "out"
     server = create_server(cache_dir=cache_dir, recognize=two_sentences, output_dir=output_dir)
     transcript_id = call(server, "transcribe", {"source": str(source)}).structured_content["transcript_id"]
-    call(server, "render_mindmap", {"transcript_id": transcript_id, "outline": "# Matriser [0:01]"})
+    call(server, "render_mindmap", {"transcript_id": transcript_id, "outline": OUTLINE})
     assert (output_dir / f"{transcript_id}.html").is_file()
 
 
@@ -263,24 +264,6 @@ def test_mcp_render_mindmap_unknown_id_error_names_it(cache_dir: Path, tmp_path:
     server = create_server(cache_dir=cache_dir, recognize=two_sentences, output_dir=tmp_path / "out")
     result = call(server, "render_mindmap", {"transcript_id": "deadbeef0000", "outline": "# Matriser"})
     assert "deadbeef0000" in result.content[0].text
-
-
-def test_mcp_render_mindmap_reports_unlinked_stamps(source: Path, cache_dir: Path, tmp_path: Path):
-    """The render_mindmap tool returns each unlinked stamp's label, stamp and reason."""
-    server = create_server(cache_dir=cache_dir, recognize=two_sentences, output_dir=tmp_path / "out")
-    transcript_id = call(server, "transcribe", {"source": str(source)}).structured_content["transcript_id"]
-    result = call(server, "render_mindmap", {"transcript_id": transcript_id, "outline": "# Matriser\n- Gauss [1:75]"})
-    assert result.structured_content["unlinked"] == [{"label": "Gauss [1:75]", "stamp": "[1:75]", "reason": "malformed"}]
-
-
-def test_mcp_render_mindmap_reports_unlinked_slides(source: Path, cache_dir: Path, tmp_path: Path):
-    """The render_mindmap tool returns each unlinked slide marker's label, slide and reason."""
-    server = create_server(cache_dir=cache_dir, recognize=two_sentences, output_dir=tmp_path / "out")
-    transcript_id = call(server, "transcribe", {"source": str(source)}).structured_content["transcript_id"]
-    result = call(server, "render_mindmap", {"transcript_id": transcript_id, "outline": "# Matriser\n- Gauss [slide 1]"})
-    assert result.structured_content["unlinked_slides"] == [
-        {"label": "Gauss [slide 1]", "slide": "[slide 1]", "reason": "no_deck"}
-    ]
 
 
 def test_mcp_read_slides_returns_a_text_then_an_image_block_per_slide(source: Path, deck: Path, cache_dir: Path):
@@ -350,7 +333,6 @@ def test_mcp_lecture_prompt_fills_in_source(cache_dir: Path):
     assert WATCH_URL in prompt_text(create_server(cache_dir=cache_dir), WATCH_URL)
 
 
-
 def test_mcp_lecture_prompt_fills_in_kthplay_url(cache_dir: Path):
     """The prompt's text carries the KTH Play link it was given."""
     assert KTHPLAY_URL in prompt_text(create_server(cache_dir=cache_dir), KTHPLAY_URL)
@@ -369,8 +351,8 @@ def test_mcp_lecture_prompt_asks_for_only_a_file_link(cache_dir: Path):
 
 
 def test_mcp_lecture_prompt_leaves_format_to_render_tool(cache_dir: Path):
-    """The prompt points at render_mindmap for the Outline format."""
-    assert "format the `render_mindmap` tool describes" in prompt_text(create_server(cache_dir=cache_dir), WATCH_URL)
+    """The prompt points at render_mindmap's description for the Outline's content guidance."""
+    assert "guidance in the `render_mindmap` tool's description" in prompt_text(create_server(cache_dir=cache_dir), WATCH_URL)
 
 
 def test_mcp_lecture_prompt_carries_no_stamp(cache_dir: Path):
@@ -412,14 +394,14 @@ def test_mcp_lecture_prompt_without_deck_asks_for_no_slide_numbers(cache_dir: Pa
     assert "Slide" not in prompt_text(create_server(cache_dir=cache_dir), WATCH_URL)
 
 
-def test_mcp_render_description_gives_the_slide_marker_format(cache_dir: Path):
-    """The render tool's description tells the LLM to write `[slide N]` markers."""
-    assert "[slide N]" in tool_description(create_server(cache_dir=cache_dir), "render_mindmap")
+def test_mcp_render_description_lists_slide_numbers_in_slides(cache_dir: Path):
+    """The render tool's description tells the LLM to list Slide numbers in a node's `slides`."""
+    assert "in a node's `slides`" in tool_description(create_server(cache_dir=cache_dir), "render_mindmap")
 
 
-def test_mcp_render_description_puts_stamp_at_label_end(cache_dir: Path):
-    """The render tool's description asks for one stamp at the end of each node label."""
-    assert "One stamp at the end of each node label" in tool_description(create_server(cache_dir=cache_dir), "render_mindmap")
+def test_mcp_render_description_puts_one_stamp_in_each_node(cache_dir: Path):
+    """The render tool's description asks for one stamp in each node's `stamps`."""
+    assert "one stamp in each node's `stamps`" in tool_description(create_server(cache_dir=cache_dir), "render_mindmap")
 
 
 def test_mcp_render_description_lets_a_topic_carry_a_stamp_per_stretch(cache_dir: Path):
@@ -428,9 +410,9 @@ def test_mcp_render_description_lets_a_topic_carry_a_stamp_per_stretch(cache_dir
 
 
 def test_mcp_render_description_asks_for_topics_slides_and_terms(cache_dir: Path):
-    """The render tool's description asks for topics, then Slides, then terms under the lecture title."""
+    """The render tool's description asks for topic, then slide, then term nodes under the lecture title."""
     description = tool_description(create_server(cache_dir=cache_dir), "render_mindmap")
-    assert "topics, then Slides, then terms, methods and formulas" in description
+    assert "topic nodes, then slide nodes, then term nodes for terms, methods and formulas" in description
 
 
 def test_mcp_render_description_asks_for_one_to_five_topics(cache_dir: Path):
@@ -465,33 +447,28 @@ def test_mcp_render_description_skips_content_that_does_not_help(cache_dir: Path
 
 
 def test_mcp_render_description_words_a_repeated_term_the_same(cache_dir: Path):
-    """The render tool's description asks for a repeated term to be worded the same under every Slide node."""
-    assert "Word a term the same under every Slide node" in tool_description(create_server(cache_dir=cache_dir), "render_mindmap")
+    """The render tool's description asks for a repeated term to be worded the same under every slide node."""
+    assert "Word a term the same under every slide node" in tool_description(create_server(cache_dir=cache_dir), "render_mindmap")
 
 
 def test_mcp_render_description_adds_every_example_and_exercise(cache_dir: Path):
-    """The render tool's description asks for every example and exercise as a leaf."""
+    """The render tool's description asks for every example and exercise."""
     assert "every example and exercise" in tool_description(create_server(cache_dir=cache_dir), "render_mindmap")
 
 
 def test_mcp_render_description_labels_examples_and_exercises(cache_dir: Path):
-    """The render tool's description asks for example and exercise leaves labelled `Övning:` or `Exempel:`."""
-    assert "`Övning:` or `Exempel:`" in tool_description(create_server(cache_dir=cache_dir), "render_mindmap")
+    """The render tool's description asks for each example and exercise as an exempel or övning node."""
+    assert "as an exempel or övning node" in tool_description(create_server(cache_dir=cache_dir), "render_mindmap")
 
 
 def test_mcp_render_description_writes_out_examples_and_exercises(cache_dir: Path):
-    """The render tool's description asks for each example and exercise's task and solution steps."""
-    assert "the task and its solution steps" in tool_description(create_server(cache_dir=cache_dir), "render_mindmap")
+    """The render tool's description asks for each example and exercise's task, solution steps and answer."""
+    assert "the task, its solution steps and the answer" in tool_description(create_server(cache_dir=cache_dir), "render_mindmap")
 
 
 def test_mcp_render_description_makes_examples_read_without_the_video(cache_dir: Path):
     """The render tool's description asks for an example's panel to read on its own, without the video or the Slide."""
     assert "without the video or the Slide" in tool_description(create_server(cache_dir=cache_dir), "render_mindmap")
-
-
-def test_mcp_render_description_keeps_solution_steps_out_of_lists(cache_dir: Path):
-    """The render tool's description warns that a list item in a solution becomes a node."""
-    assert "never as list items" in tool_description(create_server(cache_dir=cache_dir), "render_mindmap")
 
 
 def test_mcp_read_deck_first_block_gives_the_deck_id(deck: Path, cache_dir: Path):
@@ -530,16 +507,8 @@ def test_mcp_render_deck_mindmap_writes_page(deck: Path, cache_dir: Path, tmp_pa
     output_dir = tmp_path / "out"
     server = create_server(cache_dir=cache_dir, output_dir=output_dir)
     deck_id = deck_id_of(call(server, "read_deck", {"deck": str(deck)}))
-    result = call(server, "render_deck_mindmap", {"deck_id": deck_id, "outline": "# Matriser\n- Gauss [slide 2]"})
+    result = call(server, "render_deck_mindmap", {"deck_id": deck_id, "outline": OUTLINE})
     assert result.structured_content["page"] == str(output_dir / f"{deck_id}.html")
-
-
-def test_mcp_render_deck_mindmap_reports_unlinked_stamps(deck: Path, cache_dir: Path, tmp_path: Path):
-    """The render_deck_mindmap tool returns each stamp's label, stamp and reason `no_source`."""
-    server = create_server(cache_dir=cache_dir, output_dir=tmp_path / "out")
-    deck_id = deck_id_of(call(server, "read_deck", {"deck": str(deck)}))
-    result = call(server, "render_deck_mindmap", {"deck_id": deck_id, "outline": "# Matriser\n- Gauss [1:00]"})
-    assert result.structured_content["unlinked"] == [{"label": "Gauss [1:00]", "stamp": "[1:00]", "reason": "no_source"}]
 
 
 def test_mcp_render_deck_mindmap_unknown_id_is_tool_error(cache_dir: Path, tmp_path: Path):
@@ -557,20 +526,20 @@ def test_mcp_render_deck_mindmap_unknown_id_error_names_it(cache_dir: Path, tmp_
 
 
 def test_mcp_deck_render_description_puts_the_title_on_top(cache_dir: Path):
-    """The slides-only format puts the lecture title as the single top node."""
+    """The slides-only guidance puts the lecture title as the one main-topic node."""
     description = tool_description(create_server(cache_dir=cache_dir), "render_deck_mindmap")
-    assert "lecture title as the single top node" in description
+    assert "lecture title as the one main-topic node" in description
 
 
 def test_mcp_deck_render_description_asks_for_topics_slides_and_terms(cache_dir: Path):
-    """The slides-only format asks for topics, then Slides, then terms under the lecture title."""
+    """The slides-only guidance asks for topic, then slide, then term nodes under the lecture title."""
     description = tool_description(create_server(cache_dir=cache_dir), "render_deck_mindmap")
-    assert "topics, then Slides, then terms, methods and formulas" in description
+    assert "topic nodes, then slide nodes, then term nodes for terms, methods and formulas" in description
 
 
 def test_mcp_deck_render_description_asks_for_term_explanations(cache_dir: Path):
-    """The slides-only format asks for an explanation under every term node."""
-    assert "under every term" in tool_description(create_server(cache_dir=cache_dir), "render_deck_mindmap")
+    """The slides-only guidance asks for an explanation on every term node."""
+    assert "every term node an `explanation`" in tool_description(create_server(cache_dir=cache_dir), "render_deck_mindmap")
 
 
 def test_mcp_deck_render_description_sizes_explanations(cache_dir: Path):
@@ -593,30 +562,30 @@ def test_mcp_deck_render_description_groups_by_meaning(cache_dir: Path):
     assert "by meaning" in tool_description(create_server(cache_dir=cache_dir), "render_deck_mindmap")
 
 
-def test_mcp_deck_render_description_gives_the_slide_marker_format(cache_dir: Path):
-    """The slides-only format gives the `[slide N]` marker format."""
-    assert "[slide N]" in tool_description(create_server(cache_dir=cache_dir), "render_deck_mindmap")
+def test_mcp_deck_render_description_lists_each_slide_number_in_slides(cache_dir: Path):
+    """The slides-only guidance asks for each slide node's Slide number in `slides`."""
+    assert "listing its Slide number in `slides`" in tool_description(create_server(cache_dir=cache_dir), "render_deck_mindmap")
 
 
 def test_mcp_deck_render_description_labels_examples_and_exercises(cache_dir: Path):
-    """The slides-only format asks for `Övning:` and `Exempel:` leaves."""
-    assert "`Övning:` or `Exempel:`" in tool_description(create_server(cache_dir=cache_dir), "render_deck_mindmap")
+    """The slides-only guidance asks for each example and exercise as an exempel or övning node."""
+    assert "as an exempel or övning node" in tool_description(create_server(cache_dir=cache_dir), "render_deck_mindmap")
 
 
 def test_mcp_deck_render_description_writes_out_examples_and_exercises(cache_dir: Path):
-    """The slides-only format asks for each example and exercise to be written out."""
-    assert "writes out the task" in tool_description(create_server(cache_dir=cache_dir), "render_deck_mindmap")
+    """The slides-only guidance asks for each example and exercise's task, solution steps and answer."""
+    assert "the task, its solution steps and the answer" in tool_description(create_server(cache_dir=cache_dir), "render_deck_mindmap")
 
 
 def test_mcp_deck_render_description_asks_for_no_stamps(cache_dir: Path):
-    """The slides-only format tells the LLM to write no stamps."""
-    assert "no stamps" in tool_description(create_server(cache_dir=cache_dir), "render_deck_mindmap")
+    """The slides-only guidance tells the LLM to leave every node's stamps empty."""
+    assert "leave every node's `stamps` empty" in tool_description(create_server(cache_dir=cache_dir), "render_deck_mindmap")
 
 
 def test_mcp_deck_render_description_allows_prose_under_any_node(cache_dir: Path):
-    """The slides-only format allows a short prose paragraph under any other node, as the transcript format does."""
+    """The slides-only guidance allows a short explanation on any other node, as the transcript guidance does."""
     description = tool_description(create_server(cache_dir=cache_dir), "render_deck_mindmap")
-    assert "Optionally, a short prose paragraph under any other node" in description
+    assert "Optionally, a short `explanation` on any other node" in description
 
 
 def test_mcp_deck_render_description_skips_title_and_schedule_slides(cache_dir: Path):
@@ -643,9 +612,9 @@ def test_mcp_lecture_prompt_with_only_a_deck_never_transcribes(cache_dir: Path):
 
 
 def test_mcp_lecture_prompt_with_only_a_deck_leaves_format_to_render_tool(cache_dir: Path):
-    """With only a Deck, the prompt points at render_deck_mindmap for the Outline format."""
+    """With only a Deck, the prompt points at render_deck_mindmap's description for the Outline's content guidance."""
     text = prompt_text(create_server(cache_dir=cache_dir), deck=DECK_PATH)
-    assert "format the `render_deck_mindmap` tool describes" in text
+    assert "guidance in the `render_deck_mindmap` tool's description" in text
 
 
 def test_mcp_lecture_prompt_with_only_a_deck_asks_for_only_a_file_link(cache_dir: Path):
@@ -720,5 +689,5 @@ def test_mcp_main_writes_pages_to_mindmaps_in_working_folder(source: Path, tmp_p
     monkeypatch.setattr(MCPServer, "run", lambda server, *args, **kwargs: started.append(server))
     monkeypatch.chdir(tmp_path)
     mcp_server.main()
-    call(started[0], "render_mindmap", {"transcript_id": transcript_id, "outline": "# Matriser [0:01]"})
+    call(started[0], "render_mindmap", {"transcript_id": transcript_id, "outline": OUTLINE})
     assert (tmp_path / "mindmaps" / f"{transcript_id}.html").is_file()
