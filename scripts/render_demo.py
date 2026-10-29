@@ -14,7 +14,7 @@ def main() -> None:
         Path(__file__).resolve().parents[1]
         / "docs"
         / "examples"
-        / "matriser-outline.md"
+        / "matriser-outline.json"
     )
     print(render_mindmap(args.transcript_id, outline.read_text(encoding="utf-8")).page)
 
