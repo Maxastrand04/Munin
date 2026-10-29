@@ -1,6 +1,8 @@
 import base64
+import json
 import re
 import shutil
+import wave
 from pathlib import Path
 
 import pytest
@@ -8,6 +10,7 @@ import pytest
 from munin.core import (
     Fragment,
     OutlineStructureError,
+    OutlineSyntaxError,
     Slide,
     UnknownDeckError,
     UnknownTranscriptError,
@@ -30,6 +33,10 @@ KTHPLAY_LINK = re.compile(r"https://play\.kth\.se/media/t/\w+\?st=\d+")
 ENTRY_ID = "0_1zk8obn5"
 FIXED_URL = f"https://play.kth.se/media/t/{ENTRY_ID}"
 SLUG_URL = f"https://play.kth.se/media/Föreläsning+4A+Matriser/{ENTRY_ID}"
+SAMPLE_OUTLINES = ["matriser-outline.json", "gauss-sats-outline.json"]
+SLIDE_PATH = ("Matriser", "Rader", "Slide 1")
+TEN_MINUTES_S = 600
+SAMPLE_RATE = 8_000
 
 
 def one_sentence(wav: Path, vocabulary: Vocabulary | None):
@@ -64,13 +71,33 @@ def node(kind: str, label: str, *children: dict, stamps=(), slides=(), explanati
     }
 
 
-def term(label: str = "Gauss", **parts) -> dict:
-    return node("term", label, **parts)
+def term(label: str = "Gauss", *children: dict, **parts) -> dict:
+    return node("term", label, *children, **parts)
 
 
-def lecture(*terms: dict) -> dict:
-    """The main topic Matriser, one topic Rader, one slide node Slide 1, and these nodes under it."""
-    return node("main-topic", "Matriser", node("topic", "Rader", node("slide", "Slide 1", *terms)))
+def worked(
+    kind: str,
+    label: str,
+    *,
+    task: str = "Lös x + 1 = 2",
+    steps=(("x = 2 - 1", "subtrahera 1"),),
+    answer: str = "x = 1",
+) -> dict:
+    """An exempel or övning node, with every part present."""
+    return {
+        "type": kind,
+        "label": label,
+        "stamps": [],
+        "slides": [],
+        "task": task,
+        "steps": [{"calculation": calculation, "reason": reason} for calculation, reason in steps],
+        "answer": answer,
+    }
+
+
+def lecture(*under_slide: dict, slides=()) -> dict:
+    """The main topic Matriser, one topic Rader, one slide node Slide 1 listing `slides`, and these nodes under it."""
+    return node("main-topic", "Matriser", node("topic", "Rader", node("slide", "Slide 1", *under_slide, slides=slides)))
 
 
 def render_page(*args, **kwargs) -> Path:
@@ -84,6 +111,38 @@ def links_in(page: Path) -> list[str]:
 
 def encoded(slide: Slide) -> str:
     return base64.b64encode(slide.image).decode()
+
+
+def problem_paths(transcript_id: str, outline, cache_dir: Path, tmp_path: Path) -> list[tuple[str, ...]]:
+    """Render an Outline that must fail the check, and return each problem's path in the order reported."""
+    with pytest.raises(OutlineStructureError) as caught:
+        render_mindmap(transcript_id, outline, cache_dir=cache_dir, output_dir=tmp_path / "out")
+    return [problem.path for problem in caught.value.problems]
+
+
+@pytest.fixture
+def transcript_id(source: Path, cache_dir: Path) -> str:
+    """A Transcript with no Deck."""
+    return transcript_of(source, cache_dir)
+
+
+@pytest.fixture
+def five_second_transcript_id(five_second_source: Path, cache_dir: Path) -> str:
+    """A Transcript whose Source lasts exactly 5 seconds, with no Deck."""
+    return transcript_of(five_second_source, cache_dir)
+
+
+@pytest.fixture
+def ten_minute_source(tmp_path: Path) -> Path:
+    """A WAV of 10 minutes of silence, long enough for every stamp in the sample Outlines."""
+    path = tmp_path / "media" / "ten_minutes.wav"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with wave.open(str(path), "wb") as audio:
+        audio.setnchannels(1)
+        audio.setsampwidth(2)
+        audio.setframerate(SAMPLE_RATE)
+        audio.writeframes(bytes(2 * TEN_MINUTES_S * SAMPLE_RATE))
+    return path
 
 
 # Stamps become Timestamp links
@@ -228,6 +287,13 @@ def slides_transcript(source: Path, deck: Path, cache_dir: Path) -> tuple[str, t
     return transcript_id, read_slides(transcript_id, deck, cache_dir=cache_dir)
 
 
+def test_slide_number_embeds_its_slide(slides_transcript, cache_dir: Path, tmp_path: Path):
+    """A Slide number on a node embeds that Slide's image in the page."""
+    transcript_id, slides = slides_transcript
+    page = render_page(transcript_id, lecture(term(slides=[2])), cache_dir=cache_dir, output_dir=tmp_path)
+    assert encoded(slides[1]) in page.read_text(encoding="utf-8")
+
+
 def test_unlisted_slide_is_not_embedded(slides_transcript, cache_dir: Path, tmp_path: Path):
     """The page embeds no image of a Slide that no node lists."""
     transcript_id, slides = slides_transcript
@@ -277,13 +343,6 @@ def test_render_returns_absolute_path(source: Path, cache_dir: Path, tmp_path: P
     assert page.is_absolute()
 
 
-def test_render_writes_page_file(source: Path, cache_dir: Path, tmp_path: Path):
-    """The page exists on disk after rendering."""
-    transcript_id = transcript_of(source, cache_dir)
-    page = render_page(transcript_id, lecture(), cache_dir=cache_dir, output_dir=tmp_path / "out")
-    assert page.is_file()
-
-
 def test_render_again_writes_new_outline(source: Path, cache_dir: Path, tmp_path: Path):
     """Rendering the same Transcript ID again puts the new Outline in the page."""
     transcript_id = transcript_of(source, cache_dir)
@@ -322,6 +381,316 @@ def test_default_output_folder_is_in_the_repo(source: Path, cache_dir: Path):
     assert page.parent.parent == REPO_ROOT
 
 
+# Reading the Outline
+
+
+def test_outline_as_json_text_renders_a_page(transcript_id: str, cache_dir: Path, tmp_path: Path):
+    """An Outline passed as JSON text renders a page."""
+    outline = json.dumps(lecture(term()), ensure_ascii=False)
+    assert render_page(transcript_id, outline, cache_dir=cache_dir, output_dir=tmp_path).is_file()
+
+
+def test_slide_node_without_slide_numbers_renders_without_a_deck(transcript_id: str, cache_dir: Path, tmp_path: Path):
+    """In a Transcript with no Deck, a slide node with no Slide numbers stands for a part of the lecture and renders."""
+    assert render_page(transcript_id, lecture(term()), cache_dir=cache_dir, output_dir=tmp_path).is_file()
+
+
+@pytest.mark.parametrize("parent", ["main-topic", "topic", "slide", "term"])
+def test_exempel_renders_under_every_other_type(transcript_id: str, cache_dir: Path, tmp_path: Path, parent: str):
+    """An exempel may sit under a main-topic, topic, slide or term node."""
+    example = worked("exempel", "Rad gånger kolonn")
+    outline = {
+        "main-topic": node("main-topic", "Matriser", example),
+        "topic": node("main-topic", "Matriser", node("topic", "Rader", example)),
+        "slide": lecture(example),
+        "term": lecture(term("Gauss", example)),
+    }[parent]
+    assert render_page(transcript_id, outline, cache_dir=cache_dir, output_dir=tmp_path).is_file()
+
+
+def test_exempel_with_no_steps_and_no_answer_renders(transcript_id: str, cache_dir: Path, tmp_path: Path):
+    """An exempel's steps and answer may be empty."""
+    outline = lecture(worked("exempel", "Rad gånger kolonn", steps=(), answer=""))
+    assert render_page(transcript_id, outline, cache_dir=cache_dir, output_dir=tmp_path).is_file()
+
+
+def test_newline_in_an_explanation_renders(transcript_id: str, cache_dir: Path, tmp_path: Path):
+    """An explanation may hold newlines, since it carries prose and no LaTeX."""
+    outline = lecture(term(explanation="Första raden.\nAndra raden."))
+    assert render_page(transcript_id, outline, cache_dir=cache_dir, output_dir=tmp_path).is_file()
+
+
+@pytest.mark.parametrize("name", SAMPLE_OUTLINES)
+def test_repo_sample_outline_renders(ten_minute_source: Path, cache_dir: Path, tmp_path: Path, name: str):
+    """Each sample Outline in `docs/examples/` renders against a 10-minute Source."""
+    outline = (REPO_ROOT / "docs" / "examples" / name).read_text(encoding="utf-8")
+    transcript_id = transcript_of(ten_minute_source, cache_dir)
+    assert render_page(transcript_id, outline, cache_dir=cache_dir, output_dir=tmp_path / "out").is_file()
+
+
+def test_text_that_is_not_json_raises_syntax_error(transcript_id: str, cache_dir: Path, tmp_path: Path):
+    """Outline text that is not JSON raises `OutlineSyntaxError`."""
+    with pytest.raises(OutlineSyntaxError):
+        render_page(transcript_id, '{"type": "main-topic",', cache_dir=cache_dir, output_dir=tmp_path)
+
+
+def test_markdown_outline_raises_syntax_error(transcript_id: str, cache_dir: Path, tmp_path: Path):
+    """A Markdown Outline is not JSON, so it raises `OutlineSyntaxError`."""
+    with pytest.raises(OutlineSyntaxError):
+        render_page(transcript_id, "# Matriser\n## Rader [0:01]\n", cache_dir=cache_dir, output_dir=tmp_path)
+
+
+def test_syntax_error_gives_line_and_column(transcript_id: str, cache_dir: Path, tmp_path: Path):
+    """The error gives the line and column where parsing broke, both counted from 1."""
+    with pytest.raises(OutlineSyntaxError) as caught:
+        render_page(transcript_id, '{\n  "type": "main-topic",\n  "label": }', cache_dir=cache_dir, output_dir=tmp_path)
+    assert (caught.value.line, caught.value.column) == (3, 12)
+
+
+def test_syntax_error_message_names_the_position(transcript_id: str, cache_dir: Path, tmp_path: Path):
+    """The error's message names the line and column where parsing broke."""
+    with pytest.raises(OutlineSyntaxError) as caught:
+        render_page(transcript_id, '{\n  "type": "main-topic",\n  "label": }', cache_dir=cache_dir, output_dir=tmp_path)
+    assert "line 3, column 12" in str(caught.value)
+
+
+def test_syntax_error_message_points_at_the_schema_tool(transcript_id: str, cache_dir: Path, tmp_path: Path):
+    """The error's message tells the LLM to call `get_outline_schema`."""
+    with pytest.raises(OutlineSyntaxError) as caught:
+        render_page(transcript_id, "# Matriser\n", cache_dir=cache_dir, output_dir=tmp_path)
+    assert "get_outline_schema" in str(caught.value)
+
+
+def test_text_that_is_not_json_writes_nothing(transcript_id: str, cache_dir: Path, tmp_path: Path):
+    """A render that fails on text that is not JSON writes no page."""
+    with pytest.raises(OutlineSyntaxError):
+        render_page(transcript_id, "# Matriser\n", cache_dir=cache_dir, output_dir=tmp_path / "out")
+    assert not (tmp_path / "out").exists()
+
+
+# The Outline check: shape and nesting
+
+
+def test_unknown_type_is_a_problem(transcript_id: str, cache_dir: Path, tmp_path: Path):
+    """A node of an unknown type fails the check, named by its label path."""
+    outline = lecture(node("definition", "Gauss"))
+    assert problem_paths(transcript_id, outline, cache_dir, tmp_path) == [(*SLIDE_PATH, "Gauss")]
+
+
+def test_node_with_no_type_is_a_problem(transcript_id: str, cache_dir: Path, tmp_path: Path):
+    """A node with no `type` fails the check, named by its label path."""
+    outline = lecture({key: value for key, value in term().items() if key != "type"})
+    assert problem_paths(transcript_id, outline, cache_dir, tmp_path) == [(*SLIDE_PATH, "Gauss")]
+
+
+def test_child_that_is_not_an_object_is_a_problem(transcript_id: str, cache_dir: Path, tmp_path: Path):
+    """A child that is not an object fails the check, named by its position among its siblings."""
+    outline = lecture(term(), "Pivot")
+    assert problem_paths(transcript_id, outline, cache_dir, tmp_path) == [(*SLIDE_PATH, "#2")]
+
+
+def test_step_missing_its_reason_is_a_problem(transcript_id: str, cache_dir: Path, tmp_path: Path):
+    """A step with no `reason` fails the check, even though a reason may be empty."""
+    example = worked("exempel", "Rad gånger kolonn")
+    example["steps"] = [{"calculation": "x = 2 - 1"}]
+    assert problem_paths(transcript_id, lecture(example), cache_dir, tmp_path) == [(*SLIDE_PATH, "Rad gånger kolonn")]
+
+
+def test_part_of_the_wrong_kind_is_a_problem(transcript_id: str, cache_dir: Path, tmp_path: Path):
+    """A part of the wrong kind, such as stamps given as one string, fails the check."""
+    outline = lecture({**term(), "stamps": "0:01"})
+    assert problem_paths(transcript_id, outline, cache_dir, tmp_path) == [(*SLIDE_PATH, "Gauss")]
+
+
+@pytest.mark.parametrize("slide", ["2", 2.5, True], ids=["text", "fraction", "boolean"])
+def test_slide_number_that_is_not_an_integer_is_a_problem(transcript_id: str, cache_dir: Path, tmp_path: Path, slide):
+    """A Slide number that is not an integer is a part of the wrong kind."""
+    outline = lecture(term(slides=[slide]))
+    assert problem_paths(transcript_id, outline, cache_dir, tmp_path) == [(*SLIDE_PATH, "Gauss")]
+
+
+def test_missing_part_is_a_problem(transcript_id: str, cache_dir: Path, tmp_path: Path):
+    """A node missing one of its type's parts, even one that may be empty, fails the check."""
+    outline = lecture({key: value for key, value in term().items() if key != "explanation"})
+    assert problem_paths(transcript_id, outline, cache_dir, tmp_path) == [(*SLIDE_PATH, "Gauss")]
+
+
+def test_part_the_type_does_not_have_is_a_problem(transcript_id: str, cache_dir: Path, tmp_path: Path):
+    """An exempel with an explanation fails the check, since exempel nodes have no explanation."""
+    outline = lecture({**worked("exempel", "Rad gånger kolonn"), "explanation": ""})
+    assert problem_paths(transcript_id, outline, cache_dir, tmp_path) == [(*SLIDE_PATH, "Rad gånger kolonn")]
+
+
+def test_misspelled_part_is_a_problem_of_its_own(transcript_id: str, cache_dir: Path, tmp_path: Path):
+    """A term whose explanation key is misspelled fails for the unknown key and for the missing explanation."""
+    parts = {key: value for key, value in term().items() if key != "explanation"}
+    outline = lecture({**parts, "explenation": "En metod."})
+    assert problem_paths(transcript_id, outline, cache_dir, tmp_path) == [(*SLIDE_PATH, "Gauss"), (*SLIDE_PATH, "Gauss")]
+
+
+@pytest.mark.parametrize("kind", ["exempel", "övning"])
+@pytest.mark.parametrize(
+    "children",
+    [[], [worked("exempel", "Inre")], [worked("övning", "Inre")], [term("Inre")]],
+    ids=["empty", "exempel", "övning", "term"],
+)
+def test_children_on_an_exempel_or_ovning_is_one_problem(
+    transcript_id: str, cache_dir: Path, tmp_path: Path, kind: str, children: list
+):
+    """An exempel or övning with a `children` part fails once, whatever the list holds, so nothing nests under one."""
+    outline = lecture({**worked(kind, "Rad gånger kolonn"), "children": children})
+    assert problem_paths(transcript_id, outline, cache_dir, tmp_path) == [(*SLIDE_PATH, "Rad gånger kolonn")]
+
+
+def test_blank_label_is_a_problem_named_by_position(transcript_id: str, cache_dir: Path, tmp_path: Path):
+    """A node with a blank label fails the check, and its path names it by its position among its siblings."""
+    outline = lecture(term("Gauss"), term("   "))
+    assert problem_paths(transcript_id, outline, cache_dir, tmp_path) == [(*SLIDE_PATH, "#2")]
+
+
+def test_blank_task_is_a_problem(transcript_id: str, cache_dir: Path, tmp_path: Path):
+    """An exempel with a blank task fails the check."""
+    outline = lecture(worked("exempel", "Rad gånger kolonn", task=" "))
+    assert problem_paths(transcript_id, outline, cache_dir, tmp_path) == [(*SLIDE_PATH, "Rad gånger kolonn")]
+
+
+def test_blank_calculation_is_a_problem(transcript_id: str, cache_dir: Path, tmp_path: Path):
+    """An övning with a step whose calculation is blank fails the check."""
+    outline = lecture(worked("övning", "Rad gånger kolonn", steps=(("", "subtrahera 1"),)))
+    assert problem_paths(transcript_id, outline, cache_dir, tmp_path) == [(*SLIDE_PATH, "Rad gånger kolonn")]
+
+
+@pytest.mark.parametrize(
+    "outline, path",
+    [
+        (node("main-topic", "Matriser", node("topic", "Rader", term())), ("Matriser", "Rader", "Gauss")),
+        (node("main-topic", "Matriser", node("slide", "Slide 1")), ("Matriser", "Slide 1")),
+        (lecture(node("topic", "Kolonner")), (*SLIDE_PATH, "Kolonner")),
+        (lecture(term("Gauss", term("Pivot"))), (*SLIDE_PATH, "Gauss", "Pivot")),
+        (node("main-topic", "Matriser", node("main-topic", "Vektorer")), ("Matriser", "Vektorer")),
+    ],
+    ids=["term-under-topic", "slide-under-main-topic", "topic-under-slide", "term-under-term", "nested-main-topic"],
+)
+def test_node_under_the_wrong_parent_type_is_a_problem(transcript_id: str, cache_dir: Path, tmp_path: Path, outline, path):
+    """A node under a parent type the nesting rules do not allow fails the check."""
+    assert problem_paths(transcript_id, outline, cache_dir, tmp_path) == [path]
+
+
+def test_root_of_another_type_is_a_problem_at_the_root(transcript_id: str, cache_dir: Path, tmp_path: Path):
+    """An Outline whose root is a topic fails the check with a problem at the root."""
+    assert problem_paths(transcript_id, node("topic", "Rader"), cache_dir, tmp_path) == [()]
+
+
+def test_root_that_is_a_list_is_a_problem_at_the_root(transcript_id: str, cache_dir: Path, tmp_path: Path):
+    """An Outline whose root is a list of main topics fails the check with a problem at the root."""
+    outline = json.dumps([node("main-topic", "Matriser"), node("main-topic", "Vektorer")])
+    assert problem_paths(transcript_id, outline, cache_dir, tmp_path) == [()]
+
+
+@pytest.mark.parametrize(
+    "outline",
+    [
+        lecture(term("Gauss\x0celimination")),
+        lecture(worked("exempel", "Bråk", task="Förenkla \x0crac{2}{4}")),
+        lecture(worked("exempel", "Bråk", steps=(("2 \times 2", ""),))),
+        lecture(worked("exempel", "Bråk", steps=(("2 + 2", "\x08eta saknas"),))),
+        lecture(worked("exempel", "Bråk", answer="x \neq 0")),
+    ],
+    ids=["label", "task", "calculation", "reason", "answer"],
+)
+def test_control_character_outside_an_explanation_is_a_problem(transcript_id: str, cache_dir: Path, tmp_path: Path, outline):
+    """A control character, what JSON makes of an unescaped LaTeX backslash, fails the check in any part but an explanation."""
+    assert len(problem_paths(transcript_id, outline, cache_dir, tmp_path)) == 1
+
+
+# The Outline check: stamps and Slide numbers
+
+
+def test_malformed_stamp_is_a_problem(five_second_transcript_id: str, cache_dir: Path, tmp_path: Path):
+    """A malformed stamp fails the check, named by its node's label path."""
+    outline = lecture(term(stamps=["1:75"]))
+    assert problem_paths(five_second_transcript_id, outline, cache_dir, tmp_path) == [(*SLIDE_PATH, "Gauss")]
+
+
+def test_stamp_past_the_source_end_is_a_problem(five_second_transcript_id: str, cache_dir: Path, tmp_path: Path):
+    """A stamp later than the Source's end fails the check."""
+    outline = lecture(term(stamps=["0:06"]))
+    assert problem_paths(five_second_transcript_id, outline, cache_dir, tmp_path) == [(*SLIDE_PATH, "Gauss")]
+
+
+def test_slide_number_below_one_is_a_problem(slides_transcript, cache_dir: Path, tmp_path: Path):
+    """A Slide number of 0 fails the check."""
+    outline = lecture(term(slides=[0]))
+    assert problem_paths(slides_transcript[0], outline, cache_dir, tmp_path) == [(*SLIDE_PATH, "Gauss")]
+
+
+def test_slide_number_past_the_deck_end_is_a_problem(slides_transcript, cache_dir: Path, tmp_path: Path):
+    """A Slide number past the attached Deck's last Slide fails the check."""
+    outline = lecture(term(slides=[4]))
+    assert problem_paths(slides_transcript[0], outline, cache_dir, tmp_path) == [(*SLIDE_PATH, "Gauss")]
+
+
+def test_slide_number_listed_twice_on_one_node_is_a_problem(slides_transcript, cache_dir: Path, tmp_path: Path):
+    """The same Slide number twice on one node fails the check."""
+    outline = lecture(term(slides=[2, 2]))
+    assert problem_paths(slides_transcript[0], outline, cache_dir, tmp_path) == [(*SLIDE_PATH, "Gauss")]
+
+
+def test_slide_number_without_a_deck_is_a_problem(transcript_id: str, cache_dir: Path, tmp_path: Path):
+    """Any Slide number fails the check when the Transcript has no Deck."""
+    assert problem_paths(transcript_id, lecture(slides=[1]), cache_dir, tmp_path) == [SLIDE_PATH]
+
+
+# The Outline check: every problem, at once
+
+
+def bad_lecture() -> dict:
+    """An Outline with three bad nodes, each wrong in one way: a missing part, a blank task and a malformed stamp."""
+    missing = {key: value for key, value in term("Pivot").items() if key != "slides"}
+    return lecture(missing, worked("exempel", "Rad gånger kolonn", task=""), term("Gauss", stamps=["1:75"]))
+
+
+BAD_PATHS = [(*SLIDE_PATH, "Pivot"), (*SLIDE_PATH, "Rad gånger kolonn"), (*SLIDE_PATH, "Gauss")]
+
+
+def test_every_problem_is_listed(five_second_transcript_id: str, cache_dir: Path, tmp_path: Path):
+    """The check lists every problem it finds, shape and stamp problems together, not just the first."""
+    assert sorted(problem_paths(five_second_transcript_id, bad_lecture(), cache_dir, tmp_path)) == sorted(BAD_PATHS)
+
+
+def test_problems_follow_outline_order(five_second_transcript_id: str, cache_dir: Path, tmp_path: Path):
+    """Problems come in Outline order."""
+    assert problem_paths(five_second_transcript_id, bad_lecture(), cache_dir, tmp_path) == BAD_PATHS
+
+
+def test_structure_error_message_names_each_problem_path(five_second_transcript_id: str, cache_dir: Path, tmp_path: Path):
+    """The error's message gives each problem's label path joined by ` › `."""
+    with pytest.raises(OutlineStructureError) as caught:
+        render_page(five_second_transcript_id, bad_lecture(), cache_dir=cache_dir, output_dir=tmp_path)
+    assert all(" › ".join(path) in str(caught.value) for path in BAD_PATHS)
+
+
+def test_structure_error_message_names_a_root_problem_as_outline(transcript_id: str, cache_dir: Path, tmp_path: Path):
+    """A problem with the root itself is written as `Outline: <message>`."""
+    with pytest.raises(OutlineStructureError) as caught:
+        render_page(transcript_id, node("topic", "Rader"), cache_dir=cache_dir, output_dir=tmp_path)
+    assert str(caught.value).startswith("Outline: ")
+
+
+def test_structure_error_message_ends_pointing_at_the_schema_tool(transcript_id: str, cache_dir: Path, tmp_path: Path):
+    """The error's message ends by telling the LLM to call `get_outline_schema`."""
+    with pytest.raises(OutlineStructureError) as caught:
+        render_page(transcript_id, lecture(node("definition", "Gauss")), cache_dir=cache_dir, output_dir=tmp_path)
+    assert "get_outline_schema" in str(caught.value).splitlines()[-1]
+
+
+def test_outline_with_problems_writes_nothing(transcript_id: str, cache_dir: Path, tmp_path: Path):
+    """A render that fails the check writes no page."""
+    with pytest.raises(OutlineStructureError):
+        render_page(transcript_id, lecture(node("definition", "Gauss")), cache_dir=cache_dir, output_dir=tmp_path / "out")
+    assert not (tmp_path / "out").exists()
+
+
 # Failures
 
 
@@ -329,6 +698,12 @@ def test_unknown_transcript_id_raises(cache_dir: Path):
     """An ID with no cached Transcript raises UnknownTranscriptError."""
     with pytest.raises(UnknownTranscriptError, match="deadbeef0000"):
         render_page("deadbeef0000", lecture(), cache_dir=cache_dir)
+
+
+def test_unknown_transcript_is_raised_before_the_outline_is_read(cache_dir: Path, tmp_path: Path):
+    """An unknown Transcript ID raises `UnknownTranscriptError` even when the Outline is not JSON."""
+    with pytest.raises(UnknownTranscriptError):
+        render_page("deadbeef0000", "# Matriser\n", cache_dir=cache_dir, output_dir=tmp_path)
 
 
 def test_unknown_transcript_id_writes_nothing(cache_dir: Path, tmp_path: Path):
@@ -362,6 +737,29 @@ def test_deck_render_accepts_a_slide_node_with_no_slide_numbers(standalone_deck,
     assert page.is_file()
 
 
+def test_deck_render_embeds_a_numbered_slide(standalone_deck, cache_dir: Path, tmp_path: Path):
+    """A Slide number in an Outline rendered against a standalone Deck embeds that Slide."""
+    outline = lecture(term(slides=[3]))
+    page = render_deck_mindmap(standalone_deck.deck_id, outline, cache_dir=cache_dir, output_dir=tmp_path).page
+    assert encoded(standalone_deck.slides[2]) in page.read_text(encoding="utf-8")
+
+
+def test_deck_render_stamp_is_a_problem(standalone_deck, cache_dir: Path, tmp_path: Path):
+    """Any stamp in an Outline rendered against a standalone Deck fails the check, since there is no Source."""
+    with pytest.raises(OutlineStructureError) as caught:
+        render_deck_mindmap(
+            standalone_deck.deck_id, lecture(term(stamps=["0:01"])), cache_dir=cache_dir, output_dir=tmp_path
+        )
+    assert [problem.path for problem in caught.value.problems] == [(*SLIDE_PATH, "Gauss")]
+
+
+def test_deck_render_slide_past_the_deck_end_is_a_problem(standalone_deck, cache_dir: Path, tmp_path: Path):
+    """A Slide number past the standalone Deck's last Slide fails the check."""
+    with pytest.raises(OutlineStructureError) as caught:
+        render_deck_mindmap(standalone_deck.deck_id, lecture(term(slides=[4])), cache_dir=cache_dir, output_dir=tmp_path)
+    assert [problem.path for problem in caught.value.problems] == [(*SLIDE_PATH, "Gauss")]
+
+
 def test_deck_page_has_no_lecture_link(standalone_deck, cache_dir: Path, tmp_path: Path):
     """The page's header carries no link to a Source."""
     outline = lecture(term(slides=[2]))
@@ -380,6 +778,12 @@ def test_unknown_deck_error_message_names_the_id(cache_dir: Path, tmp_path: Path
     with pytest.raises(UnknownDeckError) as error:
         render_deck_mindmap("deadbeef0000", lecture(), cache_dir=cache_dir, output_dir=tmp_path)
     assert str(error.value) == "No Deck with ID deadbeef0000"
+
+
+def test_unknown_deck_is_raised_before_the_outline_is_read(cache_dir: Path, tmp_path: Path):
+    """An unknown Deck ID raises `UnknownDeckError` even when the Outline is not JSON."""
+    with pytest.raises(UnknownDeckError):
+        render_deck_mindmap("deadbeef0000", "# Matriser\n", cache_dir=cache_dir, output_dir=tmp_path)
 
 
 def test_unknown_deck_id_writes_nothing(cache_dir: Path, tmp_path: Path):

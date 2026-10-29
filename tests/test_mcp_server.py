@@ -17,6 +17,8 @@ WATCH_URL = "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
 KTHPLAY_URL = "https://play.kth.se/media/Föreläsning+4A+Matriser/0_1zk8obn5"
 DECK_PATH = "/tmp/matriser.pdf"
 OUTLINE = {"type": "main-topic", "label": "Matriser", "explanation": "", "stamps": [], "slides": [], "children": []}
+PROMPT_VARIANTS = [(WATCH_URL, None), (WATCH_URL, DECK_PATH), (None, DECK_PATH)]
+PROMPT_VARIANT_IDS = ["source", "source-and-deck", "deck-only"]
 
 
 def two_sentences(wav: Path, vocabulary: Vocabulary | None):
@@ -243,13 +245,48 @@ def test_mcp_render_mindmap_returns_page_path(source: Path, cache_dir: Path, tmp
     assert result.structured_content["page"] == str(output_dir / f"{transcript_id}.html")
 
 
-def test_mcp_render_mindmap_writes_page(source: Path, cache_dir: Path, tmp_path: Path):
-    """The render_mindmap tool writes the page into the output folder."""
-    output_dir = tmp_path / "out"
-    server = create_server(cache_dir=cache_dir, recognize=two_sentences, output_dir=output_dir)
-    transcript_id = call(server, "transcribe", {"source": str(source)}).structured_content["transcript_id"]
-    call(server, "render_mindmap", {"transcript_id": transcript_id, "outline": OUTLINE})
-    assert (output_dir / f"{transcript_id}.html").is_file()
+@pytest.fixture
+def transcript_id(source: Path, cache_dir: Path) -> str:
+    return transcribe(source, cache_dir=cache_dir, recognize=two_sentences).transcript_id
+
+
+def test_mcp_get_outline_schema_returns_schema_and_samples(cache_dir: Path):
+    """The `get_outline_schema` tool returns an object with `schema` and `samples`."""
+    result = call(create_server(cache_dir=cache_dir), "get_outline_schema", {})
+    assert set(result.structured_content) == {"schema", "samples"}
+
+
+def test_mcp_render_mindmap_accepts_an_outline_object(transcript_id: str, cache_dir: Path, tmp_path: Path):
+    """The `render_mindmap` tool takes the Outline as a JSON object and writes the page."""
+    server = create_server(cache_dir=cache_dir, output_dir=tmp_path)
+    result = call(server, "render_mindmap", {"transcript_id": transcript_id, "outline": OUTLINE})
+    assert Path(result.structured_content["page"]).is_file()
+
+
+def test_mcp_render_mindmap_returns_only_the_page(transcript_id: str, cache_dir: Path, tmp_path: Path):
+    """The `render_mindmap` tool returns the page and nothing else."""
+    server = create_server(cache_dir=cache_dir, output_dir=tmp_path)
+    result = call(server, "render_mindmap", {"transcript_id": transcript_id, "outline": OUTLINE})
+    assert set(result.structured_content) == {"page"}
+
+
+def test_mcp_markdown_outline_error_points_at_the_schema_tool(transcript_id: str, cache_dir: Path, tmp_path: Path):
+    """The tool error for a Markdown Outline tells the LLM to call `get_outline_schema`."""
+    server = create_server(cache_dir=cache_dir, output_dir=tmp_path)
+    result = call(server, "render_mindmap", {"transcript_id": transcript_id, "outline": "# Matriser\n## Rader\n"})
+    assert "get_outline_schema" in result.content[0].text
+
+
+@pytest.mark.parametrize("tool", ["render_mindmap", "render_deck_mindmap"])
+def test_mcp_render_description_points_at_the_schema_tool(cache_dir: Path, tool: str):
+    """Both render tool descriptions tell the LLM to call `get_outline_schema` before writing an Outline."""
+    assert "get_outline_schema" in tool_description(create_server(cache_dir=cache_dir), tool)
+
+
+@pytest.mark.parametrize("tool", ["render_mindmap", "render_deck_mindmap"])
+def test_mcp_render_description_describes_no_markdown_format(cache_dir: Path, tool: str):
+    """Neither render tool description describes a Markdown Outline any more."""
+    assert "Markdown" not in tool_description(create_server(cache_dir=cache_dir), tool)
 
 
 def test_mcp_render_mindmap_unknown_id_is_tool_error(cache_dir: Path, tmp_path: Path):
@@ -353,6 +390,18 @@ def test_mcp_lecture_prompt_asks_for_only_a_file_link(cache_dir: Path):
 def test_mcp_lecture_prompt_leaves_format_to_render_tool(cache_dir: Path):
     """The prompt points at render_mindmap's description for the Outline's content guidance."""
     assert "guidance in the `render_mindmap` tool's description" in prompt_text(create_server(cache_dir=cache_dir), WATCH_URL)
+
+
+@pytest.mark.parametrize("source, deck", PROMPT_VARIANTS, ids=PROMPT_VARIANT_IDS)
+def test_mcp_lecture_prompt_points_at_the_schema_tool(cache_dir: Path, source: str | None, deck: str | None):
+    """Every variant of the prompt has the LLM call `get_outline_schema`."""
+    assert "get_outline_schema" in prompt_text(create_server(cache_dir=cache_dir), source, deck)
+
+
+@pytest.mark.parametrize("source, deck", PROMPT_VARIANTS, ids=PROMPT_VARIANT_IDS)
+def test_mcp_lecture_prompt_asks_for_a_json_outline(cache_dir: Path, source: str | None, deck: str | None):
+    """Every variant of the prompt asks for the Outline as JSON."""
+    assert "JSON" in prompt_text(create_server(cache_dir=cache_dir), source, deck)
 
 
 def test_mcp_lecture_prompt_carries_no_stamp(cache_dir: Path):
@@ -509,6 +558,14 @@ def test_mcp_render_deck_mindmap_writes_page(deck: Path, cache_dir: Path, tmp_pa
     deck_id = deck_id_of(call(server, "read_deck", {"deck": str(deck)}))
     result = call(server, "render_deck_mindmap", {"deck_id": deck_id, "outline": OUTLINE})
     assert result.structured_content["page"] == str(output_dir / f"{deck_id}.html")
+
+
+def test_mcp_render_deck_mindmap_accepts_an_outline_object(deck: Path, cache_dir: Path, tmp_path: Path):
+    """The `render_deck_mindmap` tool takes the Outline as a JSON object and writes the page."""
+    server = create_server(cache_dir=cache_dir, output_dir=tmp_path)
+    deck_id = deck_id_of(call(server, "read_deck", {"deck": str(deck)}))
+    result = call(server, "render_deck_mindmap", {"deck_id": deck_id, "outline": OUTLINE})
+    assert Path(result.structured_content["page"]).is_file()
 
 
 def test_mcp_render_deck_mindmap_unknown_id_is_tool_error(cache_dir: Path, tmp_path: Path):

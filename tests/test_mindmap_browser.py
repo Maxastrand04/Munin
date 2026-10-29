@@ -336,6 +336,34 @@ def test_sibling_of_example_keeps_topic_colour(page, render_outline):
     assert colours["Begrepp"] == colours["A"]
 
 
+def test_topic_labelled_exempel_is_not_orange(page, render_outline):
+    """A topic whose label starts with `Exempel:` keeps a topic colour, since only the type makes a node orange."""
+    show_every_node(page, render_outline(node("main-topic", "Matriser", node("topic", "Exempel: Rader"))))
+    assert not is_orange(group_colours(page)["Exempel: Rader"])
+
+
+def test_edge_into_an_exempel_keeps_its_topic_colour(page, render_outline):
+    """The edge from a slide node into an exempel is drawn in the topic's colour, not orange."""
+    outline = node("main-topic", "Matriser", node("topic", "A", node("slide", "Slide", worked("exempel", "Rad"))))
+    show_every_node(page, render_outline(outline))
+    assert not any(is_orange(colour) for colour in edge_colours(page))
+
+
+def test_edge_from_the_main_topic_into_an_exempel_is_orange(page, render_outline):
+    """An exempel directly under the main topic has an orange edge."""
+    show_every_node(page, render_outline(node("main-topic", "Matriser", worked("exempel", "Rad"))))
+    assert all(is_orange(colour) for colour in edge_colours(page))
+
+
+def test_exempel_under_the_main_topic_takes_no_topic_colour(page, render_outline):
+    """A topic after an exempel directly under the main topic gets the colour it would have had without it."""
+    show_every_node(page, render_outline(node("main-topic", "Matriser", node("topic", "A")), "alone"))
+    alone = group_colours(page)["A"]
+    after = node("main-topic", "Matriser", worked("exempel", "Rad"), node("topic", "A"))
+    show_every_node(page, render_outline(after, "after"))
+    assert group_colours(page)["A"] == alone
+
+
 def test_no_topic_hue_comes_near_orange(page, render_outline):
     """With more topics than the palette holds, every topic's hue is at least 20 degrees from the orange."""
     topics = "".join(f"## Topic {number}\n" for number in range(1, MANY_TOPICS + 1))
@@ -1000,6 +1028,69 @@ def test_selected_example_panel_rule_is_orange(page, render_outline):
     assert is_orange(page.locator(".panel-rule").evaluate("rule => getComputedStyle(rule).borderTopColor"))
 
 
+def worked_under_a_slide(kind: str = "exempel", **parts) -> dict:
+    """The main topic Matriser, topic A, slide node Slide, and under it one exempel or övning labelled Rad gånger kolonn."""
+    child = {**worked(kind, "Rad gånger kolonn"), **parts}
+    return node("main-topic", "Matriser", node("topic", "A", node("slide", "Slide", child)))
+
+
+def card_labels(page) -> list[str]:
+    return page.locator(".node-label").all_text_contents()
+
+
+def click_card(page, text: str) -> None:
+    """Open the panel of the node whose card label ends with this text."""
+    page.locator(".node-label").filter(has_text=re.compile(f"{re.escape(text)}$")).dispatch_event("click")
+
+
+@pytest.mark.parametrize("kind, prefix", [("exempel", "Exempel: "), ("övning", "Övning: ")])
+def test_map_card_shows_the_type_prefix(page, render_outline, kind: str, prefix: str):
+    """The map card shows `Exempel: ` or `Övning: ` before the label."""
+    show_every_node(page, render_outline(worked_under_a_slide(kind)))
+    assert f"{prefix}Rad gånger kolonn" in card_labels(page)
+
+
+def test_card_aria_label_shows_the_type_prefix(page, render_outline):
+    """The card's aria-label names the node with its prefix."""
+    show_every_node(page, render_outline(worked_under_a_slide()))
+    assert page.get_by_role("button", name="Explore Exempel: Rad gånger kolonn", exact=True).count() == 1
+
+
+@pytest.mark.parametrize("kind, prefix", [("exempel", "Exempel: "), ("övning", "Övning: ")])
+def test_panel_title_shows_the_type_prefix(page, render_outline, kind: str, prefix: str):
+    """The panel title shows `Exempel: ` or `Övning: ` before the label."""
+    show_every_node(page, render_outline(worked_under_a_slide(kind)))
+    click_card(page, "Rad gånger kolonn")
+    assert page.locator("#panel-title").text_content() == f"{prefix}Rad gånger kolonn"
+
+
+def test_explore_next_button_shows_the_type_prefix(page, render_outline):
+    """The Explore next button for an exempel, in its parent's panel, shows the prefix."""
+    show_every_node(page, render_outline(worked_under_a_slide()))
+    click_card(page, "Slide")
+    assert "Exempel: Rad gånger kolonn" in page.locator("#related button").all_text_contents()
+
+
+def test_exempel_panel_shows_task_steps_and_answer(page, render_outline):
+    """An exempel's panel shows its task, one `Steg N:` line per step with any reason, then `Svar:` and the answer."""
+    steps = [{"calculation": "x = 2 - 1", "reason": "subtrahera 1"}, {"calculation": "x = 1", "reason": ""}]
+    show_every_node(page, render_outline(worked_under_a_slide(task="Lös x + 1 = 2", steps=steps, answer="x = 1")))
+    click_card(page, "Rad gånger kolonn")
+    assert page.locator("#explanation").inner_text().splitlines() == [
+        "Lös x + 1 = 2",
+        "Steg 1: x = 2 - 1 (subtrahera 1)",
+        "Steg 2: x = 1",
+        "Svar: x = 1",
+    ]
+
+
+def test_exempel_panel_with_no_steps_or_answer_shows_only_the_task(page, render_outline):
+    """An exempel with no steps and no answer shows only its task."""
+    show_every_node(page, render_outline(worked_under_a_slide(task="Lös x + 1 = 2", steps=[], answer="")))
+    click_card(page, "Rad gånger kolonn")
+    assert page.locator("#explanation").inner_text().splitlines() == ["Lös x + 1 = 2"]
+
+
 def test_panel_shows_slides_in_slide_order(page, slides_url):
     """A node's Slides show top to bottom in Slide order, whatever order the Outline listed them."""
     open_panel(page, slides_url, "Gauss")
@@ -1135,12 +1226,26 @@ def test_clicking_a_copy_entry_opens_the_source_at_its_moment(page, render_outli
     [
         [node("topic", "Matrisprodukt")],
         [node("topic", "C", node("slide", "Övningar", worked("exempel", "Matrisprodukt")))],
+        [node("topic", "C", node("slide", "Matrisprodukt"))],
     ],
-    ids=["topic", "exempel"],
+    ids=["topic", "exempel", "slide"],
 )
 def test_only_term_nodes_count_as_copies(page, render_outline, more_topics):
-    """A topic or exempel node labelled like the term is not listed among its copies."""
+    """A topic, exempel or slide node labelled like the term is not listed among its copies."""
     open_copy(page, render_outline(shared_outline(None, *more_topics)))
+    assert copy_entries(page) == ["A › Definition", "B › Räkning"]
+
+
+def test_copies_match_by_label_ignoring_case_and_spaces(page, render_outline):
+    """Term nodes whose labels differ only in case and runs of whitespace are listed as copies of one term."""
+    outline = node(
+        "main-topic",
+        "Matriser",
+        node("topic", "A", node("slide", "Definition", term("Rad gånger kolonn"))),
+        node("topic", "B", node("slide", "Räkning", term("rad  gånger kolonn"))),
+    )
+    show_every_node(page, render_outline(outline))
+    page.locator(".node-label").filter(has_text=re.compile("^Rad gånger kolonn$")).dispatch_event("click")
     assert copy_entries(page) == ["A › Definition", "B › Räkning"]
 
 
