@@ -29,7 +29,7 @@ from munin.core import (
 from munin.mcp_server import create_server
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-SAMPLE_OUTLINES = ["matriser-outline.json", "linalg6-matriser-outline.json"]
+SAMPLE_OUTLINES = ["matriser-outline.json", "gauss-sats-outline.json"]
 NODE_TYPES = ["main-topic", "topic", "slide", "term", "exempel", "övning"]
 PATH = ("Matriser", "Rader", "Slide 1")
 UNKNOWN_ID = "0123456789ab"

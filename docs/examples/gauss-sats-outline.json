@@ -1,0 +1,170 @@
+{
+  "type": "main-topic",
+  "label": "Gauss sats",
+  "explanation": "Gauss sats skriver om flödet ut ur en sluten yta som en trippelintegral av divergensen över kroppen innanför. I den här genomgången används satsen på två flödesintegraler, och trippelintegralerna förenklas med volym och symmetri.",
+  "stamps": [
+    "0:00"
+  ],
+  "slides": [],
+  "children": [
+    {
+      "type": "topic",
+      "label": "Från flödesintegral till trippelintegral",
+      "explanation": "Satsen byter en integral över randytan mot en integral över hela kroppen. Det lönar sig mest när randytan består av många delar.",
+      "stamps": [
+        "0:42"
+      ],
+      "slides": [],
+      "children": [
+        {
+          "type": "slide",
+          "label": "Flödet ut ur en sluten yta",
+          "explanation": "Totalflödet ut ur kroppens randyta är lika med trippelintegralen av vektorfältets divergens över kroppen. Divergensen mäter flödestätheten i varje punkt.",
+          "stamps": [
+            "0:42"
+          ],
+          "slides": [],
+          "children": [
+            {
+              "type": "term",
+              "label": "Divergens",
+              "explanation": "Summan av x-derivatan av första komponenten, y-derivatan av andra komponenten och z-derivatan av tredje komponenten.",
+              "stamps": [
+                "1:10"
+              ],
+              "slides": [],
+              "children": []
+            }
+          ]
+        },
+        {
+          "type": "slide",
+          "label": "Integralen av 1 ger volymen",
+          "explanation": "Att integrera funktionen 1 över en kropp ger kroppens volym. Den termen kan därför räknas ut med en känd volymformel i stället för att integreras.",
+          "stamps": [
+            "2:49"
+          ],
+          "slides": [],
+          "children": []
+        },
+        {
+          "type": "slide",
+          "label": "Udda integrand över symmetriskt område",
+          "explanation": "Om integranden är udda i en variabel och kroppen är symmetrisk i samma led blir integralen noll. Spegling i ett koordinatplan visar om kroppen är symmetrisk.",
+          "stamps": [
+            "3:34",
+            "7:09"
+          ],
+          "slides": [],
+          "children": [
+            {
+              "type": "term",
+              "label": "Udda funktion",
+              "explanation": "En funktion som byter tecken när variabeln byter tecken, som x eller 2xz i variabeln x.",
+              "stamps": [
+                "3:46"
+              ],
+              "slides": [],
+              "children": []
+            },
+            {
+              "type": "term",
+              "label": "Symmetriskt område",
+              "explanation": "Ett område som ser likadant ut efter spegling i ett koordinatplan.",
+              "stamps": [
+                "3:54"
+              ],
+              "slides": [],
+              "children": []
+            }
+          ]
+        },
+        {
+          "type": "slide",
+          "label": "Rätblockets sex sidor",
+          "explanation": "Att parametrisera rätblockets sex sidor en i taget går, men kräver sex integraler. Gauss sats ersätter dem med en enda trippelintegral över rätblocket.",
+          "stamps": [
+            "5:13"
+          ],
+          "slides": [],
+          "children": []
+        }
+      ]
+    },
+    {
+      "type": "topic",
+      "label": "Övningar",
+      "explanation": "Två flödesintegraler skrivs om med Gauss sats och förenklas så långt det går utan att räkna ut dem helt.",
+      "stamps": [
+        "0:00"
+      ],
+      "slides": [],
+      "children": [
+        {
+          "type": "övning",
+          "label": "Flödet ut ur ett halvklot",
+          "stamps": [
+            "0:27"
+          ],
+          "slides": [],
+          "task": "Skriv flödet av \\mathbf{F} = (xy^2,\\ y,\\ 2xz) ut ur halvklotet K: x^2 + y^2 + z^2 \\le 4,\\ z \\ge 0 som en trippelintegral och förenkla",
+          "steps": [
+            {
+              "calculation": "\\iint_{\\partial K} \\mathbf{F} \\cdot \\mathbf{N}\\, dS = \\iiint_K \\operatorname{div} \\mathbf{F}\\, dx\\,dy\\,dz",
+              "reason": "Gauss sats"
+            },
+            {
+              "calculation": "\\operatorname{div} \\mathbf{F} = y^2 + 1 + 2x",
+              "reason": "derivera komponenterna"
+            },
+            {
+              "calculation": "\\iiint_K y^2\\, dV + \\iiint_K 1\\, dV + \\iiint_K 2x\\, dV",
+              "reason": "dela upp i tre integraler"
+            },
+            {
+              "calculation": "\\iiint_K 1\\, dV = \\frac{1}{2} \\cdot \\frac{4}{3}\\pi \\cdot 2^3 = \\frac{16\\pi}{3}",
+              "reason": "volymen av ett halvt klot"
+            },
+            {
+              "calculation": "\\iiint_K 2x\\, dV = 0",
+              "reason": "udda i x, K symmetrisk i x-led"
+            }
+          ],
+          "answer": "\\iiint_K y^2\\, dx\\,dy\\,dz + \\frac{16\\pi}{3}"
+        },
+        {
+          "type": "övning",
+          "label": "Flödet ut ur ett rätblock",
+          "stamps": [
+            "5:03"
+          ],
+          "slides": [],
+          "task": "Skriv flödet av \\mathbf{F} = (x^2,\\ y^2,\\ z^2) ut ur rätblocket K, som är symmetriskt i x-led och y-led men ligger ovanför xy-planet, som en trippelintegral och förenkla",
+          "steps": [
+            {
+              "calculation": "\\iint_{\\partial K} \\mathbf{F} \\cdot \\mathbf{N}\\, dS = \\iiint_K \\operatorname{div} \\mathbf{F}\\, dx\\,dy\\,dz",
+              "reason": "Gauss sats"
+            },
+            {
+              "calculation": "\\operatorname{div} \\mathbf{F} = 2x + 2y + 2z",
+              "reason": "derivera komponenterna"
+            },
+            {
+              "calculation": "2\\iiint_K x\\, dV + 2\\iiint_K y\\, dV + 2\\iiint_K z\\, dV",
+              "reason": "dela upp i tre integraler"
+            },
+            {
+              "calculation": "2\\iiint_K x\\, dV = 0",
+              "reason": "udda i x, K symmetrisk i x-led"
+            },
+            {
+              "calculation": "2\\iiint_K y\\, dV = 0",
+              "reason": "udda i y, K symmetrisk i y-led"
+            }
+          ],
+          "answer": "2\\iiint_K z\\, dx\\,dy\\,dz"
+        }
+      ]
+    }
+  ]
+}
