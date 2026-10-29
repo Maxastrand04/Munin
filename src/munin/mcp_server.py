@@ -13,11 +13,13 @@ from mcp.types import INVALID_PARAMS, TextContent
 from munin.core import (
     Download,
     MuninError,
+    OutlineSchema,
     Recognize,
     RenderResult,
     Slide,
     TranscribeResult,
     Vocabulary,
+    get_outline_schema,
     get_transcript,
     read_deck,
     read_slides,
@@ -40,7 +42,7 @@ def create_server(
     output_dir: Path | None = None,
     download: Download | None = None,
 ) -> MCPServer:
-    """Build the MCP server with six tools and two prompts, passing its arguments to the core.
+    """Build the MCP server with seven tools and two prompts, passing its arguments to the core.
 
     `transcribe(source: str, vocabulary: list[str] | None = None, alpha: float = 1.0)`
     takes a local file path, a YouTube URL or a KTH Play video URL, plus
@@ -53,14 +55,20 @@ def create_server(
     build a Vocabulary from the misspellings it spots in a first pass, then call
     again to replace the cached Transcript under the same ID.
     `get_transcript(transcript_id: str)` returns the `[m:ss] text` lines.
-    `render_mindmap(transcript_id: str, outline: str)` returns the `RenderResult`
-    fields as an object, `page` as an absolute path string and `unlinked` as a
-    list of `label`, `stamp` and `reason` objects, and `unlinked_slides` as a
-    list of `label`, `slide` and `reason` objects. Its description gives the
-    `[slide N]` marker format next to the stamp format, and asks for an Outline
-    of topics, then Slides, then terms under the lecture title, grouped by
-    meaning, with each example and exercise written out under an `Övning:` or
-    `Exempel:` leaf.
+    `get_outline_schema()` takes no arguments and returns the core's
+    `OutlineSchema` fields as an object, `schema` and `samples`. Its
+    description tells the LLM to call it before writing an Outline.
+    `render_mindmap(transcript_id: str, outline: dict | str)` takes the
+    Outline as a JSON object, or as text, which reaches the core as written so
+    a Markdown Outline gets the core's `OutlineSyntaxError` message. It
+    returns the `RenderResult` fields as an object, `page` as an absolute path
+    string and nothing else. Its description tells the LLM to call
+    `get_outline_schema` before writing an Outline, describes no Markdown
+    format, and keeps its content guidance: an Outline of topics, then
+    slides, then terms under the lecture title, grouped by meaning, one stamp
+    per stretch of the lecture copied from `get_transcript`, and every
+    example and exercise written out as an exempel or övning node. When a
+    render fails, it says to fix every problem listed and render again.
     `read_slides(transcript_id: str, deck: str)` attaches the Deck through the
     core's `read_slides` and returns two content blocks per Slide in Slide
     order: a text block `Slide N:` followed by the Slide's text on the next
@@ -68,26 +76,29 @@ def create_server(
     `read_deck(deck: str)` reads a Deck on its own through the core's
     `read_deck` and returns a text block `Deck ID: <id>` first, then the same
     two blocks per Slide that `read_slides` returns.
-    `render_deck_mindmap(deck_id: str, outline: str)` returns the
-    `RenderResult` fields as `render_mindmap` does. Its description gives the
-    slides-only Outline format. It is the same shape as `render_mindmap`'s,
-    with 1 to 5 topics grouped by meaning, one node per Slide carrying its
-    `[slide N]` marker, title and schedule Slides skipped, terms worded the
-    same everywhere, and each example and exercise written out under an
-    `Övning:` or `Exempel:` leaf. It says to write no stamps, and asks for an
-    explanation of one to three sentences under every term node that gives
-    context and covers only what the Slides cover, and allows a short prose
-    paragraph under any other node.
+    `render_deck_mindmap(deck_id: str, outline: dict | str)` takes the
+    Outline as `render_mindmap` does and returns the `RenderResult` fields as
+    `render_mindmap` does. Its description tells the LLM to call
+    `get_outline_schema` before writing an Outline, describes no Markdown
+    format, and keeps the slides-only content guidance: 1 to 5 topics grouped
+    by meaning, one slide node per Slide carrying its Slide number, title and
+    schedule Slides skipped, terms worded the same everywhere, every example
+    and exercise written out as an exempel or övning node, every node's
+    `stamps` left empty, and an explanation of one to three sentences on
+    every term node that gives context and covers only what the Slides
+    cover.
     The `lecture_to_mindmap(source: str | None = None, deck: str | None = None)`
     prompt takes a Source, a Deck, or both. With a Source, it lists the run's
-    steps for that Source and leaves the Outline format to `render_mindmap`'s
-    description. With a `deck` as well, it adds a step between
+    steps for that Source, asks for the Outline as JSON, and has the LLM call
+    `get_outline_schema` before writing it, leaving the content guidance to
+    `render_mindmap`'s description. With a `deck` as well, it adds a step between
     `get_transcript` and writing the Outline that calls `read_slides` with the
     Transcript ID and that Deck path, and asks the LLM to match each Slide to
     the part of the Transcript covering the same content. Without one, its
     text is the same as before Decks existed. With only a `deck`, it lists the
-    slides-only steps: call `read_deck` with that Deck path, write an Outline
-    from the Slides in the format `render_deck_mindmap` describes, call
+    slides-only steps: call `read_deck` with that Deck path, call
+    `get_outline_schema`, write a JSON Outline from the Slides as
+    `render_deck_mindmap` describes, call
     `render_deck_mindmap` with the Deck ID and the Outline, and reply with only
     the page as a `file://` link, or with which step failed and the error.
     It never names `transcribe`. With neither, getting the prompt fails with
@@ -124,8 +135,13 @@ def create_server(
         with _core_errors_as_tool_errors():
             return get_transcript(transcript_id, cache_dir=cache_dir)
 
+    @server.tool(name="get_outline_schema")
+    def get_outline_schema_tool() -> OutlineSchema:
+        """Return the JSON Schema an Outline must follow, plus a sample exempel node and övning node. Call this before writing an Outline."""
+        return get_outline_schema()
+
     @server.tool(name="render_mindmap")
-    def render_mindmap_tool(transcript_id: str, outline: str) -> RenderResult:
+    def render_mindmap_tool(transcript_id: str, outline: dict | str) -> RenderResult:
         """Render an Outline whose node labels carry `[m:ss]` or `[h:mm:ss]` stamps into a Mindmap page.
 
         Write the Outline in this format:
@@ -193,7 +209,7 @@ def create_server(
         return [TextContent(type="text", text=f"Deck ID: {result.deck_id}"), *_slide_blocks(result.slides)]
 
     @server.tool(name="render_deck_mindmap")
-    def render_deck_mindmap_tool(deck_id: str, outline: str) -> RenderResult:
+    def render_deck_mindmap_tool(deck_id: str, outline: dict | str) -> RenderResult:
         """Render an Outline written from a Deck read with `read_deck` into a Mindmap page.
 
         Write the Outline in this format:

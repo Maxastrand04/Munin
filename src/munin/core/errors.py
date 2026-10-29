@@ -1,5 +1,6 @@
 """Errors the core raises. Adapters turn these into their own error shape."""
 
+from dataclasses import dataclass
 from pathlib import Path
 
 
@@ -84,7 +85,53 @@ class VocabularyError(MuninError):
 
 
 class OutlineError(MuninError):
-    """The Outline has no Markdown headings or list items, so it has no nodes to draw."""
+    """Base for every error that rejects an Outline before anything is rendered.
 
-    def __init__(self) -> None:
-        super().__init__("Outline has no headings or list items to turn into Mindmap nodes")
+    Catch this to handle both `OutlineSyntaxError` and `OutlineStructureError`.
+    """
+
+
+class OutlineSyntaxError(OutlineError):
+    """The Outline was given as text that is not JSON, such as a Markdown Outline.
+
+    `line` and `column` are where parsing broke, both counted from 1, and
+    `reason` is what the parser expected there, such as "Expecting value".
+    The message names all three and ends by telling the LLM to call
+    `get_outline_schema`, as in "Outline is not JSON: line 3, column 12:
+    Expecting value. Call get_outline_schema to see the Outline format."
+    """
+
+    def __init__(self, line: int, column: int, reason: str) -> None:
+        raise NotImplementedError
+
+
+@dataclass(frozen=True)
+class OutlineProblem:
+    """One thing wrong with an Outline, found before anything is rendered.
+
+    `path` is the labels from the main topic down to the bad node, that node
+    included, such as `("Matriser", "Determinanter", "Slide 4", "Determinant")`.
+    A node whose label is missing, blank or not a string stands in the path as
+    `#N`, its position among its siblings counted from 1, and a problem with
+    the root itself has the empty path. `message` says what is wrong in one
+    line, such as `stamp "1:75" is malformed`.
+    """
+
+    path: tuple[str, ...]
+    message: str
+
+
+class OutlineStructureError(OutlineError):
+    """The Outline is JSON but breaks the schema, the nesting rules, or its Source or Deck.
+
+    `problems` holds every problem the check found, at least one, in Outline
+    order, parents before children and siblings in order. The message gives
+    one problem per line, as the path joined by ` › `, a colon and the problem's
+    message, such as `Matriser › Rader › #3: missing label`, with a problem at
+    the root written as `Outline: <message>`. Its last line tells the LLM to
+    call `get_outline_schema`, as in "Call get_outline_schema to see the
+    Outline format."
+    """
+
+    def __init__(self, problems: tuple[OutlineProblem, ...]) -> None:
+        raise NotImplementedError

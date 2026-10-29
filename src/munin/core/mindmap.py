@@ -1,4 +1,4 @@
-"""Rendering an Outline into a Mindmap page with Timestamp links."""
+"""Rendering a JSON Outline into a Mindmap page with Timestamp links."""
 
 import base64
 import json
@@ -6,206 +6,148 @@ import re
 from dataclasses import dataclass
 from html import escape
 from pathlib import Path
-from typing import Literal
 
 from munin.core import pdf
-from munin.core.cache_ids import is_cache_id
-from munin.core.cache_paths import default_cache_dir
-from munin.core.errors import OutlineError, UnknownDeckError
-from munin.core.slides import deck_path, standalone_deck_path
 from munin.core.sources import Source, Video
-from munin.core.stamps import STAMP, display_stamp, stamp_seconds
-from munin.core.transcribe import CacheEntry, cached_entry
 
 _REPO_ROOT = Path(__file__).resolve().parents[3]
 _DEFAULT_OUTPUT_DIR = _REPO_ROOT / "mindmaps"
 
 _ASSETS = Path(__file__).with_name("mindmap_assets")
-_HEADING = re.compile(r"^\s{0,3}(#{1,6})\s+(.+?)(?:\s+#+)?\s*$")
-_BULLET = re.compile(r"^(\s*)(?:[-+*]|\d+[.)])\s+(.+)$")
-_SPACE_RUN = re.compile(r"\s{2,}")
-_SLIDE_MARKER = re.compile(r"\[slide(?:\s[^\]]*)?\]", re.IGNORECASE)
-_SLIDE_NUMBER = re.compile(r"\[slide\s+(\d+)\]", re.IGNORECASE)
-
-
-@dataclass(frozen=True)
-class UnlinkedStamp:
-    """A stamp in a node label that `render_mindmap` or `render_deck_mindmap` left as plain text.
-
-    `label` is the node's label as written in the Outline, every stamp
-    included, so `Gauss [0:02] [1:75]` stays whole. `stamp` is the stamp's text,
-    brackets included, such as `[1:75]`. `reason` is `"malformed"` when
-    `stamp_seconds` rejects its shape, `"past_end"` when it is well-formed
-    but later than the Source's duration, and `"no_source"` when the Outline
-    is rendered against a Deck read on its own, whatever the stamp's shape.
-    """
-
-    label: str
-    stamp: str
-    reason: Literal["malformed", "past_end", "no_source"]
-
-
-@dataclass(frozen=True)
-class UnlinkedSlide:
-    """A slide marker in a node label that `render_mindmap` or `render_deck_mindmap` could not link to a Slide.
-
-    `label` is the node's label as written in the Outline, every marker and
-    stamp included. `slide` is the marker's text as written, brackets
-    included, such as `[slide 99]` or `[Slide x]`. `reason` is `"malformed"`
-    when the marker is not `slide` and a positive whole number, `"past_end"`
-    when its number is past the Deck's last Slide, and `"no_deck"` when the
-    Transcript has no Deck attached, whatever the marker's shape.
-    """
-
-    label: str
-    slide: str
-    reason: Literal["malformed", "past_end", "no_deck"]
 
 
 @dataclass(frozen=True)
 class RenderResult:
     """What `render_mindmap` and `render_deck_mindmap` tell the caller about the page they wrote.
 
-    `page` is the page's absolute path. `unlinked` holds one entry per bad stamp
-    occurrence in node labels, in Outline order and left to right within a
-    label, so the same bad stamp on two nodes gives two entries. It is empty
-    when every stamp linked. `unlinked_slides` holds one entry per bad slide
-    marker occurrence in node labels, in the same order, and is empty when
-    every marker linked or the Outline has none.
+    `page` is the page's absolute path. A render that returns linked every
+    stamp and every Slide number, since anything it could not link fails the
+    render instead.
     """
 
     page: Path
-    unlinked: tuple[UnlinkedStamp, ...]
-    unlinked_slides: tuple[UnlinkedSlide, ...] = ()
 
 
 def render_mindmap(
     transcript_id: str,
-    outline: str,
+    outline: dict | str,
     *,
     cache_dir: Path | None = None,
     output_dir: Path | None = None,
 ) -> RenderResult:
-    """Write the Mindmap page for an Outline and return its path and any unlinked stamps.
+    """Check a JSON Outline against the Transcript, write its Mindmap page, and return the page's path.
 
-    Markdown headings and nested list items become nodes. Each `STAMP` match in
-    a node label is resolved with `stamp_seconds`. A stamp at or before the
-    Transcript's stored audio duration becomes a Timestamp link to the
-    Transcript's Source and leaves the label. A malformed stamp, or one past
-    the duration, stays in the label as plain text with no link, and is
-    reported in `unlinked`. Bracketed text that is not a `STAMP` match stays in
-    the label and is never reported. Prose following a node supplies its
-    explanation when present; its stamps are neither linked nor reported, and
-    this tool does not generate prose.
+    `outline` is the Outline in the format `get_outline_schema` describes,
+    either already parsed, as a dict, or as JSON text. Text that is not JSON,
+    such as a Markdown Outline, raises `OutlineSyntaxError`.
 
-    A slide marker is a bracket starting with `slide`, in any case, such as
-    `[slide 3]` or `[Slide 3]`. A node lists any number of Slides, one marker
-    each, and a Slide may appear on any number of nodes. A marker naming a
-    Slide of the Deck attached to the Transcript links that Slide to the node
-    and leaves the label. A malformed marker, one past the Deck's last Slide,
-    or any marker when the Transcript has no Deck, stays in the label as plain
-    text and is reported in `unlinked_slides`. A Slide listed twice on one
-    node counts once and is not reported. Markers in prose are neither linked
-    nor reported. Clicking a node shows its linked Slides in its panel, top to
-    bottom in Slide order, below the explanation and above the Source link,
-    each captioned and alt-texted `Slide N`. A node with no linked Slide has no
-    slide area. The page embeds each linked Slide's `image` exactly once, as a
-    base64 `data:image/png` URI, however many nodes list it, and embeds no
-    Slide that no node links.
+    Before anything is rendered, one check reads the whole Outline and
+    collects every problem it finds, in Outline order, each as an
+    `OutlineProblem` naming its node by label path:
 
-    Each topic, meaning each node one level under the main topic, gives its
-    branch one colour. A node whose label, as the page shows it after linked
-    stamps and Slide markers leave it, starts with `Övning:` or `Exempel:` in
-    any case is an example or exercise, and so is every node under one. These
-    are orange: an orange of hue 25 to 45 degrees that no topic gets, since
-    every topic's hue sits at least 20 degrees from it however many topics the
-    Outline has. An orange node's border, background, selected fill, stamps,
-    and panel path and rule are orange, and so is the edge into it from
-    another orange node or from the main topic. The edge into the top example
-    or exercise node of a branch keeps its topic's colour. A topic that is
-    itself an example or exercise takes no topic colour, so the topics after
-    it get the colours they would have had without it. The main topic stays in
-    its neutral colours whatever its label. `Övning 2:`, `Övningar:`, and a
-    label with `Övning:` or `Exempel:` anywhere but the start are not examples
-    or exercises.
+    - a root that is not one main-topic node, such as a list or a node of
+      another type,
+    - an unknown `type`,
+    - a missing part, or a part the node's type does not have, such as an
+      `explanation` on an exempel, a misspelled key, or `children` on an
+      exempel or övning, even an empty list,
+    - a part of the wrong kind, such as a `stamps` that is not a list of
+      strings, or a Slide number that is not an integer, `true` included,
+    - a blank `label`, `task` or step `calculation`,
+    - a node under the wrong parent type, by the nesting rules
+      `get_outline_schema` gives,
+    - a control character in any string part but `explanation`, which is what
+      JSON makes of an unescaped LaTeX backslash such as `\\frac` or `\\times`,
+    - a malformed stamp, meaning one `stamp_seconds` rejects once wrapped in
+      brackets, such as `"1:75"`, or a stamp later than the Transcript's
+      stored audio duration,
+    - a Slide number below 1, a Slide number past the last Slide of the Deck
+      attached to the Transcript, any Slide number when the Transcript has no
+      Deck, and a Slide number listed twice on one node.
 
-    A term is a node three levels under the main topic, under a topic and a
-    Slide node, that is not an example or exercise. Terms whose labels match
-    once every stamp and slide marker leaves them, ignoring case, are copies of
-    one term. Clicking a copy of a term with two or more copies lists every
-    copy in its panel, in Outline order, as `topic › Slide` in its topic's
-    colour, linked to the copy's first linked stamp. A copy with no linked
-    stamp is listed without a link. A term with one copy shows no list.
+    A node of an unknown type is one problem, and nothing else about it is
+    checked. A part of the wrong kind is one problem, and what it holds is
+    not checked. A `children` part on an exempel or övning is one problem,
+    whatever the list holds, and the nodes in it are not checked. Every other
+    fault is a problem of its own, so a misspelled key gives one problem for
+    the unknown key and one for the missing part. Stamps and Slide numbers
+    are checked only on nodes whose parts have the right kind. Any problem
+    raises `OutlineStructureError` with all of them.
+
+    An Outline that passes renders every node. Each stamp becomes a Timestamp
+    link to the Transcript's Source, shown as `display_stamp` gives it, and
+    each Slide number links that Slide to the node. A slide node with no
+    Slide numbers is fine, and in a Transcript with no Deck it stands for a
+    Slide-sized part of the lecture. Clicking a node shows, in its panel, its
+    explanation, then its linked Slides in Slide order, each captioned and
+    alt-texted `Slide N`, then the Source link. The page embeds each linked
+    Slide's image once, as a base64 `data:image/png` URI, and no Slide that no
+    node links. An exempel or övning panel shows, where an explanation would
+    be, one line each: the task, then `Steg N: <calculation>` per step,
+    counted from 1, with ` (<reason>)` after it when the reason is not empty,
+    then `Svar: <answer>` when the answer is not empty. LaTeX shows as
+    written. Labels, explanations and every other text show as plain text.
+
+    Each topic gives its branch one colour. Exempel and övning nodes are
+    orange because of their type, whatever their label says: an orange of hue
+    25 to 45 degrees that no topic gets. An orange node's border, background,
+    selected fill, stamps, and panel path and rule are orange. The edge into
+    an exempel or övning keeps its topic's colour, and the edge into one
+    directly under the main-topic is orange. An exempel or övning directly
+    under the main-topic takes no topic colour, so the topics after it get the
+    colours they would have had without it. A topic whose label starts with
+    `Exempel:` is not orange. The page puts `Exempel: ` or `Övning: ` before
+    an exempel's or övning's label on its map card, its card's aria-label,
+    its panel title, and its button under Explore next.
+
+    Term nodes whose labels match ignoring case and runs of whitespace are
+    copies of one term. Clicking a copy of a term with two or more copies
+    lists every copy in its panel, in Outline order, as `topic › slide` in its
+    topic's colour, linked to the copy's first stamp. A copy with no stamp is
+    listed without a link. Only nodes of type `term` count.
 
     The page is `<transcript_id>.html` in `output_dir`, replacing any earlier
-    page for the same Transcript, and is written even when stamps go unlinked.
-    CSS, JavaScript, Outline data and Slide images are embedded, so it opens straight from
-    disk without network access. Radial rings is the default layout; settings
-    also offers Topic circles.
+    page for the same Transcript. CSS, JavaScript, Outline data and Slide
+    images are embedded, so it opens straight from disk without network
+    access. Radial rings is the default layout; settings also offers Topic
+    circles.
 
     `cache_dir` defaults to the per-user cache folder for Munin.
     `output_dir` defaults to `mindmaps/` at the repo root, found from this
     file's location, so the server's working directory does not matter.
 
-    Raises `UnknownTranscriptError` when no cached Transcript has this ID, and
-    `OutlineError` when the Outline has no headings or list items. Either way it
-    writes nothing.
+    Raises `UnknownTranscriptError` when no cached Transcript has this ID,
+    before the Outline is read, then `OutlineSyntaxError` or
+    `OutlineStructureError` as above. Any of them means nothing is written.
     """
-    entry = cached_entry(transcript_id, cache_dir=cache_dir)
-    deck = deck_path(transcript_id, cache_dir or default_cache_dir())
-    return _write_page(transcript_id, outline, entry, deck, output_dir)
+    raise NotImplementedError
 
 
 def render_deck_mindmap(
     deck_id: str,
-    outline: str,
+    outline: dict | str,
     *,
     cache_dir: Path | None = None,
     output_dir: Path | None = None,
 ) -> RenderResult:
-    """Write the Mindmap page for an Outline written from a Deck read on its own, and return what `render_mindmap` returns.
+    """Check a JSON Outline written from a Deck read on its own, write its Mindmap page, and return what `render_mindmap` returns.
 
-    Renders as `render_mindmap` does, with these differences. Slide markers
-    resolve against the copy `read_deck` stored under `deck_id`, so a marker
-    naming one of its Slides links that Slide, and a malformed marker or one
-    past its last Slide is reported in `unlinked_slides` as `"malformed"` or
-    `"past_end"`. A Slide node with no marker renders with no Slide image and
-    is not reported. There is no Source, so every stamp in a node label stays
-    as plain text and is reported in `unlinked` with reason `"no_source"`,
-    whatever its shape. The page has no link to a Source: no lecture link in
-    its header and no Source link in any node's panel.
+    Checks and renders as `render_mindmap` does, with these differences.
+    Slide numbers resolve against the copy `read_deck` stored under
+    `deck_id`, so a Slide number below 1 or past its last Slide is a problem.
+    There is no Source, so any stamp on any node is a problem. The page has no
+    link to a Source: no lecture link in its header and no Source link in any
+    node's panel.
 
     The page is `<deck_id>.html` in `output_dir`, replacing any earlier page
     for the same Deck. `cache_dir` and `output_dir` default as for
     `render_mindmap`.
 
-    Raises `UnknownDeckError` when no Deck read on its own has this ID, and
-    `OutlineError` when the Outline has no headings or list items. Either way
-    it writes nothing.
+    Raises `UnknownDeckError` when no Deck read on its own has this ID, before
+    the Outline is read, then `OutlineSyntaxError` or `OutlineStructureError`
+    as `render_mindmap` does. Any of them means nothing is written.
     """
-    cache_dir = cache_dir or default_cache_dir()
-    deck = standalone_deck_path(deck_id, cache_dir)
-    if not is_cache_id(deck_id) or not deck.is_file():
-        raise UnknownDeckError(deck_id)
-    return _write_page(deck_id, outline, None, deck, output_dir)
-
-
-def _write_page(
-    page_id: str, outline: str, entry: CacheEntry | None, deck: Path, output_dir: Path | None
-) -> RenderResult:
-    """Write `<page_id>.html` for the Outline, linking stamps to the entry's Source and markers to the Deck at `deck`.
-
-    `entry` is None when there is no Source, and `deck` need not exist.
-    """
-    deck_pages = pdf.page_count(deck) if deck.is_file() else None
-    nodes, unlinked, unlinked_slides = _outline_nodes(outline, entry, deck_pages)
-    linked = sorted({number for node in nodes for number in node["slides"]})
-    source = entry.source if entry else None
-    content = _page_html(page_id, nodes, source, _slide_images(deck, linked))
-    page = (output_dir or _DEFAULT_OUTPUT_DIR).resolve() / f"{page_id}.html"
-    page.parent.mkdir(parents=True, exist_ok=True)
-    page.write_text(content, encoding="utf-8")
-    return RenderResult(page, unlinked, unlinked_slides)
+    raise NotImplementedError
 
 
 def _slide_images(deck: Path, numbers: list[int]) -> dict[str, str]:
@@ -220,127 +162,6 @@ def _timestamp_url(source: Source, offset_s: int) -> str:
     if isinstance(source, Video):
         return source.timestamp_url(offset_s)
     return f"{source.as_uri()}#t={offset_s}"
-
-
-def _outline_nodes(
-    outline: str, entry: CacheEntry | None, deck_pages: int | None
-) -> tuple[list[dict], tuple[UnlinkedStamp, ...], tuple[UnlinkedSlide, ...]]:
-    """Read heading/list hierarchy and optional prose without interpreting HTML.
-
-    A single top-level node is the main topic. Multiple top-level nodes get a
-    common main topic. All labels and explanations are displayed as plain text.
-    Returns the nodes, and every node label's bad stamps and bad slide markers,
-    in Outline order. `entry` is None when there is no Source, and
-    `deck_pages` is None when there is no Deck.
-    """
-    nodes: list[dict] = []
-    unlinked: list[UnlinkedStamp] = []
-    unlinked_slides: list[UnlinkedSlide] = []
-    headings: list[tuple[int, int]] = []
-    bullets: list[tuple[int, int]] = []
-    current: int | None = None
-    for line in outline.expandtabs(4).splitlines():
-        heading = _HEADING.match(line)
-        bullet = _BULLET.match(line)
-        if heading:
-            level, label = len(heading[1]), heading[2]
-            while headings and headings[-1][0] >= level:
-                headings.pop()
-            parent = headings[-1][1] if headings else None
-            bullets.clear()
-        elif bullet:
-            level, label = len(bullet[1]), bullet[2]
-            while bullets and bullets[-1][0] >= level:
-                bullets.pop()
-            parent = (
-                bullets[-1][1] if bullets else headings[-1][1] if headings else None
-            )
-        else:
-            if line.strip() and current is not None:
-                previous = nodes[current]["explanation"]
-                nodes[current]["explanation"] = f"{previous}\n{line.strip()}".strip()
-            continue
-        current = len(nodes)
-        shown, links, bad = _resolve_stamps(label, entry)
-        unlinked.extend(bad)
-        shown, slides, bad_slides = _resolve_slides(label, shown, deck_pages)
-        unlinked_slides.extend(bad_slides)
-        nodes.append(
-            {
-                "id": current,
-                "parent": parent,
-                "label": shown,
-                "links": links,
-                "slides": slides,
-                "term": _term_key(label),
-                "explanation": "",
-            }
-        )
-        (headings if heading else bullets).append((level, current))
-    if not nodes:
-        raise OutlineError()
-    if len([node for node in nodes if node["parent"] is None]) != 1:
-        for node in nodes:
-            node["id"] += 1
-            node["parent"] = 0 if node["parent"] is None else node["parent"] + 1
-        nodes.insert(
-            0,
-            {
-                "id": 0,
-                "parent": None,
-                "label": "Lecture notes",
-                "links": [],
-                "slides": [],
-                "term": "",
-                "explanation": "",
-            },
-        )
-    return nodes, tuple(unlinked), tuple(unlinked_slides)
-
-
-def _term_key(label: str) -> str:
-    """Return the label without any stamp or slide marker, in lower case, so copies of one term match."""
-    bare = _SLIDE_MARKER.sub(" ", STAMP.sub(" ", label))
-    return _SPACE_RUN.sub(" ", bare).strip().casefold()
-
-
-def _resolve_stamps(label: str, entry: CacheEntry | None) -> tuple[str, list[dict], list[UnlinkedStamp]]:
-    """Return the label without its linked stamps, their links, and its bad stamps."""
-    shown, links, unlinked = label, [], []
-    for stamp in STAMP.finditer(label):
-        if entry is None:
-            unlinked.append(UnlinkedStamp(label, stamp[0], "no_source"))
-            continue
-        offset = stamp_seconds(stamp[0])
-        if offset is None:
-            unlinked.append(UnlinkedStamp(label, stamp[0], "malformed"))
-        elif offset > entry.duration_s:
-            unlinked.append(UnlinkedStamp(label, stamp[0], "past_end"))
-        else:
-            links.append({"text": display_stamp(offset), "url": _timestamp_url(entry.source, offset)})
-            shown = shown.replace(stamp[0], "", 1)
-    return _SPACE_RUN.sub(" ", shown).strip(), links, unlinked
-
-
-def _resolve_slides(
-    label: str, shown: str, deck_pages: int | None
-) -> tuple[str, list[int], list[UnlinkedSlide]]:
-    """Return the label without its linked slide markers, their sorted Slide numbers, and its bad markers."""
-    numbers: set[int] = set()
-    unlinked: list[UnlinkedSlide] = []
-    for marker in _SLIDE_MARKER.finditer(label):
-        match = _SLIDE_NUMBER.fullmatch(marker[0])
-        number = int(match[1]) if match else 0
-        if deck_pages is None:
-            unlinked.append(UnlinkedSlide(label, marker[0], "no_deck"))
-        elif number < 1:
-            unlinked.append(UnlinkedSlide(label, marker[0], "malformed"))
-        elif number > deck_pages:
-            unlinked.append(UnlinkedSlide(label, marker[0], "past_end"))
-        else:
-            numbers.add(number)
-            shown = shown.replace(marker[0], "", 1)
-    return _SPACE_RUN.sub(" ", shown).strip(), sorted(numbers), unlinked
 
 
 def _page_html(page_id: str, nodes: list[dict], source: Source | None, slide_images: dict[str, str]) -> str:
