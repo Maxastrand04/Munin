@@ -37,11 +37,11 @@ The JSON tree of typed nodes the LLM writes from a Transcript, or from a standal
 _Avoid_: notes, summary, mindmap (for the JSON)
 
 **Mindmap**:
-The rendered HTML page built from an Outline, with every stamp turned into a Timestamp link and every node's panel showing the Slides it lists. A render that finds any problem writes nothing and lists every problem by its path of labels. A problem is a break from the schema or the nesting rules, a malformed stamp, a stamp past the Source's end, a Slide number below 1 or past the Deck's last Slide, a Slide number listed twice on one node, or any Slide number on a Transcript with no Deck. A Mindmap rendered against a standalone Deck has no Source, so any stamp in its Outline is a problem too. A term that appears under several Slide nodes, worded the same, lists every place it appears in each copy's panel.
+The rendered HTML page built from an Outline, with every stamp turned into a Timestamp link and every node's panel showing the Slides it lists. A render that finds any problem writes nothing and lists every problem by its path of labels. A problem is a break from the schema or the nesting rules, a malformed stamp, a stamp past the Source's end, a Slide number below 1 or past the Deck's last Slide, a Slide number listed twice on one node, a label that starts with `Exempel:` or `Övning:`, or any Slide number on a Transcript with no Deck. A Mindmap rendered against a standalone Deck has no Source, so any stamp in its Outline is a problem too. A term that appears under several Slide nodes, worded the same, lists every place it appears in each copy's panel.
 _Avoid_: map, graph, diagram
 
 **Example or exercise**:
-An Outline node of type `exempel` or `övning`. It sits under any node but another exempel or övning, has no children, and carries a `task`, a list of `steps` and an `answer` instead of an explanation. Each step has a `calculation` and a `reason`. The Mindmap paints it in a reserved orange that no topic gets, and adds `Exempel: ` or `Övning: ` before its label. A topic or term whose label starts with `Exempel:` is not one.
+An Outline node of type `exempel` or `övning`. It sits under any node but another exempel or övning, has no children, and carries a `task`, a list of `steps` and an `answer` instead of an explanation. Each step has a `calculation` and a `reason`. The Mindmap paints it in a reserved orange that no topic gets, and adds `Exempel: ` or `Övning: ` before its label. A Slide that is only one example or exercise is one of these, under its topic, and gets no slide node. No node's label may start with `Exempel:` or `Övning:`, so the render fails on a slide, topic or term labelled that way.
 _Avoid_: task, problem, worked example
 
 **Timestamp link**:

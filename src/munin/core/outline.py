@@ -49,6 +49,8 @@ _PARENTS: dict[str, tuple[str, ...]] = {
 }
 
 _CONTROL = re.compile(r"[\x00-\x1f\x7f-\x9f]")
+# The page adds these prefixes to exempel and övning labels, so no label may start with one.
+_WORKED_PREFIX = re.compile(r"\s*(exempel|övning)\s*:", re.IGNORECASE)
 _NO_CONTROL = "^[^\\u0000-\\u001f\\u007f-\\u009f]*$"
 _NON_BLANK = "\\S"
 _STAMP = "^(\\d+:[0-5]\\d|\\d+:[0-5]\\d:[0-5]\\d)$"
@@ -161,6 +163,7 @@ class _Check:
                 self.add(path, f"missing {key}")
             else:
                 self.part(path, key, node[key], part_kind, required)
+        self.label_prefix(path, node.get("label"))
         children = node.get("children") if "children" in parts else None
         if isinstance(children, list):
             for index, child in enumerate(children, start=1):
@@ -184,6 +187,15 @@ class _Check:
             self.add(path, f"{key} is blank")
         if kind == "text" and _CONTROL.search(value):
             self.add(path, f"{key} holds a control character; escape every LaTeX backslash as \\\\")
+
+    def label_prefix(self, path: tuple[str, ...], label: object) -> None:
+        prefix = _WORKED_PREFIX.match(label) if isinstance(label, str) else None
+        if prefix:
+            self.add(
+                path,
+                f"label starts with {_quoted(prefix.group(1).capitalize() + ':')}; write an example or exercise "
+                "as an exempel or övning node and leave the prefix out, since the page adds it",
+            )
 
     def step(self, path: tuple[str, ...], number: int, step: dict) -> None:
         for key in step:

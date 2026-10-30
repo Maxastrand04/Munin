@@ -67,7 +67,9 @@ def create_server(
     format, and keeps its content guidance: an Outline of topics, then
     slides, then terms under the lecture title, grouped by meaning, one stamp
     per stretch of the lecture copied from `get_transcript`, and every
-    example and exercise written out as an exempel or övning node. When a
+    example and exercise written out as an exempel or övning node, a Slide
+    that is only one example or exercise included, with no `Exempel:` or
+    `Övning:` in any label. When a
     render fails, it says to fix every problem listed and render again.
     `read_slides(transcript_id: str, deck: str)` attaches the Deck through the
     core's `read_slides` and returns two content blocks per Slide in Slide
@@ -83,7 +85,7 @@ def create_server(
     format, and keeps the slides-only content guidance: 1 to 5 topics grouped
     by meaning, one slide node per Slide carrying its Slide number, title and
     schedule Slides skipped, terms worded the same everywhere, every example
-    and exercise written out as an exempel or övning node, every node's
+    and exercise written out as an exempel or övning node the same way, every node's
     `stamps` left empty, and an explanation of one to three sentences on
     every term node that gives context and covers only what the Slides
     cover.
@@ -157,6 +159,8 @@ def create_server(
           the lecture about it, even parts far apart in time. Aim for 1 to 5 topics.
         - Under each topic, one slide node per Slide. With no Deck, split the
           Transcript into Slide-sized parts and write one slide node per part.
+          A Slide that is only one example or exercise gets an exempel or övning
+          node under its topic in place of a slide node.
         - Under each slide node, one term node per term, method or formula. Word
           a term the same under every slide node it appears on.
         - Skip content that neither helps the student grasp an idea nor gives
@@ -164,8 +168,8 @@ def create_server(
         - Write every example and exercise in the lecture as an exempel or övning
           node under the node it belongs to, at any level. Give it the task, its
           solution steps and the answer, so the panel reads on its own without
-          the video or the Slide. Leave `Exempel:` and `Övning:` out of the label,
-          since the page adds them.
+          the video or the Slide. Leave `Exempel:` and `Övning:` out of every label,
+          a slide node's too, since the page adds them.
         - Put one stamp in each node's `stamps`, copied from the `get_transcript`
           line where that part starts, such as `"4:34"`. A topic gets one stamp
           for each separate stretch of the lecture it gathers. Never invent or
@@ -220,6 +224,8 @@ def create_server(
           Slide about it, even Slides far apart in the Deck. Aim for 1 to 5 topics.
         - Under each topic, one slide node per Slide, listing its Slide number in
           `slides`, counted from 1. A node that two Slides cover lists both.
+          A Slide that is only one example or exercise gets an exempel or övning
+          node under its topic in place of a slide node.
         - Under each slide node, one term node per term, method or formula. Word
           a term the same under every slide node it appears on.
         - Skip content that neither helps the student grasp an idea nor gives
@@ -227,8 +233,8 @@ def create_server(
         - Write every example and exercise on the Slides as an exempel or övning
           node under the node it belongs to, at any level. Give it the task, its
           solution steps and the answer, so the panel reads on its own without
-          the Slide. Leave `Exempel:` and `Övning:` out of the label, since the
-          page adds them.
+          the Slide. Leave `Exempel:` and `Övning:` out of every label, a slide
+          node's too, since the page adds them.
         - Give every term node an `explanation` of one to three sentences that
           explains the term and gives context, covering only what the Slides cover.
         - Optionally, a short `explanation` on any other node that has one. It

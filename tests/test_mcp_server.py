@@ -510,6 +510,18 @@ def test_mcp_render_description_labels_examples_and_exercises(cache_dir: Path):
     assert "as an exempel or övning node" in tool_description(create_server(cache_dir=cache_dir), "render_mindmap")
 
 
+@pytest.mark.parametrize("tool", ["render_mindmap", "render_deck_mindmap"])
+def test_mcp_render_description_turns_an_example_slide_into_an_exempel(cache_dir: Path, tool: str):
+    """Both render tools ask for a Slide that is only an example or exercise as an exempel or övning node, not a slide node."""
+    assert "in place of a slide node" in tool_description(create_server(cache_dir=cache_dir), tool)
+
+
+@pytest.mark.parametrize("tool", ["render_mindmap", "render_deck_mindmap"])
+def test_mcp_render_description_keeps_the_prefix_off_every_label(cache_dir: Path, tool: str):
+    """Both render tools ask for `Exempel:` and `Övning:` to stay out of every label, a slide node's included."""
+    assert "out of every label, a slide" in tool_description(create_server(cache_dir=cache_dir), tool)
+
+
 def test_mcp_render_description_writes_out_examples_and_exercises(cache_dir: Path):
     """The render tool's description asks for each example and exercise's task, solution steps and answer."""
     assert "the task, its solution steps and the answer" in tool_description(create_server(cache_dir=cache_dir), "render_mindmap")

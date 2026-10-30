@@ -314,19 +314,19 @@ def test_exempel_or_ovning_is_orange_under_any_parent(page, render_outline, pref
 
 
 def test_term_labelled_exempel_keeps_topic_colour(page, render_outline):
-    """A term whose label starts with `Exempel:` keeps its topic's colour, since only the type makes a node orange."""
-    outline = node("main-topic", "Matriser", node("topic", "A", node("slide", "Slide", term("Exempel: Rad"))))
+    """A term whose label starts with `Exempel` keeps its topic's colour, since only the type makes a node orange."""
+    outline = node("main-topic", "Matriser", node("topic", "A", node("slide", "Slide", term("Exempel på rad"))))
     show_every_node(page, render_outline(outline))
     colours = group_colours(page)
-    assert colours["Exempel: Rad"] == colours["A"]
+    assert colours["Exempel på rad"] == colours["A"]
 
 
 def test_main_topic_stays_neutral_with_example_label(page, render_outline):
-    """A main topic labelled `Exempel:` keeps the main topic's neutral colours."""
+    """A main topic labelled `Exempel` keeps the main topic's neutral colours."""
     show_every_node(page, render_outline(node("main-topic", "Matriser", node("topic", "A")), "plain"))
     plain = group_colours(page)["Matriser"]
-    show_every_node(page, render_outline(node("main-topic", "Exempel: Matriser", node("topic", "A")), "example"))
-    assert group_colours(page)["Exempel: Matriser"] == plain
+    show_every_node(page, render_outline(node("main-topic", "Exempel på matriser", node("topic", "A")), "example"))
+    assert group_colours(page)["Exempel på matriser"] == plain
 
 
 def test_sibling_of_example_keeps_topic_colour(page, render_outline):
@@ -337,9 +337,9 @@ def test_sibling_of_example_keeps_topic_colour(page, render_outline):
 
 
 def test_topic_labelled_exempel_is_not_orange(page, render_outline):
-    """A topic whose label starts with `Exempel:` keeps a topic colour, since only the type makes a node orange."""
-    show_every_node(page, render_outline(node("main-topic", "Matriser", node("topic", "Exempel: Rader"))))
-    assert not is_orange(group_colours(page)["Exempel: Rader"])
+    """A topic whose label starts with `Exempel` keeps a topic colour, since only the type makes a node orange."""
+    show_every_node(page, render_outline(node("main-topic", "Matriser", node("topic", "Exempel på rader"))))
+    assert not is_orange(group_colours(page)["Exempel på rader"])
 
 
 def test_edge_into_an_exempel_keeps_its_topic_colour(page, render_outline):

@@ -542,6 +542,46 @@ def test_children_on_an_exempel_or_ovning_is_one_problem(
     assert problem_paths(transcript_id, outline, cache_dir, tmp_path) == [(*SLIDE_PATH, "Rad gånger kolonn")]
 
 
+@pytest.mark.parametrize("prefix", ["Exempel:", "Övning:", "exempel:", "ÖVNING:", "  Exempel :"])
+@pytest.mark.parametrize(
+    "labelled",
+    [
+        lambda label: lecture(term(label)),
+        lambda label: lecture(worked("exempel", label)),
+        lambda label: lecture(worked("övning", label)),
+    ],
+    ids=["term", "exempel", "övning"],
+)
+def test_label_with_a_worked_prefix_is_a_problem(
+    transcript_id: str, cache_dir: Path, tmp_path: Path, prefix: str, labelled
+):
+    """A label that starts with `Exempel:` or `Övning:`, in any case, fails the check, since the page adds the prefix."""
+    label = f"{prefix} Rad gånger kolonn"
+    assert problem_paths(transcript_id, labelled(label), cache_dir, tmp_path) == [(*SLIDE_PATH, label)]
+
+
+def test_slide_labelled_with_a_worked_prefix_is_a_problem(transcript_id: str, cache_dir: Path, tmp_path: Path):
+    """A slide node labelled `Exempel:` fails the check, so a Slide that is only an example becomes an exempel node."""
+    outline = node("main-topic", "Matriser", node("topic", "Rader", node("slide", "Exempel: summaformeln")))
+    assert problem_paths(transcript_id, outline, cache_dir, tmp_path) == [("Matriser", "Rader", "Exempel: summaformeln")]
+
+
+def test_worked_prefix_problem_says_to_leave_the_prefix_out(transcript_id: str, cache_dir: Path, tmp_path: Path):
+    """The problem for a prefixed label tells the LLM to drop the prefix and use an exempel or övning node."""
+    with pytest.raises(OutlineStructureError) as caught:
+        render_mindmap(transcript_id, lecture(term("Exempel: Rad")), cache_dir=cache_dir, output_dir=tmp_path / "out")
+    message = caught.value.problems[0].message
+    assert '"Exempel:"' in message and "exempel or övning node" in message
+
+
+@pytest.mark.parametrize("label", ["Exempel på rader", "Övningar", "Ett exempel: rader"])
+def test_label_mentioning_an_example_without_the_prefix_renders(
+    transcript_id: str, cache_dir: Path, tmp_path: Path, label: str
+):
+    """Only the `Exempel:` and `Övning:` prefixes fail, so a label that names an example some other way renders."""
+    assert render_page(transcript_id, lecture(term(label)), cache_dir=cache_dir, output_dir=tmp_path / "out").exists()
+
+
 def test_blank_label_is_a_problem_named_by_position(transcript_id: str, cache_dir: Path, tmp_path: Path):
     """A node with a blank label fails the check, and its path names it by its position among its siblings."""
     outline = lecture(term("Gauss"), term("   "))

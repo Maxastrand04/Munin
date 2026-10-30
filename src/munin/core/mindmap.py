@@ -65,6 +65,9 @@ def render_mindmap(
     - a part of the wrong kind, such as a `stamps` that is not a list of
       strings, or a Slide number that is not an integer, `true` included,
     - a blank `label`, `task` or step `calculation`,
+    - a `label` on any node that starts with `Exempel:` or `Övning:`, in any
+      case and with any spaces before the colon, since the page adds that
+      prefix to exempel and övning labels,
     - a node under the wrong parent type, by the nesting rules
       `get_outline_schema` gives,
     - a control character in any string part but `explanation`, which is what
