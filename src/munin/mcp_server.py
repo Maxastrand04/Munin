@@ -13,11 +13,13 @@ from mcp.types import INVALID_PARAMS, TextContent
 from munin.core import (
     Download,
     MuninError,
+    OutlineSchema,
     Recognize,
     RenderResult,
     Slide,
     TranscribeResult,
     Vocabulary,
+    get_outline_schema,
     get_transcript,
     read_deck,
     read_slides,
@@ -40,7 +42,7 @@ def create_server(
     output_dir: Path | None = None,
     download: Download | None = None,
 ) -> MCPServer:
-    """Build the MCP server with six tools and two prompts, passing its arguments to the core.
+    """Build the MCP server with seven tools and two prompts, passing its arguments to the core.
 
     `transcribe(source: str, vocabulary: list[str] | None = None, alpha: float = 1.0)`
     takes a local file path, a YouTube URL or a KTH Play video URL, plus
@@ -53,14 +55,22 @@ def create_server(
     build a Vocabulary from the misspellings it spots in a first pass, then call
     again to replace the cached Transcript under the same ID.
     `get_transcript(transcript_id: str)` returns the `[m:ss] text` lines.
-    `render_mindmap(transcript_id: str, outline: str)` returns the `RenderResult`
-    fields as an object, `page` as an absolute path string and `unlinked` as a
-    list of `label`, `stamp` and `reason` objects, and `unlinked_slides` as a
-    list of `label`, `slide` and `reason` objects. Its description gives the
-    `[slide N]` marker format next to the stamp format, and asks for an Outline
-    of topics, then Slides, then terms under the lecture title, grouped by
-    meaning, with each example and exercise written out under an `Övning:` or
-    `Exempel:` leaf.
+    `get_outline_schema()` takes no arguments and returns the core's
+    `OutlineSchema` fields as an object, `schema` and `samples`. Its
+    description tells the LLM to call it before writing an Outline.
+    `render_mindmap(transcript_id: str, outline: dict | str)` takes the
+    Outline as a JSON object, or as text, which reaches the core as written so
+    a Markdown Outline gets the core's `OutlineSyntaxError` message. It
+    returns the `RenderResult` fields as an object, `page` as an absolute path
+    string and nothing else. Its description tells the LLM to call
+    `get_outline_schema` before writing an Outline, describes no Markdown
+    format, and keeps its content guidance: an Outline of topics, then
+    slides, then terms under the lecture title, grouped by meaning, one stamp
+    per stretch of the lecture copied from `get_transcript`, and every
+    example and exercise written out as an exempel or övning node, a Slide
+    that is only one example or exercise included, with no `Exempel:` or
+    `Övning:` in any label. When a
+    render fails, it says to fix every problem listed and render again.
     `read_slides(transcript_id: str, deck: str)` attaches the Deck through the
     core's `read_slides` and returns two content blocks per Slide in Slide
     order: a text block `Slide N:` followed by the Slide's text on the next
@@ -68,26 +78,29 @@ def create_server(
     `read_deck(deck: str)` reads a Deck on its own through the core's
     `read_deck` and returns a text block `Deck ID: <id>` first, then the same
     two blocks per Slide that `read_slides` returns.
-    `render_deck_mindmap(deck_id: str, outline: str)` returns the
-    `RenderResult` fields as `render_mindmap` does. Its description gives the
-    slides-only Outline format. It is the same shape as `render_mindmap`'s,
-    with 1 to 5 topics grouped by meaning, one node per Slide carrying its
-    `[slide N]` marker, title and schedule Slides skipped, terms worded the
-    same everywhere, and each example and exercise written out under an
-    `Övning:` or `Exempel:` leaf. It says to write no stamps, and asks for an
-    explanation of one to three sentences under every term node that gives
-    context and covers only what the Slides cover, and allows a short prose
-    paragraph under any other node.
+    `render_deck_mindmap(deck_id: str, outline: dict | str)` takes the
+    Outline as `render_mindmap` does and returns the `RenderResult` fields as
+    `render_mindmap` does. Its description tells the LLM to call
+    `get_outline_schema` before writing an Outline, describes no Markdown
+    format, and keeps the slides-only content guidance: 1 to 5 topics grouped
+    by meaning, one slide node per Slide carrying its Slide number, title and
+    schedule Slides skipped, terms worded the same everywhere, every example
+    and exercise written out as an exempel or övning node the same way, every node's
+    `stamps` left empty, and an explanation of one to three sentences on
+    every term node that gives context and covers only what the Slides
+    cover.
     The `lecture_to_mindmap(source: str | None = None, deck: str | None = None)`
     prompt takes a Source, a Deck, or both. With a Source, it lists the run's
-    steps for that Source and leaves the Outline format to `render_mindmap`'s
-    description. With a `deck` as well, it adds a step between
+    steps for that Source, asks for the Outline as JSON, and has the LLM call
+    `get_outline_schema` before writing it, leaving the content guidance to
+    `render_mindmap`'s description. With a `deck` as well, it adds a step between
     `get_transcript` and writing the Outline that calls `read_slides` with the
     Transcript ID and that Deck path, and asks the LLM to match each Slide to
     the part of the Transcript covering the same content. Without one, its
     text is the same as before Decks existed. With only a `deck`, it lists the
-    slides-only steps: call `read_deck` with that Deck path, write an Outline
-    from the Slides in the format `render_deck_mindmap` describes, call
+    slides-only steps: call `read_deck` with that Deck path, call
+    `get_outline_schema`, write a JSON Outline from the Slides as
+    `render_deck_mindmap` describes, call
     `render_deck_mindmap` with the Deck ID and the Outline, and reply with only
     the page as a `file://` link, or with which step failed and the error.
     It never names `transcribe`. With neither, getting the prompt fails with
@@ -124,56 +137,58 @@ def create_server(
         with _core_errors_as_tool_errors():
             return get_transcript(transcript_id, cache_dir=cache_dir)
 
+    @server.tool(name="get_outline_schema")
+    def get_outline_schema_tool() -> OutlineSchema:
+        """Return the JSON Schema an Outline must follow, plus a sample exempel node and övning node. Call this before writing an Outline."""
+        return get_outline_schema()
+
     @server.tool(name="render_mindmap")
-    def render_mindmap_tool(transcript_id: str, outline: str) -> RenderResult:
-        """Render an Outline whose node labels carry `[m:ss]` or `[h:mm:ss]` stamps into a Mindmap page.
+    def render_mindmap_tool(transcript_id: str, outline: dict | str) -> RenderResult:
+        """Render a JSON Outline of a lecture into a Mindmap page.
 
-        Write the Outline in this format:
+        Call `get_outline_schema` before writing an Outline. It gives the
+        node types, the parts every node carries and a sample exempel and
+        övning. Pass the Outline as a JSON object.
 
-        - Markdown headings (`#` to `####`) or nested list items, with the lecture
-          title as the single top node and three levels under it: topics, then
-          Slides, then terms, methods and formulas.
+        Write the Outline like this:
+
+        - The lecture title as the one main-topic node, with three levels
+          under it: topic nodes, then slide nodes, then term nodes for terms,
+          methods and formulas.
         - Group the lecture by meaning, not by time. A topic gathers every part of
           the lecture about it, even parts far apart in time. Aim for 1 to 5 topics.
-        - Under each topic, one node per Slide. With no Deck, split the Transcript
-          into Slide-sized parts and write one node per part.
-        - Under each Slide node, one node per term, method or formula. Word a term
-          the same under every Slide node it appears on.
+        - Under each topic, one slide node per Slide. With no Deck, split the
+          Transcript into Slide-sized parts and write one slide node per part.
+          A Slide that is only one example or exercise gets an exempel or övning
+          node under its topic in place of a slide node.
+        - Under each slide node, one term node per term, method or formula. Word
+          a term the same under every slide node it appears on.
         - Skip content that neither helps the student grasp an idea nor gives
           concrete material. A Slide such as a title page or a schedule gets no node.
-        - Add every example and exercise in the lecture as a leaf under the node it
-          belongs to, at any level, with a label that starts with `Övning:` or
-          `Exempel:`. These count as neither topics nor terms.
-        - One stamp at the end of each node label, copied from the
-          `get_transcript` line where that part starts, such as
-          `### Gausselimination [4:34]`. A topic gets one stamp for each separate
-          stretch of the lecture it gathers, such as
-          `## Linjära system [4:34] [38:10]`. Never invent or round a stamp.
-        - Under each `Övning:` or `Exempel:` node, a prose paragraph that writes
-          out the task and its solution steps, so the panel reads on its own
-          without the video or the Slide. Write each step as a plain line, such as
-          `Steg 1: ...`, never as list items, because a list item becomes a node.
-        - Optionally, a short prose paragraph under any other node. It appears in
-          that node's explanation panel.
-
-        Returns `page`, the absolute path of the written HTML page, and `unlinked`,
-        the stamps left as plain text. Each good stamp becomes a link that opens the
-        Transcript's Source at that second. Each `unlinked` entry gives the node
-        `label` as written in the Outline, the `stamp`, and a `reason`: `malformed`,
-        or `past_end` when the stamp is later than the Source's end. When `unlinked`
-        is not empty, fix those stamps in the Outline and render again; the new page
-        replaces the old one. The page defaults to Radial rings, with Topic circles
-        available in settings.
+        - Write every example and exercise in the lecture as an exempel or övning
+          node under the node it belongs to, at any level. Give it the task, its
+          solution steps and the answer, so the panel reads on its own without
+          the video or the Slide. Leave `Exempel:` and `Övning:` out of every label,
+          a slide node's too, since the page adds them.
+        - Put one stamp in each node's `stamps`, copied from the `get_transcript`
+          line where that part starts, such as `"4:34"`. A topic gets one stamp
+          for each separate stretch of the lecture it gathers. Never invent or
+          round a stamp.
+        - Optionally, a short `explanation` on any node that has one. It appears
+          in that node's panel.
 
         When the lecture has a Deck read with `read_slides`, base the topics on its
-        Slides. A node label may also carry one `[slide N]` marker for each Slide
-        that covers it, such as `### Gausselimination [4:34] [slide 2] [slide 3]`.
-        N counts from 1. Clicking the node then shows those Slides in its panel.
-        `unlinked_slides` lists the
-        markers left as plain text. Each entry gives the node `label`, the `slide`
-        marker as written, and a `reason`: `malformed`, `past_end` when N is past the
-        Deck's last Slide, or `no_deck` when the Transcript has no Deck. Fix those in
-        the Outline and render again.
+        Slides, and list in a node's `slides` each Slide that covers it, counted
+        from 1. Clicking the node then shows those Slides in its panel. With no
+        Deck, leave every `slides` empty.
+
+        Returns `page`, the absolute path of the written HTML page. Each stamp
+        becomes a link that opens the Transcript's Source at that second. When
+        the Outline breaks the schema, or a stamp or Slide number cannot be
+        linked, nothing is written and the error lists every problem by its
+        path of labels. Fix every problem listed and render again; the new page
+        replaces the old one. The page defaults to Radial rings, with Topic
+        circles available in settings.
         """
         with _core_errors_as_tool_errors():
             return render_mindmap(transcript_id, outline, cache_dir=cache_dir, output_dir=output_dir)
@@ -193,42 +208,44 @@ def create_server(
         return [TextContent(type="text", text=f"Deck ID: {result.deck_id}"), *_slide_blocks(result.slides)]
 
     @server.tool(name="render_deck_mindmap")
-    def render_deck_mindmap_tool(deck_id: str, outline: str) -> RenderResult:
-        """Render an Outline written from a Deck read with `read_deck` into a Mindmap page.
+    def render_deck_mindmap_tool(deck_id: str, outline: dict | str) -> RenderResult:
+        """Render a JSON Outline written from a Deck read with `read_deck` into a Mindmap page.
 
-        Write the Outline in this format:
+        Call `get_outline_schema` before writing an Outline. It gives the
+        node types, the parts every node carries and a sample exempel and
+        övning. Pass the Outline as a JSON object.
 
-        - Markdown headings (`#` to `####`) or nested list items, with the lecture
-          title as the single top node and three levels under it: topics, then
-          Slides, then terms, methods and formulas.
+        Write the Outline like this:
+
+        - The lecture title as the one main-topic node, with three levels
+          under it: topic nodes, then slide nodes, then term nodes for terms,
+          methods and formulas.
         - Group the lecture by meaning, not by Slide order. A topic gathers every
           Slide about it, even Slides far apart in the Deck. Aim for 1 to 5 topics.
-        - Under each topic, one node per Slide, carrying its `[slide N]`
-          marker, such as `### Gausselimination [slide 2]`. N counts from 1. A Slide that covers
-          the same node as another carries a marker for each.
-        - Under each Slide node, one node per term, method or formula. Word a term
-          the same under every Slide node it appears on.
+        - Under each topic, one slide node per Slide, listing its Slide number in
+          `slides`, counted from 1. A node that two Slides cover lists both.
+          A Slide that is only one example or exercise gets an exempel or övning
+          node under its topic in place of a slide node.
+        - Under each slide node, one term node per term, method or formula. Word
+          a term the same under every slide node it appears on.
         - Skip content that neither helps the student grasp an idea nor gives
           concrete material. A Slide such as a title page or a schedule gets no node.
-        - Add every example and exercise on the Slides as a leaf under the node it
-          belongs to, at any level, with a label that starts with `Övning:` or
-          `Exempel:`. These count as neither topics nor terms.
-        - Under each `Övning:` or `Exempel:` node, a prose paragraph that writes
-          out the task and its solution steps, so the panel reads on its own
-          without the Slide. Write each step as a plain line, such as
-          `Steg 1: ...`, never as list items, because a list item becomes a node.
-        - Write, under every term node, a prose paragraph of one to three sentences that
+        - Write every example and exercise on the Slides as an exempel or övning
+          node under the node it belongs to, at any level. Give it the task, its
+          solution steps and the answer, so the panel reads on its own without
+          the Slide. Leave `Exempel:` and `Övning:` out of every label, a slide
+          node's too, since the page adds them.
+        - Give every term node an `explanation` of one to three sentences that
           explains the term and gives context, covering only what the Slides cover.
-        - Optionally, a short prose paragraph under any other node. It appears in
-          that node's explanation panel.
-        - There is no recording, so write no stamps. A stamp stays as plain text.
+        - Optionally, a short `explanation` on any other node that has one. It
+          appears in that node's panel.
+        - There is no recording, so leave every node's `stamps` empty.
 
-        Returns `page`, the absolute path of the written HTML page, `unlinked`, the
-        stamps left as plain text, each with the reason `no_source`, and
-        `unlinked_slides`, the markers left as plain text. Each `unlinked_slides`
-        entry gives the node `label`, the `slide` marker as written, and a
-        `reason`: `malformed`, or `past_end` when N is past the Deck's last Slide.
-        Fix those in the Outline and render again; the new page replaces the old one.
+        Returns `page`, the absolute path of the written HTML page. When the
+        Outline breaks the schema, carries a stamp, or names a Slide past the
+        Deck's last, nothing is written and the error lists every problem by
+        its path of labels. Fix every problem listed and render again; the new
+        page replaces the old one.
         """
         with _core_errors_as_tool_errors():
             return render_deck_mindmap(deck_id, outline, cache_dir=cache_dir, output_dir=output_dir)
@@ -250,8 +267,10 @@ def create_server(
                 "Match each Slide to the part of the Transcript that covers the same content."
             )
         steps += [
-            "Write an Outline of the lecture in the format the `render_mindmap` tool describes."
-            + (" Put the matching Slide numbers on each node." if deck else ""),
+            "Call `get_outline_schema`.",
+            "Write an Outline of the lecture as JSON, in the format `get_outline_schema` gives,"
+            " following the guidance in the `render_mindmap` tool's description."
+            + (" List the matching Slide numbers on each node." if deck else ""),
             "Call `render_mindmap` with the Transcript ID and the Outline.",
             _REPLY_STEP,
         ]
@@ -295,7 +314,11 @@ def _slides_only_prompt(deck: str) -> str:
     """Return the steps that read a Deck on its own and render a Mindmap from its Slides."""
     steps = [
         f"Call `read_deck` with this Deck path: {deck}.",
-        "Write an Outline of the lecture from the Slides alone, in the format the `render_deck_mindmap` tool describes.",
+        "Call `get_outline_schema`.",
+        (
+            "Write an Outline of the lecture from the Slides alone as JSON, in the format `get_outline_schema` gives,"
+            " following the guidance in the `render_deck_mindmap` tool's description."
+        ),
         "Call `render_deck_mindmap` with the Deck ID and the Outline.",
         _REPLY_STEP,
     ]

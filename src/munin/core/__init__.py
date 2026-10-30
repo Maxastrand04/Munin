@@ -6,20 +6,18 @@ from munin.core.errors import (
     MuninError,
     NoSpeechError,
     OutlineError,
+    OutlineProblem,
+    OutlineStructureError,
+    OutlineSyntaxError,
     SourceError,
     UnknownDeckError,
     UnknownTranscriptError,
     VocabularyError,
 )
 from munin.core.kthplay import KthPlaySource, download_smallest_video, parse_kthplay_url
-from munin.core.mindmap import (
-    RenderResult,
-    UnlinkedSlide,
-    UnlinkedStamp,
-    render_deck_mindmap,
-    render_mindmap,
-)
+from munin.core.mindmap import RenderResult, render_deck_mindmap, render_mindmap
 from munin.core.model import Recognize, load_recognizer
+from munin.core.outline import OutlineSchema, get_outline_schema
 from munin.core.segments import Fragment, Segment, merge_fragments
 from munin.core.slides import DeckResult, Slide, read_deck, read_slides
 from munin.core.sources import Download, Source, Video, parse_source
@@ -37,6 +35,10 @@ __all__ = [
     "MuninError",
     "NoSpeechError",
     "OutlineError",
+    "OutlineProblem",
+    "OutlineSchema",
+    "OutlineStructureError",
+    "OutlineSyntaxError",
     "Recognize",
     "RenderResult",
     "Segment",
@@ -46,14 +48,13 @@ __all__ = [
     "TranscribeResult",
     "UnknownDeckError",
     "UnknownTranscriptError",
-    "UnlinkedSlide",
-    "UnlinkedStamp",
     "Video",
     "Vocabulary",
     "VocabularyError",
     "YouTubeSource",
     "download_audio",
     "download_smallest_video",
+    "get_outline_schema",
     "get_transcript",
     "load_recognizer",
     "merge_fragments",

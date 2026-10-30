@@ -1,11 +1,11 @@
-# ADR-0014: Everything under an example or exercise is orange
+# ADR-0014: Exempel and övning nodes are orange by their type
 
-**Decision:** The Mindmap MUST draw every node under an `Övning:` or `Exempel:` node in the reserved orange, and MUST NOT give those nodes their topic's colour.
+**Decision:** The Mindmap MUST paint every exempel and övning node in the reserved orange because of its `type`, and MUST NOT decide that a node is orange from its label.
 
-**Reason:** The first spec for #25 and #27 kept the children of an example or exercise in their topic's colour, so the colour still told the student which topic a step belonged to. It lost because the children of an example or exercise are part of it, such as its solution steps, and painting them in the topic colour made them look like terms. A topic that is itself an example or exercise also has no topic colour to give, so it takes no palette slot and its whole branch is orange.
+**Reason:** Reading an `Exempel:` or `Övning:` prefix from the label was weighed and lost, because a prefix the LLM writes can be missing, misspelled, or put on a topic or term, and the page then paints the wrong nodes. Giving an exempel or övning its topic's colour was weighed and lost too, because the node then looks like a term.
 
-**Consequence:** A node's colour depends on its ancestors' labels as well as its topic, so the page has to check the whole path to the main topic. The edge into the top example or exercise node of a branch keeps its topic's colour, and that edge is the only place the branch still shows which topic it sits under. A change that brings back topic colours for nodes under an example breaks this record.
+**Consequence:** The page adds `Exempel: ` or `Övning: ` before an exempel's or övning's label wherever it names the node, so the LLM never writes the prefix. The Outline check rejects any label that starts with `Exempel:` or `Övning:`, in any case, so a slide, topic or term labelled that way fails the render instead of rendering as a node that looks like an example but isn't orange. A Slide that is only one example or exercise becomes an exempel or övning node under its topic. The edge into an exempel or övning keeps its topic's colour, and that edge is the only place the node still shows which topic it sits under. An exempel or övning directly under the main topic has no topic, so it takes no palette slot and its edge from the main topic is orange. A check of the label text for the colour, letting a prefixed label through the check, or topic colours on exempel and övning nodes, breaks this record.
 
-**Scope:** `src/munin/core/mindmap_assets/mindmap.js`, node and edge colouring
+**Scope:** `src/munin/core/mindmap_assets/mindmap.js`, node and edge colouring; `src/munin/core/outline.py`, the label prefix check
 
-**Date:** 2026-10-25
+**Date:** 2026-10-30

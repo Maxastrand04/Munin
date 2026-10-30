@@ -344,12 +344,13 @@ def test_blank_vocabulary_on_cached_source_is_a_cache_hit(source: Path, cache_di
 
 
 def test_vocabulary_run_keeps_the_deck(source: Path, deck: Path, cache_dir: Path, tmp_path: Path):
-    """A boosted rerun of a Source keeps its Transcript's Deck attached, so a slide marker still links."""
+    """A boosted rerun of a Source keeps its Transcript's Deck attached, so a Slide number still renders."""
     transcript_id = transcribe(source, cache_dir=cache_dir, recognize=fake(PLAIN_GAUSS)).transcript_id
     read_slides(transcript_id, deck, cache_dir=cache_dir)
     transcribe(source, vocabulary=GAUSS, cache_dir=cache_dir, recognize=fake(BOOSTED_GAUSS))
-    result = render_mindmap(transcript_id, "# Matriser\n- Gauss [slide 2]", cache_dir=cache_dir, output_dir=tmp_path / "out")
-    assert result.unlinked_slides == ()
+    gauss = {"type": "topic", "label": "Gauss", "explanation": "", "stamps": [], "slides": [2], "children": []}
+    outline = {"type": "main-topic", "label": "Matriser", "explanation": "", "stamps": [], "slides": [], "children": [gauss]}
+    assert render_mindmap(transcript_id, outline, cache_dir=cache_dir, output_dir=tmp_path / "out").page.is_file()
 
 
 # Failures

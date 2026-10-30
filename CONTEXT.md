@@ -33,15 +33,15 @@ One page of a Deck, numbered from 1.
 _Avoid_: page, frame
 
 **Outline**:
-The nested Markdown the LLM writes from a Transcript, or from a standalone Deck's Slides alone, where node labels carry `[m:ss]` or `[h:mm:ss]` stamps and `[slide N]` markers. An Outline written from a standalone Deck carries no stamps and gives every term node a one to three sentence explanation.
-_Avoid_: notes, summary, mindmap (for the Markdown)
+The JSON tree of typed nodes the LLM writes from a Transcript, or from a standalone Deck's Slides alone, following the schema `get_outline_schema` returns. One main-topic node sits at the root, with topic nodes under it, slide nodes under those and term nodes under those. Each node carries a `label`, `stamps` in `m:ss` or `h:mm:ss`, Slide numbers in `slides`, an `explanation` and `children`. Every node carries every part its type has, and a part with nothing in it is `""` or `[]`. An Outline written from a standalone Deck carries no stamps and gives every term node a one to three sentence explanation. Math in any part is LaTeX.
+_Avoid_: notes, summary, mindmap (for the JSON)
 
 **Mindmap**:
-The rendered HTML page built from an Outline, with each stamp turned into a Timestamp link. A malformed stamp, or one past the Source's end, stays as plain text and is reported back as unlinked. A node's panel shows the Slides its markers name, and a marker that is malformed, past the Deck's last Slide, or on a Transcript with no Deck is reported back as unlinked too. A Mindmap rendered against a standalone Deck has no Source, so it has no Timestamp links and reports every stamp as unlinked with reason "no source". A term that appears under several Slide nodes, worded the same, lists every place it appears in each copy's panel.
+The rendered HTML page built from an Outline, with every stamp turned into a Timestamp link and every node's panel showing the Slides it lists. A render that finds any problem writes nothing and lists every problem by its path of labels. A problem is a break from the schema or the nesting rules, a malformed stamp, a stamp past the Source's end, a Slide number below 1 or past the Deck's last Slide, a Slide number listed twice on one node, a label that starts with `Exempel:` or `Övning:`, or any Slide number on a Transcript with no Deck. A Mindmap rendered against a standalone Deck has no Source, so any stamp in its Outline is a problem too. A term that appears under several Slide nodes, worded the same, lists every place it appears in each copy's panel.
 _Avoid_: map, graph, diagram
 
 **Example or exercise**:
-An Outline node whose label, as the Mindmap shows it, starts with `Exempel:` or `Övning:` in any case, plus every node under it. The Mindmap paints it in a reserved orange that no topic gets. `Övning 2:` and `Övningar:` don't count.
+An Outline node of type `exempel` or `övning`. It sits under any node but another exempel or övning, has no children, and carries a `task`, a list of `steps` and an `answer` instead of an explanation. Each step has a `calculation` and a `reason`. The Mindmap paints it in a reserved orange that no topic gets, and adds `Exempel: ` or `Övning: ` before its label. A Slide that is only one example or exercise is one of these, under its topic, and gets no slide node. No node's label may start with `Exempel:` or `Övning:`, so the render fails on a slide, topic or term labelled that way.
 _Avoid_: task, problem, worked example
 
 **Timestamp link**:
@@ -59,7 +59,7 @@ _Avoid_: jump link, deep link, seek link
 - A node of an **Outline** lists any number of **Slides**, and a **Slide** can appear on any number of nodes
 - An **Outline** is written from exactly one **Transcript**, or from exactly one standalone **Deck**
 - A node under an **Example or exercise** is part of it, so a topic that is one takes no topic colour
-- A **Mindmap** renders exactly one **Outline** and resolves its stamps against that **Transcript**'s **Source** and the Source's duration, and its Slide markers against that **Transcript**'s **Deck**
+- A **Mindmap** renders exactly one **Outline** and resolves its stamps against that **Transcript**'s **Source** and the Source's duration, and its Slide numbers against that **Transcript**'s **Deck**
 
 ## Example dialogue
 
@@ -70,5 +70,5 @@ _Avoid_: jump link, deep link, seek link
 
 ## Flagged ambiguities
 
-- "mindmap" was used for both the LLM's Markdown and the rendered page. Resolved: the Markdown is the **Outline**, the page is the **Mindmap**.
+- "mindmap" was used for both what the LLM writes and the rendered page. Resolved: what the LLM writes is the **Outline**, the page is the **Mindmap**.
 - "transcription" means the act of running Pianissimo. The stored result is the **Transcript**.

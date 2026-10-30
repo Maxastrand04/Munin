@@ -1,6 +1,8 @@
 import colorsys
+import json
 import math
 import re
+import wave
 from itertools import combinations, pairwise
 from pathlib import Path
 
@@ -21,11 +23,61 @@ NESTED_OUTLINE = """# Lecture
 ### A
 #### Leaf A
 #### B
-##### Leaf B
+##### Exempel: Leaf B
 """
-DEMO_OUTLINE = (
-    Path(__file__).resolve().parents[1] / "docs/examples/matriser-outline.md"
-).read_text(encoding="utf-8")
+DEMO_OUTLINE = json.loads(
+    (Path(__file__).resolve().parents[1] / "docs/examples/matriser-outline.json").read_text(encoding="utf-8")
+)
+TEN_MINUTES_S = 600
+SAMPLE_RATE = 8_000
+TYPES_BY_DEPTH = ["main-topic", "topic", "slide", "term"]
+WORKED_PREFIXES = {"Exempel: ": "exempel", "Övning: ": "övning"}
+
+
+def node(kind: str, label: str, *children: dict, stamps=(), slides=(), explanation: str = "") -> dict:
+    """A node of a type with children, with every part present."""
+    return {
+        "type": kind,
+        "label": label,
+        "explanation": explanation,
+        "stamps": list(stamps),
+        "slides": list(slides),
+        "children": list(children),
+    }
+
+
+def worked(kind: str, label: str) -> dict:
+    """An exempel or övning node with a task and nothing else."""
+    return {"type": kind, "label": label, "stamps": [], "slides": [], "task": "Lös uppgiften", "steps": [], "answer": ""}
+
+
+def term(label: str, **parts) -> dict:
+    return node("term", label, **parts)
+
+
+def outline_from_headings(headings: str) -> dict:
+    """A JSON Outline from one `#` heading per line, where one `#` is the main topic and each more is one level down.
+
+    A heading's depth gives its type, main-topic to term. A heading whose label starts with `Exempel: ` or
+    `Övning: ` is that type instead, with the prefix left out of its label, since the page adds it back.
+    """
+    root, stack = None, []
+    for line in headings.splitlines():
+        level = len(line) - len(line.lstrip("#"))
+        label = line[level:].strip()
+        prefix = next((prefix for prefix in WORKED_PREFIXES if label.startswith(prefix)), None)
+        current = (
+            worked(WORKED_PREFIXES[prefix], label.removeprefix(prefix))
+            if prefix
+            else node(TYPES_BY_DEPTH[level - 1], label)
+        )
+        del stack[level - 1:]
+        if stack:
+            stack[-1]["children"].append(current)
+        else:
+            root = current
+        stack.append(current)
+    return root
 
 
 @pytest.fixture(scope="module")
@@ -49,18 +101,32 @@ def outline():
 
 
 @pytest.fixture
-def render_outline(source: Path, cache_dir: Path, tmp_path: Path):
-    """Render an Outline into a folder of its own and return the page's URL."""
+def ten_minute_source(tmp_path: Path) -> Path:
+    """A WAV of 10 minutes of silence, long enough for every stamp in the demo Outline."""
+    path = tmp_path / "media" / "ten_minutes.wav"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with wave.open(str(path), "wb") as audio:
+        audio.setnchannels(1)
+        audio.setsampwidth(2)
+        audio.setframerate(SAMPLE_RATE)
+        audio.writeframes(bytes(2 * TEN_MINUTES_S * SAMPLE_RATE))
+    return path
+
+
+@pytest.fixture
+def render_outline(ten_minute_source: Path, cache_dir: Path, tmp_path: Path):
+    """Render an Outline against a 10-minute Source into a folder of its own and return the page's URL."""
     transcript = transcribe(
-        source,
+        ten_minute_source,
         cache_dir=cache_dir,
         recognize=lambda wav, vocabulary: [Fragment(0, 1, "En föreläsning.")],
     )
 
-    def render(outline: str, name: str = "mindmap") -> str:
+    def render(outline: str | dict, name: str = "mindmap") -> str:
+        """Render an Outline given as a dict, or as headings `outline_from_headings` reads."""
         return render_mindmap(
             transcript.transcript_id,
-            outline,
+            outline_from_headings(outline) if isinstance(outline, str) else outline,
             cache_dir=cache_dir,
             output_dir=tmp_path / name,
         ).page.as_uri()
@@ -214,7 +280,6 @@ EXAMPLE_OUTLINE = """# Matriser
 ## A
 ### Begrepp
 ### Exempel: Rad gånger kolonn
-#### Steg 1
 """
 
 
@@ -231,97 +296,71 @@ def edge_colours(page) -> list[str]:
     return page.locator(".edge").evaluate_all("edges => edges.map(edge => getComputedStyle(edge).stroke)")
 
 
-@pytest.mark.parametrize("prefix", ["Övning:", "Exempel:"])
+@pytest.mark.parametrize("prefix", ["Övning: ", "Exempel: "])
 @pytest.mark.parametrize(
     "outline",
     [
         "# Matriser\n## {label}\n## B\n",
         "# Matriser\n## A\n### {label}\n",
         "# Matriser\n## A\n### Slide\n#### {label}\n",
+        "# Matriser\n## A\n### Slide\n#### Term\n##### {label}\n",
     ],
-    ids=["topic", "slide", "term"],
+    ids=["main-topic", "topic", "slide", "term"],
 )
-def test_example_or_exercise_node_is_orange(page, render_outline, prefix, outline):
-    """A node whose label starts with `Övning:` or `Exempel:` is orange, at whatever level it sits."""
-    show_every_node(page, render_outline(outline.format(label=f"{prefix} Rad gånger kolonn")))
-    assert is_orange(group_colours(page)[f"{prefix} Rad gånger kolonn"])
+def test_exempel_or_ovning_is_orange_under_any_parent(page, render_outline, prefix, outline):
+    """An exempel or övning node is orange under a main-topic, topic, slide or term node."""
+    show_every_node(page, render_outline(outline.format(label=f"{prefix}Rad gånger kolonn")))
+    assert is_orange(group_colours(page)[f"{prefix}Rad gånger kolonn"])
 
 
-def test_prefix_matches_in_any_case(page, render_outline):
-    """A label starting with `exempel:` in lower case is orange too."""
-    show_every_node(page, render_outline("# Matriser\n## A\n### exempel: Rad gånger kolonn\n"))
-    assert is_orange(group_colours(page)["exempel: Rad gånger kolonn"])
-
-
-def test_prefix_after_a_linked_stamp_is_orange(page, render_outline):
-    """A label that shows `Övning:` first once its leading linked stamp leaves it is orange."""
-    show_every_node(page, render_outline("# Matriser\n## A\n### [0:00] Övning: Rad gånger kolonn\n"))
-    assert is_orange(group_colours(page)["Övning: Rad gånger kolonn"])
-
-
-def test_prefix_behind_an_unlinked_stamp_keeps_topic_colour(page, render_outline):
-    """A label whose malformed stamp stays in front of `Övning:` keeps its topic's colour."""
-    show_every_node(page, render_outline("# Matriser\n## A\n### [9:99] Övning: Rad gånger kolonn\n"))
+def test_term_labelled_exempel_keeps_topic_colour(page, render_outline):
+    """A term whose label starts with `Exempel` keeps its topic's colour, since only the type makes a node orange."""
+    outline = node("main-topic", "Matriser", node("topic", "A", node("slide", "Slide", term("Exempel på rad"))))
+    show_every_node(page, render_outline(outline))
     colours = group_colours(page)
-    assert colours["[9:99] Övning: Rad gånger kolonn"] == colours["A"]
-
-
-@pytest.mark.parametrize(
-    "label",
-    ["Om Exempel: rad gånger kolonn", "Övning 2: Rad gånger kolonn", "Övningar: Rad gånger kolonn", "Övning Rad"],
-    ids=["not-at-start", "numbered", "plural", "no-colon"],
-)
-def test_other_labels_keep_topic_colour(page, render_outline, label):
-    """A label that does not start with exactly `Övning:` or `Exempel:` keeps its topic's colour."""
-    show_every_node(page, render_outline(f"# Matriser\n## A\n### {label}\n"))
-    colours = group_colours(page)
-    assert colours[label] == colours["A"]
+    assert colours["Exempel på rad"] == colours["A"]
 
 
 def test_main_topic_stays_neutral_with_example_label(page, render_outline):
-    """A main topic labelled `Exempel:` keeps the main topic's neutral colours."""
-    show_every_node(page, render_outline("# Matriser\n## A\n", "plain"))
+    """A main topic labelled `Exempel` keeps the main topic's neutral colours."""
+    show_every_node(page, render_outline(node("main-topic", "Matriser", node("topic", "A")), "plain"))
     plain = group_colours(page)["Matriser"]
-    show_every_node(page, render_outline("# Exempel: Matriser\n## A\n", "example"))
-    assert group_colours(page)["Exempel: Matriser"] == plain
-
-
-def test_node_under_example_is_orange(page, render_outline):
-    """A node under an `Exempel:` node is orange too."""
-    show_every_node(page, render_outline(EXAMPLE_OUTLINE))
-    assert is_orange(group_colours(page)["Steg 1"])
-
-
-def test_branch_of_example_topic_is_orange(page, render_outline):
-    """Every node under a topic labelled `Övning:` is orange."""
-    show_every_node(page, render_outline("# Matriser\n## Övning: Rad gånger kolonn\n### Steg 1\n#### Steg 2\n"))
-    assert is_orange(group_colours(page)["Steg 2"])
+    show_every_node(page, render_outline(node("main-topic", "Exempel på matriser", node("topic", "A")), "example"))
+    assert group_colours(page)["Exempel på matriser"] == plain
 
 
 def test_sibling_of_example_keeps_topic_colour(page, render_outline):
-    """A node next to an `Exempel:` node, not under it, keeps its topic's colour."""
+    """A node next to an exempel node keeps its topic's colour."""
     show_every_node(page, render_outline(EXAMPLE_OUTLINE))
     colours = group_colours(page)
     assert colours["Begrepp"] == colours["A"]
 
 
-def test_edge_into_top_example_keeps_topic_colour(page, render_outline):
-    """Only the edge from one orange node to another is orange when the example sits under a topic."""
-    show_every_node(page, render_outline(EXAMPLE_OUTLINE))
-    assert [is_orange(colour) for colour in edge_colours(page)].count(True) == 1
+def test_topic_labelled_exempel_is_not_orange(page, render_outline):
+    """A topic whose label starts with `Exempel` keeps a topic colour, since only the type makes a node orange."""
+    show_every_node(page, render_outline(node("main-topic", "Matriser", node("topic", "Exempel på rader"))))
+    assert not is_orange(group_colours(page)["Exempel på rader"])
 
 
-def test_edges_in_example_topic_branch_are_orange(page, render_outline):
-    """Every edge in a topic-level `Övning:` branch is orange, the one from the main topic included."""
-    show_every_node(page, render_outline("# Matriser\n## Övning: Rad gånger kolonn\n### Steg 1\n"))
+def test_edge_into_an_exempel_keeps_its_topic_colour(page, render_outline):
+    """The edge from a slide node into an exempel is drawn in the topic's colour, not orange."""
+    outline = node("main-topic", "Matriser", node("topic", "A", node("slide", "Slide", worked("exempel", "Rad"))))
+    show_every_node(page, render_outline(outline))
+    assert not any(is_orange(colour) for colour in edge_colours(page))
+
+
+def test_edge_from_the_main_topic_into_an_exempel_is_orange(page, render_outline):
+    """An exempel directly under the main topic has an orange edge."""
+    show_every_node(page, render_outline(node("main-topic", "Matriser", worked("exempel", "Rad"))))
     assert all(is_orange(colour) for colour in edge_colours(page))
 
 
-def test_example_topic_takes_no_topic_colour(page, render_outline):
-    """A topic after a topic-level `Övning:` gets the colour it would have had without it."""
-    show_every_node(page, render_outline("# Matriser\n## A\n", "alone"))
+def test_exempel_under_the_main_topic_takes_no_topic_colour(page, render_outline):
+    """A topic after an exempel directly under the main topic gets the colour it would have had without it."""
+    show_every_node(page, render_outline(node("main-topic", "Matriser", node("topic", "A")), "alone"))
     alone = group_colours(page)["A"]
-    show_every_node(page, render_outline("# Matriser\n## Övning: Rad gånger kolonn\n## A\n", "after-example"))
+    after = node("main-topic", "Matriser", worked("exempel", "Rad"), node("topic", "A"))
+    show_every_node(page, render_outline(after, "after"))
     assert group_colours(page)["A"] == alone
 
 
@@ -445,8 +484,8 @@ def tangle_outline() -> str:
         for s, terms in enumerate(slides, start=1):
             lines.append(f"### Slide {t}.{s}")
             lines.extend(f"#### Term {t}.{s}.{n}" for n in range(1, terms + 1))
-    lines.append("#### Exempel: Steg")
-    lines.extend(f"##### Steg {n}" for n in range(1, 4))
+    lines.append("#### Steg")
+    lines.extend(f"##### Exempel: Steg {n}" for n in range(1, 4))
     return "\n".join(lines) + "\n"
 
 
@@ -493,9 +532,9 @@ ARC_OUTLINE = """# Föreläsning
 ### Andel
 #### Andel A
 #### Andel Stor
-##### Stor 1
-##### Stor 2
-##### Stor 3
+##### Exempel: Stor 1
+##### Exempel: Stor 2
+##### Exempel: Stor 3
 #### Andel B
 #### Andel C
 """
@@ -504,24 +543,12 @@ MANY_CHILDREN_OUTLINE = "# Föreläsning\n## Ämne\n### Många\n" + "".join(
     f"#### Många {n}\n" for n in range(1, 21)
 )
 
-EXAMPLE_ARC_OUTLINE = """# Föreläsning
-## Ämne
-### Övning: Räkna
-#### Steg 1
-#### Steg 2
-#### Steg 3
-### Slide
-#### Exempel: Visa
-##### Visa 1
-##### Visa 2
-"""
-
 RADIAL_OUTLINE = """# Lecture
 ## Group
 ### A
 #### Leaf A
 #### B
-##### Leaf B
+##### Exempel: Leaf B
 ## Other
 ### C
 ### D
@@ -534,7 +561,7 @@ RADIAL_POSITIONS = {
     "A": (1675.0, 0.0),
     "Leaf A": (1566.2, -1190.3),
     "B": (1566.2, 1190.3),
-    "Leaf B": (1877.4, 1426.8),
+    "Exempel: Leaf B": (1877.4, 1426.8),
     "Other": (-905.0, 0.0),
     "C": (-1184.4, 900.1),
     "D": (-1184.4, -900.1),
@@ -856,15 +883,6 @@ def test_single_child_points_straight_away_from_the_parent(page, render_outline)
     assert math.degrees(offsets["Enda"]) == pytest.approx(0, abs=1)
 
 
-@pytest.mark.parametrize("topic", ["Övning: Räkna", "Exempel: Visa"], ids=["exercise-slide", "example-term"])
-def test_example_branch_faces_away_from_its_parent(page, render_outline, topic):
-    """The children of an example or exercise sit less than 90 degrees from the direction away from its parent."""
-    parents = outline_parents(EXAMPLE_ARC_OUTLINE)
-    open_topic_circles(page, render_outline(EXAMPLE_ARC_OUTLINE))
-    offsets = arc_offsets(node_centres(page), parents, topic)
-    assert max(abs(offset) for offset in offsets.values()) < math.pi / 2
-
-
 # The whole map
 
 
@@ -955,7 +973,9 @@ def test_radial_rings_places_nodes_at_known_positions(page, render_outline):
 
 # Slides in the panel
 
-SLIDES_OUTLINE = "# Matriser\n- Gauss [slide 3] [slide 1]\n  Radoperationer ger trappform."
+SLIDES_OUTLINE = node(
+    "main-topic", "Matriser", node("topic", "Gauss", slides=[3, 1], explanation="Radoperationer ger trappform.")
+)
 
 
 @pytest.fixture
@@ -1008,6 +1028,69 @@ def test_selected_example_panel_rule_is_orange(page, render_outline):
     assert is_orange(page.locator(".panel-rule").evaluate("rule => getComputedStyle(rule).borderTopColor"))
 
 
+def worked_under_a_slide(kind: str = "exempel", **parts) -> dict:
+    """The main topic Matriser, topic A, slide node Slide, and under it one exempel or övning labelled Rad gånger kolonn."""
+    child = {**worked(kind, "Rad gånger kolonn"), **parts}
+    return node("main-topic", "Matriser", node("topic", "A", node("slide", "Slide", child)))
+
+
+def card_labels(page) -> list[str]:
+    return page.locator(".node-label").all_text_contents()
+
+
+def click_card(page, text: str) -> None:
+    """Open the panel of the node whose card label ends with this text."""
+    page.locator(".node-label").filter(has_text=re.compile(f"{re.escape(text)}$")).dispatch_event("click")
+
+
+@pytest.mark.parametrize("kind, prefix", [("exempel", "Exempel: "), ("övning", "Övning: ")])
+def test_map_card_shows_the_type_prefix(page, render_outline, kind: str, prefix: str):
+    """The map card shows `Exempel: ` or `Övning: ` before the label."""
+    show_every_node(page, render_outline(worked_under_a_slide(kind)))
+    assert f"{prefix}Rad gånger kolonn" in card_labels(page)
+
+
+def test_card_aria_label_shows_the_type_prefix(page, render_outline):
+    """The card's aria-label names the node with its prefix."""
+    show_every_node(page, render_outline(worked_under_a_slide()))
+    assert page.get_by_role("button", name="Explore Exempel: Rad gånger kolonn", exact=True).count() == 1
+
+
+@pytest.mark.parametrize("kind, prefix", [("exempel", "Exempel: "), ("övning", "Övning: ")])
+def test_panel_title_shows_the_type_prefix(page, render_outline, kind: str, prefix: str):
+    """The panel title shows `Exempel: ` or `Övning: ` before the label."""
+    show_every_node(page, render_outline(worked_under_a_slide(kind)))
+    click_card(page, "Rad gånger kolonn")
+    assert page.locator("#panel-title").text_content() == f"{prefix}Rad gånger kolonn"
+
+
+def test_explore_next_button_shows_the_type_prefix(page, render_outline):
+    """The Explore next button for an exempel, in its parent's panel, shows the prefix."""
+    show_every_node(page, render_outline(worked_under_a_slide()))
+    click_card(page, "Slide")
+    assert "Exempel: Rad gånger kolonn" in page.locator("#related button").all_text_contents()
+
+
+def test_exempel_panel_shows_task_steps_and_answer(page, render_outline):
+    """An exempel's panel shows its task, one `Steg N:` line per step with any reason, then `Svar:` and the answer."""
+    steps = [{"calculation": "x = 2 - 1", "reason": "subtrahera 1"}, {"calculation": "x = 1", "reason": ""}]
+    show_every_node(page, render_outline(worked_under_a_slide(task="Lös x + 1 = 2", steps=steps, answer="x = 1")))
+    click_card(page, "Rad gånger kolonn")
+    assert page.locator("#explanation").inner_text().splitlines() == [
+        "Lös x + 1 = 2",
+        "Steg 1: x = 2 - 1 (subtrahera 1)",
+        "Steg 2: x = 1",
+        "Svar: x = 1",
+    ]
+
+
+def test_exempel_panel_with_no_steps_or_answer_shows_only_the_task(page, render_outline):
+    """An exempel with no steps and no answer shows only its task."""
+    show_every_node(page, render_outline(worked_under_a_slide(task="Lös x + 1 = 2", steps=[], answer="")))
+    click_card(page, "Rad gånger kolonn")
+    assert page.locator("#explanation").inner_text().splitlines() == ["Lös x + 1 = 2"]
+
+
 def test_panel_shows_slides_in_slide_order(page, slides_url):
     """A node's Slides show top to bottom in Slide order, whatever order the Outline listed them."""
     open_panel(page, slides_url, "Gauss")
@@ -1043,13 +1126,6 @@ def test_node_without_slides_shows_no_slide_area(page, slides_url):
     assert panel_images(page).count() == 0
 
 
-@pytest.mark.parametrize("slides_outline", ["# Matriser\n- Gauss [slide 2] [slide 2]"], ids=["twice"])
-def test_slide_listed_twice_on_one_node_shows_once(page, slides_url):
-    """A Slide listed twice on one node shows once in its panel."""
-    open_panel(page, slides_url, "Gauss")
-    assert panel_images(page).count() == 1
-
-
 def test_panel_slides_load_without_network(page, slides_url):
     """With every network request blocked, each Slide in the panel still loads from the page itself."""
     page.route("**/*", lambda route: route.continue_() if route.request.url.startswith("file:") else route.abort())
@@ -1060,15 +1136,14 @@ def test_panel_slides_load_without_network(page, slides_url):
 
 @pytest.fixture
 def deck_url(deck: Path, cache_dir: Path, tmp_path: Path):
-    """The page for `# Matriser` and `- Gauss [slide 2]` rendered against the three-page Deck read on its own."""
+    """The page for main topic Matriser and topic Gauss on Slide 2, rendered against the three-page Deck read on its own."""
     deck_id = read_deck(deck, cache_dir=cache_dir).deck_id
-    return render_deck_mindmap(
-        deck_id, "# Matriser\n- Gauss [slide 2]", cache_dir=cache_dir, output_dir=tmp_path
-    ).page.as_uri()
+    outline = node("main-topic", "Matriser", node("topic", "Gauss", slides=[2]))
+    return render_deck_mindmap(deck_id, outline, cache_dir=cache_dir, output_dir=tmp_path).page.as_uri()
 
 
 def test_deck_page_panel_shows_a_marked_slide(page, deck_url):
-    """On a page rendered from a Deck alone, a node's panel shows the Slide its marker names."""
+    """On a page rendered from a Deck alone, a node's panel shows the Slide it lists."""
     open_panel(page, deck_url, "Gauss")
     assert panel_images(page).evaluate_all("images => images.map(image => image.alt)") == ["Slide 2"]
 
@@ -1081,16 +1156,20 @@ def test_deck_page_panel_has_no_source_link(page, deck_url):
 
 # A shared term links to every place it appears
 
-SHARED_OUTLINE = """# Matriser
-## A
-### Definition
-#### Matrisprodukt [0:01]
-Rad gånger kolonn.
-## B
-### Räkning
-#### Matrisprodukt [0:03]
-Summan av produkterna.
-"""
+def shared_outline(second: dict | None = None, *more_topics: dict) -> dict:
+    """Topic A with slide Definition holding Matrisprodukt at 0:01, topic B with slide Räkning holding `second`, then `more_topics`.
+
+    `second` defaults to Matrisprodukt at 0:03.
+    """
+    first = term("Matrisprodukt", stamps=["0:01"], explanation="Rad gånger kolonn.")
+    second = second or term("Matrisprodukt", stamps=["0:03"], explanation="Summan av produkterna.")
+    return node(
+        "main-topic",
+        "Matriser",
+        node("topic", "A", node("slide", "Definition", first)),
+        node("topic", "B", node("slide", "Räkning", second)),
+        *more_topics,
+    )
 
 
 def copy_entries(page) -> list[str]:
@@ -1108,27 +1187,20 @@ def open_copy(page, url: str, index: int = 0) -> None:
 
 
 def test_shared_term_lists_every_copy_as_topic_and_slide(page, render_outline):
-    """A term under two Slide nodes lists both copies in its panel as topic › Slide."""
-    open_copy(page, render_outline(SHARED_OUTLINE))
-    assert copy_entries(page) == ["A › Definition", "B › Räkning"]
-
-
-def test_copies_match_ignoring_case_stamps_and_slide_markers(page, render_outline):
-    """Labels that differ only in case, stamps and Slide markers count as copies of one term."""
-    outline = SHARED_OUTLINE.replace("#### Matrisprodukt [0:03]", "#### matrisprodukt [slide 2] [9:99]")
-    open_copy(page, render_outline(outline))
+    """A term under two slide nodes lists both copies in its panel as topic › slide."""
+    open_copy(page, render_outline(shared_outline()))
     assert copy_entries(page) == ["A › Definition", "B › Räkning"]
 
 
 def test_copy_panel_shows_its_own_explanation_beside_the_list(page, render_outline):
     """Clicking the second copy shows that copy's explanation along with the list of copies."""
-    open_copy(page, render_outline(SHARED_OUTLINE), 1)
+    open_copy(page, render_outline(shared_outline()), 1)
     assert (page.locator("#explanation").text_content(), len(copy_entries(page))) == ("Summan av produkterna.", 2)
 
 
 def test_each_copy_entry_is_in_its_topics_colour(page, render_outline):
     """Each entry in the list is drawn in its own topic's colour."""
-    open_copy(page, render_outline(SHARED_OUTLINE))
+    open_copy(page, render_outline(shared_outline()))
     topics = group_colours(page)
     entries = page.locator("#copies li").evaluate_all("items => items.map(item => getComputedStyle(item).color)")
     assert entries == [topics["A"], topics["B"]]
@@ -1136,57 +1208,85 @@ def test_each_copy_entry_is_in_its_topics_colour(page, render_outline):
 
 def test_each_copy_entry_links_to_its_copys_stamp(page, render_outline):
     """Each entry links to the second its own copy's stamp names."""
-    open_copy(page, render_outline(SHARED_OUTLINE))
+    open_copy(page, render_outline(shared_outline()))
     hrefs = copy_links(page).evaluate_all("links => links.map(link => link.href)")
     assert [href.rsplit("#", 1)[1] for href in hrefs] == ["t=1", "t=3"]
 
 
 def test_clicking_a_copy_entry_opens_the_source_at_its_moment(page, render_outline):
     """Clicking an entry opens the Source at the moment that copy's stamp names."""
-    open_copy(page, render_outline(SHARED_OUTLINE))
+    open_copy(page, render_outline(shared_outline()))
     with page.expect_popup() as popup:
         copy_links(page).nth(1).click()
     assert popup.value.url.endswith("#t=3")
 
 
 @pytest.mark.parametrize(
-    "outline",
+    "more_topics",
     [
-        SHARED_OUTLINE + "## Matrisprodukt\n",
-        SHARED_OUTLINE + "### Matrisprodukt\n",
-        SHARED_OUTLINE + "### Exempel: Räkna\n#### Matrisprodukt\n",
-        SHARED_OUTLINE + "#### Exempel\n##### Matrisprodukt\n",
+        [node("topic", "Matrisprodukt")],
+        [node("topic", "C", node("slide", "Övningar", worked("exempel", "Matrisprodukt")))],
+        [node("topic", "C", node("slide", "Matrisprodukt"))],
     ],
-    ids=["topic", "slide", "example", "below-term"],
+    ids=["topic", "exempel", "slide"],
 )
-def test_only_term_level_nodes_count_as_copies(page, render_outline, outline):
-    """A topic, Slide node, example node or node below the term level with the term's label is not listed."""
-    open_copy(page, render_outline(outline))
+def test_only_term_nodes_count_as_copies(page, render_outline, more_topics):
+    """A topic, exempel or slide node labelled like the term is not listed among its copies."""
+    open_copy(page, render_outline(shared_outline(None, *more_topics)))
     assert copy_entries(page) == ["A › Definition", "B › Räkning"]
 
 
-def test_copy_without_linked_stamp_is_listed_without_a_link(page, render_outline):
-    """A copy with no stamp appears in the list with its topic and Slide but no link."""
-    outline = SHARED_OUTLINE.replace("#### Matrisprodukt [0:03]", "#### Matrisprodukt")
-    open_copy(page, render_outline(outline))
-    assert (copy_entries(page), copy_links(page).count()) == (["A › Definition", "B › Räkning"], 1)
+def test_copies_match_by_label_ignoring_case_and_spaces(page, render_outline):
+    """Term nodes whose labels differ only in case and runs of whitespace are listed as copies of one term."""
+    outline = node(
+        "main-topic",
+        "Matriser",
+        node("topic", "A", node("slide", "Definition", term("Rad gånger kolonn"))),
+        node("topic", "B", node("slide", "Räkning", term("rad  gånger kolonn"))),
+    )
+    show_every_node(page, render_outline(outline))
+    page.locator(".node-label").filter(has_text=re.compile("^Rad gånger kolonn$")).dispatch_event("click")
+    assert copy_entries(page) == ["A › Definition", "B › Räkning"]
 
 
-def test_copy_with_unlinked_stamp_is_listed_without_a_link(page, render_outline):
-    """A copy whose only stamp is unlinked appears in the list with no link."""
-    outline = SHARED_OUTLINE.replace("#### Matrisprodukt [0:03]", "#### Matrisprodukt [9:99]")
-    open_copy(page, render_outline(outline))
+def test_copy_without_a_stamp_is_listed_without_a_link(page, render_outline):
+    """A copy with no stamp appears in the list with its topic and slide but no link."""
+    open_copy(page, render_outline(shared_outline(term("Matrisprodukt"))))
     assert (copy_entries(page), copy_links(page).count()) == (["A › Definition", "B › Räkning"], 1)
 
 
 def test_term_that_appears_once_shows_one_link_and_no_list(page, render_outline):
     """A term with no copies shows the single Source link and no list of copies."""
-    open_copy(page, render_outline("# Matriser\n## A\n### Definition\n#### Matrisprodukt [0:01]\n"))
+    once = node("main-topic", "Matriser", node("topic", "A", node("slide", "Definition", term("Matrisprodukt", stamps=["0:01"]))))
+    open_copy(page, render_outline(once))
     assert (page.locator("#panel-source").is_visible(), copy_entries(page)) == (True, [])
 
 
 def test_two_copies_under_one_slide_both_appear(page, render_outline):
-    """Two copies under the same Slide node both appear in the list."""
-    outline = "# Matriser\n## A\n### Definition\n#### Matrisprodukt [0:01]\n#### Matrisprodukt [0:03]\n"
+    """Two copies under the same slide node both appear in the list."""
+    copies = [term("Matrisprodukt", stamps=["0:01"]), term("Matrisprodukt", stamps=["0:03"])]
+    outline = node("main-topic", "Matriser", node("topic", "A", node("slide", "Definition", *copies)))
     open_copy(page, render_outline(outline))
     assert copy_entries(page) == ["A › Definition", "A › Definition"]
+
+
+TEMPLATE_TOKEN_LABEL = "Matriser __CSS__ __JS__"
+TEMPLATE_TOKEN_EXPLANATION = "Radoperationer __TITLE__ __DATA__"
+
+
+@pytest.fixture
+def template_token_url(render_outline):
+    return render_outline(node("main-topic", TEMPLATE_TOKEN_LABEL, explanation=TEMPLATE_TOKEN_EXPLANATION))
+
+
+def test_label_with_template_tokens_shows_as_written(page, template_token_url):
+    """A label holding the page template's tokens shows on its card exactly as written."""
+    page.goto(template_token_url)
+    assert page.locator(".node-label").first.text_content() == TEMPLATE_TOKEN_LABEL
+
+
+def test_explanation_with_template_tokens_shows_as_written(page, template_token_url):
+    """An explanation holding the page template's tokens shows in the panel exactly as written."""
+    page.goto(template_token_url)
+    page.get_by_role("button", name=f"Explore {TEMPLATE_TOKEN_LABEL}", exact=True).click()
+    assert page.locator("#explanation").text_content() == TEMPLATE_TOKEN_EXPLANATION

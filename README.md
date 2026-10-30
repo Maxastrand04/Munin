@@ -15,9 +15,10 @@ Klang's [Pianissimo](https://huggingface.co/KlangAI/pianissimo-sv) model does th
 | `transcribe(source, vocabulary?, alpha?)` | Takes a YouTube URL, a KTH Play video URL or a local file, runs Pianissimo with VAD, caches the Transcript, returns its ID and stats. Vocabulary terms are case sensitive and boosted at `alpha`, 0 to 2, default 1.0. A call with terms reruns the Source and replaces its cached Transcript under the same ID |
 | `get_transcript(id)` | Returns `[m:ss] text` lines for the LLM |
 | `read_slides(id, deck)` | Attaches a PDF of lecture slides (a Deck) to a Transcript, replacing any earlier Deck, and returns each Slide's number, text and image for the LLM to match against the Transcript |
-| `render_mindmap(id, outline)` | Writes an interactive HTML Mindmap with Topic circles and Radial rings, turning each `[m:ss]` or `[h:mm:ss]` into a link to the Source and showing the Slides named by `[slide N]` markers in the node's panel. Returns the page path, the stamps it left unlinked (malformed or past the Source's end) and the Slide markers it left unlinked (malformed, past the Deck's last Slide, or no Deck) |
+| `get_outline_schema()` | Returns the JSON Schema an Outline must follow, plus a sample exempel node and övning node with LaTeX in the task, steps and answer. The render tools tell the LLM to call it before writing an Outline |
+| `render_mindmap(id, outline)` | Writes an interactive HTML Mindmap with Topic circles and Radial rings from a JSON Outline, turning every stamp into a link to the Source and showing the Slides a node lists in its panel. Returns the page path. An Outline that breaks the schema, or has a malformed stamp, a stamp past the Source's end, or a Slide number it cannot link, writes nothing and fails with every problem listed by its path of labels |
 | `read_deck(deck)` | Reads a PDF of lecture slides on its own, with no recording, keeps a copy in the cache, and returns its Deck ID and each Slide's number, text and image |
-| `render_deck_mindmap(deck_id, outline)` | Writes the same Mindmap from an Outline written from the Slides alone, showing the Slides named by `[slide N]` markers. The page has no Source links. Returns the page path, every stamp as unlinked with reason `no_source`, and the Slide markers it left unlinked (malformed or past the Deck's last Slide) |
+| `render_deck_mindmap(deck_id, outline)` | Writes the same Mindmap from a JSON Outline written from the Slides alone, showing the Slides a node lists. The page has no Source links. Returns the page path. Any stamp, a Slide number past the Deck's last Slide, or a break from the schema writes nothing and fails with every problem listed |
 
 The `lecture_to_mindmap` prompt takes a Source, a Deck path, or both. With both, it adds a `read_slides` step before the Outline is written. With only a Deck path, it runs `read_deck` and `render_deck_mindmap` instead of transcribing. With neither, it is an error.
 
@@ -62,9 +63,11 @@ whole Mindmap" zooms out to fit everything. Clicking a node centres it without c
 zoom. Timestamp links open the Source separately. The page embeds
 its styles and scripts, so the Mindmap itself works offline.
 
-Outlines may use Markdown headings or nested lists. Optional prose immediately after
-a heading or list item appears in that node's explanation panel. The renderer does
-not generate explanations; it uses the supplied Outline.
+An Outline is a JSON tree of typed nodes. One main-topic sits at the root, then topic, slide and term
+nodes, with exempel and övning nodes under any of them. `get_outline_schema` returns
+the full schema. A node's `explanation` appears in its panel, and an exempel or övning
+shows its task, steps and answer there. The renderer does not generate explanations;
+it uses the supplied Outline.
 
 To regenerate the demo from its existing cached Transcript and the approved example
 Outline, run:
@@ -74,7 +77,7 @@ uv run python scripts/render_demo.py
 ```
 
 This writes `mindmaps/5ea1f5df74c8.html`. The example Outline in
-[`docs/examples/matriser-outline.md`](docs/examples/matriser-outline.md) includes the
+[`docs/examples/matriser-outline.json`](docs/examples/matriser-outline.json) includes the
 sample explanations used during design review. For a different cached Transcript,
 pass `--transcript-id`.
 
