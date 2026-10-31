@@ -1,4 +1,5 @@
 import json
+import re
 from pathlib import Path
 
 import pytest
@@ -51,9 +52,9 @@ def test_samples_are_an_exempel_then_an_ovning():
 
 
 @pytest.mark.parametrize("index", [0, 1], ids=["exempel", "övning"])
-def test_sample_task_carries_latex(index: int):
-    """Each sample's task carries LaTeX."""
-    assert "\\" in get_outline_schema().samples[index]["task"]
+def test_sample_task_carries_latex_between_dollars(index: int):
+    """Each sample's task is prose with LaTeX between `$...$`."""
+    assert re.search(r"\$[^$]*\\[^$]*\$", get_outline_schema().samples[index]["task"])
 
 
 @pytest.mark.parametrize("index", [0, 1], ids=["exempel", "övning"])
@@ -63,9 +64,15 @@ def test_sample_steps_carry_latex(index: int):
 
 
 @pytest.mark.parametrize("index", [0, 1], ids=["exempel", "övning"])
-def test_sample_answer_carries_latex(index: int):
-    """Each sample's answer carries LaTeX."""
-    assert "\\" in get_outline_schema().samples[index]["answer"]
+def test_sample_calculations_carry_no_dollars(index: int):
+    """A step's calculation is LaTeX alone, so no sample calculation holds a `$`."""
+    assert not any("$" in step["calculation"] for step in get_outline_schema().samples[index]["steps"])
+
+
+@pytest.mark.parametrize("index", [0, 1], ids=["exempel", "övning"])
+def test_sample_answer_carries_latex_between_dollars(index: int):
+    """Each sample's answer holds LaTeX between `$...$`."""
+    assert re.search(r"\$[^$]*\\[^$]*\$", get_outline_schema().samples[index]["answer"])
 
 
 @pytest.mark.parametrize("index", [0, 1], ids=["exempel", "övning"])

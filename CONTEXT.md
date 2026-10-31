@@ -33,7 +33,7 @@ One page of a Deck, numbered from 1.
 _Avoid_: page, frame
 
 **Outline**:
-The JSON tree of typed nodes the LLM writes from a Transcript, or from a standalone Deck's Slides alone, following the schema `get_outline_schema` returns. One main-topic node sits at the root, with topic nodes under it, slide nodes under those and term nodes under those. Each node carries a `label`, `stamps` in `m:ss` or `h:mm:ss`, Slide numbers in `slides`, an `explanation` and `children`. Every node carries every part its type has, and a part with nothing in it is `""` or `[]`. An Outline written from a standalone Deck carries no stamps and gives every term node a one to three sentence explanation. Math in any part is LaTeX.
+The JSON tree of typed nodes the LLM writes from a Transcript, or from a standalone Deck's Slides alone, following the schema `get_outline_schema` returns. One main-topic node sits at the root, with topic nodes under it, slide nodes under those and term nodes under those. Each node carries a `label`, `stamps` in `m:ss` or `h:mm:ss`, Slide numbers in `slides`, an `explanation` and `children`. Every node carries every part its type has, and a part with nothing in it is `""` or `[]`. An Outline written from a standalone Deck carries no stamps and gives every term node a one to three sentence explanation. Math in any part is LaTeX. A task, an answer or an explanation is prose with its math between `$...$`, and a step's calculation is LaTeX alone.
 _Avoid_: notes, summary, mindmap (for the JSON)
 
 **Mindmap**:

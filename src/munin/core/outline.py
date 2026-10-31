@@ -63,8 +63,8 @@ class OutlineSchema:
 
     `schema` is a JSON Schema, draft 2020-12, as a dict that `json.dumps`
     accepts. `samples` is two bare nodes the LLM can copy: an exempel first,
-    then an övning, each with LaTeX in its task, in at least one step's
-    calculation, and in its answer.
+    then an övning, each with LaTeX between `$...$` in its task and its
+    answer, and LaTeX with no `$` in at least one step's calculation.
     """
 
     schema: dict
@@ -88,8 +88,10 @@ def get_outline_schema() -> OutlineSchema:
       `explanation` and no `children`.
 
     `type`, `label`, `task` and each step's `calculation` must be non-blank.
-    Every other part may be empty, `""` or `[]`. Task, calculations and
-    answer are LaTeX, and reasons are short Swedish. One table in this module
+    Every other part may be empty, `""` or `[]`. Math is LaTeX. A task, an
+    answer and an explanation are prose with math between `$...$`, and a
+    literal dollar sign is `\\$`. A step's calculation is LaTeX alone, with no
+    `$`. Reasons are short Swedish. One table in this module
     says which parts each type has and which must be non-blank, and both the
     schema and the check are built from it, so making a part required is a
     one-line change.
@@ -270,8 +272,10 @@ def _schema() -> dict:
         "description": (
             "One main-topic node at the root. Every node carries every part its type has; "
             "a part that may be empty is written as \"\" or []. Stamps are \"m:ss\" or \"h:mm:ss\" "
-            "without brackets, and Slide numbers count from 1. Task, step calculations and "
-            "answer are LaTeX, so escape every backslash as \\\\ in JSON. Reasons are short Swedish."
+            "without brackets, and Slide numbers count from 1. Math is LaTeX, so escape every "
+            "backslash as \\\\ in JSON. Task, answer and explanation are prose with math between "
+            "$...$, and a literal dollar sign is \\\\$. A step's calculation is LaTeX alone, with no $. "
+            "Reasons are short Swedish."
         ),
         "$ref": "#/$defs/main-topic",
         "$defs": defs,
@@ -317,20 +321,20 @@ def _samples() -> tuple[dict, dict]:
         "label": "Förenkla ett bråk",
         "stamps": [],
         "slides": [],
-        "task": "Förenkla \\frac{6}{8}",
+        "task": "Förenkla $\\frac{6}{8}$",
         "steps": [
             {"calculation": "\\frac{6}{8} = \\frac{2 \\cdot 3}{2 \\cdot 4}", "reason": "faktorisera"},
             {"calculation": "\\frac{2 \\cdot 3}{2 \\cdot 4} = \\frac{3}{4}", "reason": "förkorta med 2"},
         ],
-        "answer": "\\frac{3}{4}",
+        "answer": "$\\frac{3}{4}$",
     }
     ovning = {
         "type": "övning",
         "label": "Matrisprodukt",
         "stamps": [],
         "slides": [],
-        "task": "Beräkna \\begin{pmatrix} 1 & 2 \\end{pmatrix} \\begin{pmatrix} 3 \\\\ 4 \\end{pmatrix}",
+        "task": "Beräkna $\\begin{pmatrix} 1 & 2 \\end{pmatrix} \\begin{pmatrix} 3 \\\\ 4 \\end{pmatrix}$",
         "steps": [{"calculation": "1 \\cdot 3 + 2 \\cdot 4", "reason": "rad gånger kolonn"}],
-        "answer": "\\begin{pmatrix} 11 \\end{pmatrix}",
+        "answer": "$\\begin{pmatrix} 11 \\end{pmatrix}$",
     }
     return exempel, ovning
