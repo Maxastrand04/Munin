@@ -60,7 +60,7 @@
             {
               "type": "term",
               "label": "Udda funktion",
-              "explanation": "En funktion som byter tecken när variabeln byter tecken, som x eller 2xz i variabeln x.",
+              "explanation": "En funktion som byter tecken när variabeln byter tecken, som $x$ eller $2xz$ i variabeln $x$.",
               "stamps": [
                 "3:46"
               ],
@@ -107,7 +107,7 @@
             "0:27"
           ],
           "slides": [],
-          "task": "Skriv flödet av \\mathbf{F} = (xy^2,\\ y,\\ 2xz) ut ur halvklotet K: x^2 + y^2 + z^2 \\le 4,\\ z \\ge 0 som en trippelintegral och förenkla",
+          "task": "Skriv flödet av $\\mathbf{F} = (xy^2,\\ y,\\ 2xz)$ ut ur halvklotet $K: x^2 + y^2 + z^2 \\le 4,\\ z \\ge 0$ som en trippelintegral och förenkla.",
           "steps": [
             {
               "calculation": "\\iint_{\\partial K} \\mathbf{F} \\cdot \\mathbf{N}\\, dS = \\iiint_K \\operatorname{div} \\mathbf{F}\\, dx\\,dy\\,dz",
@@ -130,7 +130,7 @@
               "reason": "udda i x, K symmetrisk i x-led"
             }
           ],
-          "answer": "\\iiint_K y^2\\, dx\\,dy\\,dz + \\frac{16\\pi}{3}"
+          "answer": "$\\iiint_K y^2\\, dx\\,dy\\,dz + \\frac{16\\pi}{3}$"
         },
         {
           "type": "övning",
@@ -139,7 +139,7 @@
             "5:03"
           ],
           "slides": [],
-          "task": "Skriv flödet av \\mathbf{F} = (x^2,\\ y^2,\\ z^2) ut ur rätblocket K, som är symmetriskt i x-led och y-led men ligger ovanför xy-planet, som en trippelintegral och förenkla",
+          "task": "Skriv flödet av $\\mathbf{F} = (x^2,\\ y^2,\\ z^2)$ ut ur rätblocket $K$, som är symmetriskt i $x$-led och $y$-led men ligger ovanför $xy$-planet, som en trippelintegral och förenkla.",
           "steps": [
             {
               "calculation": "\\iint_{\\partial K} \\mathbf{F} \\cdot \\mathbf{N}\\, dS = \\iiint_K \\operatorname{div} \\mathbf{F}\\, dx\\,dy\\,dz",
@@ -162,7 +162,7 @@
               "reason": "udda i y, K symmetrisk i y-led"
             }
           ],
-          "answer": "2\\iiint_K z\\, dx\\,dy\\,dz"
+          "answer": "$2\\iiint_K z\\, dx\\,dy\\,dz$"
         }
       ]
     }
