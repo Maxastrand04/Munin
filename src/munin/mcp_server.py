@@ -69,8 +69,12 @@ def create_server(
     per stretch of the lecture copied from `get_transcript`, and every
     example and exercise written out as an exempel or övning node, a Slide
     that is only one example or exercise included, with no `Exempel:` or
-    `Övning:` in any label. When a
-    render fails, it says to fix every problem listed and render again.
+    `Övning:` in any label. It asks for LaTeX for every math expression,
+    between `$...$` in explanations, tasks, answers and step reasons, never
+    `$$`, and with no `$` in a step's calculation, and for each step to be
+    one calculation with at most one short Swedish sentence on why. When a
+    render fails, it says to fix every problem listed, broken LaTeX
+    included, and render again.
     `read_slides(transcript_id: str, deck: str)` attaches the Deck through the
     core's `read_slides` and returns two content blocks per Slide in Slide
     order: a text block `Slide N:` followed by the Slide's text on the next
@@ -88,11 +92,13 @@ def create_server(
     and exercise written out as an exempel or övning node the same way, every node's
     `stamps` left empty, and an explanation of one to three sentences on
     every term node that gives context and covers only what the Slides
-    cover.
+    cover. It asks for LaTeX and steps as `render_mindmap`'s does, and says
+    to fix every problem listed, broken LaTeX included, and render again.
     The `lecture_to_mindmap(source: str | None = None, deck: str | None = None)`
     prompt takes a Source, a Deck, or both. With a Source, it lists the run's
     steps for that Source, asks for the Outline as JSON, and has the LLM call
-    `get_outline_schema` before writing it, leaving the content guidance to
+    `get_outline_schema` before writing it, asks for LaTeX for every math
+    expression, and leaves the rest of the content guidance to
     `render_mindmap`'s description. With a `deck` as well, it adds a step between
     `get_transcript` and writing the Outline that calls `read_slides` with the
     Transcript ID and that Deck path, and asks the LLM to match each Slide to
@@ -100,7 +106,7 @@ def create_server(
     text is the same as before Decks existed. With only a `deck`, it lists the
     slides-only steps: call `read_deck` with that Deck path, call
     `get_outline_schema`, write a JSON Outline from the Slides as
-    `render_deck_mindmap` describes, call
+    `render_deck_mindmap` describes, with LaTeX for every math expression, call
     `render_deck_mindmap` with the Deck ID and the Outline, and reply with only
     the page as a `file://` link, or with which step failed and the error.
     It never names `transcribe`. With neither, getting the prompt fails with

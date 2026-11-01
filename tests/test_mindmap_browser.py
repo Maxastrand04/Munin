@@ -1071,26 +1071,6 @@ def test_explore_next_button_shows_the_type_prefix(page, render_outline):
     assert "Exempel: Rad gånger kolonn" in page.locator("#related button").all_text_contents()
 
 
-def test_exempel_panel_shows_task_steps_and_answer(page, render_outline):
-    """An exempel's panel shows its task, one `Steg N:` line per step with any reason, then `Svar:` and the answer."""
-    steps = [{"calculation": "x = 2 - 1", "reason": "subtrahera 1"}, {"calculation": "x = 1", "reason": ""}]
-    show_every_node(page, render_outline(worked_under_a_slide(task="Lös x + 1 = 2", steps=steps, answer="x = 1")))
-    click_card(page, "Rad gånger kolonn")
-    assert page.locator("#explanation").inner_text().splitlines() == [
-        "Lös x + 1 = 2",
-        "Steg 1: x = 2 - 1 (subtrahera 1)",
-        "Steg 2: x = 1",
-        "Svar: x = 1",
-    ]
-
-
-def test_exempel_panel_with_no_steps_or_answer_shows_only_the_task(page, render_outline):
-    """An exempel with no steps and no answer shows only its task."""
-    show_every_node(page, render_outline(worked_under_a_slide(task="Lös x + 1 = 2", steps=[], answer="")))
-    click_card(page, "Rad gånger kolonn")
-    assert page.locator("#explanation").inner_text().splitlines() == ["Lös x + 1 = 2"]
-
-
 def test_panel_shows_slides_in_slide_order(page, slides_url):
     """A node's Slides show top to bottom in Slide order, whatever order the Outline listed them."""
     open_panel(page, slides_url, "Gauss")

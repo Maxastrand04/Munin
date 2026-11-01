@@ -88,10 +88,12 @@ def get_outline_schema() -> OutlineSchema:
       `explanation` and no `children`.
 
     `type`, `label`, `task` and each step's `calculation` must be non-blank.
-    Every other part may be empty, `""` or `[]`. Math is LaTeX. A task, an
-    answer and an explanation are prose with math between `$...$`, and a
-    literal dollar sign is `\\$`. A step's calculation is LaTeX alone, with no
-    `$`. Reasons are short Swedish. One table in this module
+    Every other part may be empty, `""` or `[]`. Math is LaTeX, always
+    inline, never `$$`. A task, an answer, an explanation and a step's
+    reason are prose with math between `$...$`, and a literal dollar sign is
+    `\\$`. A step's calculation is LaTeX alone, with no `$`. Each step is one
+    calculation, and its reason at most one short Swedish sentence on why.
+    The schema's description says all of this. One table in this module
     says which parts each type has and which must be non-blank, and both the
     schema and the check are built from it, so making a part required is a
     one-line change.

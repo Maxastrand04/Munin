@@ -77,7 +77,20 @@ def render_mindmap(
       stored audio duration,
     - a Slide number below 1, a Slide number past the last Slide of the Deck
       attached to the Transcript, any Slide number when the Transcript has no
-      Deck, and a Slide number listed twice on one node.
+      Deck, and a Slide number listed twice on one node,
+    - broken LaTeX, meaning a piece the page's KaTeX cannot draw inline. The
+      pieces are each `$...$` in an explanation, a task, an answer or a step
+      reason, and each step calculation as a whole. A `$` with no closing `$`
+      is broken from that `$` to the end of the part, and `$$` is broken,
+      since math is never display mode. `\\$` is a literal dollar sign and
+      never opens or closes math. Labels are not checked.
+
+    Each broken piece is one problem, whose message names the part, as
+    `explanation`, `task`, `answer`, `step 2 calculation` or `step 2 reason`,
+    then the piece exactly as the part holds it, dollars included, then
+    KaTeX's reason, such as `Expected '}', got 'EOF' at end of input`.
+    The LaTeX check accepts exactly what the page's KaTeX draws, because it
+    runs the same KaTeX build the page embeds.
 
     A node of an unknown type is one problem, and nothing else about it is
     checked. A part of the wrong kind is one problem, and what it holds is
@@ -85,7 +98,8 @@ def render_mindmap(
     whatever the list holds, and the nodes in it are not checked. Every other
     fault is a problem of its own, so a misspelled key gives one problem for
     the unknown key and one for the missing part. Stamps and Slide numbers
-    are checked only on nodes whose parts have the right kind. Any problem
+    are checked only on nodes whose parts have the right kind, and LaTeX
+    only in parts that are strings. Any problem
     raises `OutlineStructureError` with all of them.
 
     An Outline that passes renders every node. Each stamp becomes a Timestamp
@@ -96,11 +110,26 @@ def render_mindmap(
     explanation, then its linked Slides in Slide order, each captioned and
     alt-texted `Slide N`, then the Source link. The page embeds each linked
     Slide's image once, as a base64 `data:image/png` URI, and no Slide that no
-    node links. An exempel or övning panel shows, where an explanation would
-    be, one line each: the task, then `Steg N: <calculation>` per step,
-    counted from 1, with ` (<reason>)` after it when the reason is not empty,
-    then `Svar: <answer>` when the answer is not empty. LaTeX shows as
-    written. Labels, explanations and every other text show as plain text.
+    node links.
+
+    An explanation's math typesets inline with KaTeX, prose wraps like a
+    paragraph, and long math breaks at `=` and `+`. An explanation with no
+    `$` shows as plain text, line breaks kept. A piece the browser's KaTeX
+    still cannot draw shows as written, dollars included, and the rest
+    typesets. Labels show as plain text everywhere, LaTeX included.
+
+    An exempel or övning panel labels its text `Exempel` or `Övning` in place
+    of "A simple explanation", and shows a box where the explanation would
+    be. The box's heading is `Exempel N` or `Övning N`, where N counts
+    exempel and övning nodes separately in Outline order, from 1. Under it
+    come the task, then a closed "Visa lösning" section with the step count
+    beside it, holding the steps numbered from 1, each with its calculation
+    as inline math and its reason under it, then a closed "Visa svar"
+    section holding the answer. A task, reason or answer typesets as an
+    explanation does. A box with no steps leaves out "Visa lösning", one with
+    an empty answer leaves out "Visa svar", and one with neither shows the
+    muted line "Ingen lösning i föreläsningen. Försök själv." Box text is set
+    in KaTeX_Main, and the section toggles in the app's sans.
 
     Each topic gives its branch one colour. Exempel and övning nodes are
     orange because of their type, whatever their label says: an orange of hue
@@ -121,9 +150,9 @@ def render_mindmap(
     listed without a link. Only nodes of type `term` count.
 
     The page is `<transcript_id>.html` in `output_dir`, replacing any earlier
-    page for the same Transcript. CSS, JavaScript, Outline data and Slide
-    images are embedded, so it opens straight from disk without network
-    access. Radial rings is the default layout; settings also offers Topic
+    page for the same Transcript. CSS, JavaScript, KaTeX with its fonts,
+    Outline data and Slide images are embedded, so it opens straight from
+    disk and typesets its math without network access. Radial rings is the default layout; settings also offers Topic
     circles.
 
     `cache_dir` defaults to the per-user cache folder for Munin.
