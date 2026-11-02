@@ -89,7 +89,9 @@ def render_mindmap(
     Each broken piece is one problem, whose message names the part, as
     `explanation`, `task`, `answer`, `step 2 calculation` or `step 2 reason`,
     then the piece exactly as the part holds it, dollars included, then
-    KaTeX's reason, such as `Expected '}', got 'EOF' at end of input`.
+    KaTeX's own reason, unedited, with `at end of input` or `at position N`
+    (N counted from 1) added when KaTeX knows where, such as `Unexpected end
+    of input in a macro argument, expected '}' at end of input`.
     The LaTeX check accepts exactly what the page's KaTeX draws, because it
     runs the same KaTeX build the page embeds.
 

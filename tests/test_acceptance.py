@@ -143,9 +143,9 @@ def test_broken_latex_problem_quotes_the_piece_with_its_dollars(transcript_id, c
 
 
 def test_broken_latex_problem_gives_katex_reason(transcript_id, cache_dir: Path, tmp_path: Path):
-    """The message carries KaTeX's own reason, such as the brace it expected."""
+    """The message ends with KaTeX's own reason, and where in the piece it hit it."""
     [message] = messages_of(transcript_id, lecture(term(explanation=BROKEN)), cache_dir, tmp_path)
-    assert "Expected '}'" in message
+    assert message.endswith(": Unexpected end of input in a macro argument, expected '}' at end of input")
 
 
 def test_whole_calculation_is_the_quoted_piece(transcript_id, cache_dir: Path, tmp_path: Path):
