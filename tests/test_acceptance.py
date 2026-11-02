@@ -31,6 +31,7 @@ DECK_PATH = "/tmp/matriser.pdf"
 PROMPT_VARIANTS = [(WATCH_URL, None), (WATCH_URL, DECK_PATH), (None, DECK_PATH)]
 PROMPT_VARIANT_IDS = ["source", "source-and-deck", "deck-only"]
 TRY_YOURSELF = "Ingen lösning i föreläsningen. Försök själv."
+ORANGE = "rgb(217, 112, 28)"
 
 
 def one_sentence(wav: Path, vocabulary: Vocabulary | None):
@@ -275,6 +276,12 @@ def test_render_description_forbids_double_dollars(cache_dir: Path, tool: str):
 
 
 @pytest.mark.parametrize("tool", ["render_mindmap", "render_deck_mindmap"])
+def test_render_description_forbids_dollars_in_a_calculation(cache_dir: Path, tool: str):
+    """Both render tool descriptions say a step's calculation holds no `$`."""
+    assert "with no `$`" in tool_description(create_server(cache_dir=cache_dir), tool)
+
+
+@pytest.mark.parametrize("tool", ["render_mindmap", "render_deck_mindmap"])
 def test_render_description_asks_for_one_calculation_per_step(cache_dir: Path, tool: str):
     """Both render tool descriptions ask for each step to be one calculation."""
     assert "one calculation" in tool_description(create_server(cache_dir=cache_dir), tool)
@@ -422,6 +429,53 @@ def test_worked_panel_label_names_its_type(page, render_outline, kind: str, labe
     """The label above an exempel's or övning's text reads `Exempel` or `Övning`."""
     open_panel(page, render_outline(lecture(worked(kind))), "Rad gånger kolonn")
     assert page.locator(".explanation-label").text_content() == label
+
+
+def test_box_takes_the_explanations_place(page, render_outline):
+    """An exempel's panel hides the explanation and shows the box in its place."""
+    open_panel(page, render_outline(lecture(term(explanation="Arean är stor."), worked())), "Gauss")
+    page.locator(".node-label").filter(has_text=re.compile("Rad gånger kolonn$")).dispatch_event("click")
+    assert (page.locator("#explanation").is_visible(), box(page).is_visible()) == (False, True)
+
+
+def test_box_is_a_white_bordered_card(page, render_outline):
+    """The box is a white card with a thin border and rounded corners."""
+    open_panel(page, render_outline(lecture(worked())), "Rad gånger kolonn")
+    style = box(page).evaluate(
+        "box => { const s = getComputedStyle(box);"
+        " return [s.backgroundColor, parseFloat(s.borderTopWidth) > 0, parseFloat(s.borderTopLeftRadius) > 0]; }"
+    )
+    assert style == ["rgb(255, 255, 255)", True, True]
+
+
+def test_box_heading_is_orange_small_capitals_underlined_in_orange(page, render_outline):
+    """The box heading is in small orange capitals with an orange underline."""
+    open_panel(page, render_outline(lecture(worked())), "Rad gånger kolonn")
+    style = box(page).get_by_role("heading").evaluate(
+        "h => { const s = getComputedStyle(h);"
+        " return [s.color, s.borderBottomColor, parseFloat(s.borderBottomWidth) > 0, s.fontVariantCaps]; }"
+    )
+    assert style == [ORANGE, ORANGE, True, "small-caps"]
+
+
+def test_open_answer_is_tinted_orange(page, render_outline):
+    """The Visa svar section is tinted orange once open."""
+    open_panel(page, render_outline(lecture(worked())), "Rad gånger kolonn")
+    answer = section(page, "Visa svar")
+    answer.locator("summary").click()
+    background = answer.evaluate("details => getComputedStyle(details).backgroundColor")
+    assert background.startswith("rgba(217, 112, 28,")
+
+
+def test_step_reason_is_muted_italic(page, render_outline):
+    """A step's reason is set in muted italic, apart from its calculation."""
+    open_panel(page, render_outline(lecture(worked(steps=(("x = 1", "subtrahera 1"),)))), "Rad gånger kolonn")
+    open_solution(page)
+    style = box(page).locator(".step-reason").evaluate(
+        "reason => { const s = getComputedStyle(reason), box = getComputedStyle(reason.closest('#worked'));"
+        " return [s.fontStyle, s.color !== box.color]; }"
+    )
+    assert style == ["italic", True]
 
 
 @pytest.mark.parametrize(
