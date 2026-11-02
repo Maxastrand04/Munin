@@ -4,6 +4,7 @@ import re
 from dataclasses import dataclass
 
 from munin.core.errors import OutlineProblem
+from munin.core.latex import BrokenLatex, calculation_problems, prose_problems
 from munin.core.stamps import display_stamp, stamp_seconds
 
 # Each part's kind says what its value holds. `text` and `prose` are strings,
@@ -54,6 +55,8 @@ _WORKED_PREFIX = re.compile(r"\s*(exempel|övning)\s*:", re.IGNORECASE)
 _NO_CONTROL = "^[^\\u0000-\\u001f\\u007f-\\u009f]*$"
 _NON_BLANK = "\\S"
 _STAMP = "^(\\d+:[0-5]\\d|\\d+:[0-5]\\d:[0-5]\\d)$"
+# Parts other than step reasons and calculations whose LaTeX the render checks.
+_LATEX_PARTS = ("explanation", "task", "answer")
 _SCHEMA_ID = "https://json-schema.org/draft/2020-12/schema"
 
 
@@ -130,6 +133,10 @@ def check_outline(
     return tuple(check.problems)
 
 
+def _latex_message(key: str, broken: BrokenLatex) -> str:
+    return f'{key} has LaTeX that cannot be drawn, "{broken.piece}": {broken.reason}'
+
+
 def _node_path_label(node: object, position: int) -> str:
     """Return how a node stands in a label path: its label, or `#N` when the label is missing or blank."""
     label = node.get("label") if isinstance(node, dict) else None
@@ -191,6 +198,10 @@ class _Check:
             self.add(path, f"{key} is blank")
         if kind == "text" and _CONTROL.search(value):
             self.add(path, f"{key} holds a control character; escape every LaTeX backslash as \\\\")
+        elif key in _LATEX_PARTS or key.endswith((" reason", " calculation")):
+            broken = calculation_problems(value) if key.endswith(" calculation") else prose_problems(value)
+            for piece in broken:
+                self.add(path, _latex_message(key, piece))
 
     def label_prefix(self, path: tuple[str, ...], label: object) -> None:
         prefix = _WORKED_PREFIX.match(label) if isinstance(label, str) else None
@@ -275,9 +286,9 @@ def _schema() -> dict:
             "One main-topic node at the root. Every node carries every part its type has; "
             "a part that may be empty is written as \"\" or []. Stamps are \"m:ss\" or \"h:mm:ss\" "
             "without brackets, and Slide numbers count from 1. Math is LaTeX, so escape every "
-            "backslash as \\\\ in JSON. Task, answer and explanation are prose with math between "
-            "$...$, and a literal dollar sign is \\\\$. A step's calculation is LaTeX alone, with no $. "
-            "Reasons are short Swedish."
+            "backslash as \\\\ in JSON. Task, answer, explanation and a step's reason are prose with math "
+            "between $...$, never $$, and a literal dollar sign is \\\\$. A step's calculation is LaTeX "
+            "alone, with no $. Each step is one calculation, and its reason one short Swedish sentence."
         ),
         "$ref": "#/$defs/main-topic",
         "$defs": defs,

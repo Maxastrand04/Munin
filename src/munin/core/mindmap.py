@@ -15,6 +15,7 @@ from munin.core.errors import (
     OutlineSyntaxError,
     UnknownDeckError,
 )
+from munin.core.latex import katex_css, katex_js
 from munin.core.outline import check_outline
 from munin.core.slides import deck_path, standalone_deck_path
 from munin.core.sources import Source, Video
@@ -234,6 +235,7 @@ def _parsed(outline: dict | str) -> object:
 def _flat_nodes(outline: dict, source: Source | None) -> list[dict]:
     """Return the checked Outline's nodes in Outline order, each pointing at its parent by index."""
     nodes: list[dict] = []
+    counts = {"exempel": 0, "övning": 0}
 
     def add(node: dict, parent: int | None) -> None:
         index = len(nodes)
@@ -241,6 +243,15 @@ def _flat_nodes(outline: dict, source: Source | None) -> list[dict]:
         for stamp in node["stamps"]:
             offset = stamp_seconds(f"[{stamp}]")
             links.append({"text": display_stamp(offset), "url": _timestamp_url(source, offset)})
+        worked = None
+        if node["type"] in counts:
+            counts[node["type"]] += 1
+            worked = {
+                "heading": f"{node['type'].capitalize()} {counts[node['type']]}",
+                "task": node["task"],
+                "steps": node["steps"],
+                "answer": node["answer"],
+            }
         nodes.append(
             {
                 "id": index,
@@ -250,7 +261,8 @@ def _flat_nodes(outline: dict, source: Source | None) -> list[dict]:
                 "links": links,
                 "slides": sorted(node["slides"]),
                 "term": " ".join(node["label"].split()).casefold(),
-                "explanation": node["explanation"] if "explanation" in node else _worked_text(node),
+                "explanation": node.get("explanation", ""),
+                "worked": worked,
             }
         )
         for child in node.get("children", []):
@@ -258,17 +270,6 @@ def _flat_nodes(outline: dict, source: Source | None) -> list[dict]:
 
     add(outline, None)
     return nodes
-
-
-def _worked_text(node: dict) -> str:
-    """Return an exempel's or övning's task, steps and answer as the lines its panel shows."""
-    lines = [node["task"]]
-    for number, step in enumerate(node["steps"], start=1):
-        reason = f" ({step['reason']})" if step["reason"] else ""
-        lines.append(f"Steg {number}: {step['calculation']}{reason}")
-    if node["answer"]:
-        lines.append(f"Svar: {node['answer']}")
-    return "\n".join(lines)
 
 
 def _slide_images(deck: Path, numbers: list[int]) -> dict[str, str]:
@@ -296,6 +297,8 @@ def _page_html(page_id: str, nodes: list[dict], source: Source | None, slide_ima
     replacements = {
         "__CSS__": (_ASSETS / "mindmap.css").read_text(encoding="utf-8"),
         "__JS__": (_ASSETS / "mindmap.js").read_text(encoding="utf-8"),
+        "__KATEX_CSS__": katex_css(),
+        "__KATEX_JS__": katex_js().replace("</script", "<\\/script"),
         "__DATA__": _script_safe_json(nodes),
         "__PAGE__": _script_safe_json(
             {"title": title, "source_url": source_url, "page_id": page_id, "slides": slide_images}
@@ -305,7 +308,7 @@ def _page_html(page_id: str, nodes: list[dict], source: Source | None, slide_ima
     }
     template = (_ASSETS / "mindmap.html").read_text(encoding="utf-8")
     return re.sub(
-        r"__(?:CSS|JS|DATA|PAGE|TITLE|SOURCE_LINK)__",
+        r"__(?:CSS|JS|KATEX_CSS|KATEX_JS|DATA|PAGE|TITLE|SOURCE_LINK)__",
         lambda match: replacements[match[0]],
         template,
     )

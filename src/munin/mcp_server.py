@@ -182,6 +182,12 @@ def create_server(
           round a stamp.
         - Optionally, a short `explanation` on any node that has one. It appears
           in that node's panel.
+        - Write every math expression as LaTeX, always inline and never `$$`.
+          In an explanation, a task, an answer and a step's reason, put each
+          piece of math between `$...$` and write the rest as plain prose, with
+          `\\$` for a literal dollar sign. Write a step's calculation as LaTeX
+          alone, with no `$`. Make each step one calculation, with at most one
+          short Swedish sentence on why in its reason.
 
         When the lecture has a Deck read with `read_slides`, base the topics on its
         Slides, and list in a node's `slides` each Slide that covers it, counted
@@ -190,9 +196,9 @@ def create_server(
 
         Returns `page`, the absolute path of the written HTML page. Each stamp
         becomes a link that opens the Transcript's Source at that second. When
-        the Outline breaks the schema, or a stamp or Slide number cannot be
-        linked, nothing is written and the error lists every problem by its
-        path of labels. Fix every problem listed and render again; the new page
+        the Outline breaks the schema, a stamp or Slide number cannot be
+        linked, or a piece of LaTeX cannot be drawn, nothing is written and the error lists every problem by its
+        path of labels, broken LaTeX included. Fix every problem listed and render again; the new page
         replaces the old one. The page defaults to Radial rings, with Topic
         circles available in settings.
         """
@@ -246,11 +252,18 @@ def create_server(
         - Optionally, a short `explanation` on any other node that has one. It
           appears in that node's panel.
         - There is no recording, so leave every node's `stamps` empty.
+        - Write every math expression as LaTeX, always inline and never `$$`.
+          In an explanation, a task, an answer and a step's reason, put each
+          piece of math between `$...$` and write the rest as plain prose, with
+          `\\$` for a literal dollar sign. Write a step's calculation as LaTeX
+          alone, with no `$`. Make each step one calculation, with at most one
+          short Swedish sentence on why in its reason.
 
         Returns `page`, the absolute path of the written HTML page. When the
-        Outline breaks the schema, carries a stamp, or names a Slide past the
-        Deck's last, nothing is written and the error lists every problem by
-        its path of labels. Fix every problem listed and render again; the new
+        Outline breaks the schema, carries a stamp, names a Slide past the
+        Deck's last, or holds a piece of LaTeX that cannot be drawn, nothing is
+        written and the error lists every problem by its path of labels, broken
+        LaTeX included. Fix every problem listed and render again; the new
         page replaces the old one.
         """
         with _core_errors_as_tool_errors():
@@ -276,6 +289,7 @@ def create_server(
             "Call `get_outline_schema`.",
             "Write an Outline of the lecture as JSON, in the format `get_outline_schema` gives,"
             " following the guidance in the `render_mindmap` tool's description."
+            " Write every math expression as LaTeX."
             + (" List the matching Slide numbers on each node." if deck else ""),
             "Call `render_mindmap` with the Transcript ID and the Outline.",
             _REPLY_STEP,
@@ -324,6 +338,7 @@ def _slides_only_prompt(deck: str) -> str:
         (
             "Write an Outline of the lecture from the Slides alone as JSON, in the format `get_outline_schema` gives,"
             " following the guidance in the `render_deck_mindmap` tool's description."
+            " Write every math expression as LaTeX."
         ),
         "Call `render_deck_mindmap` with the Deck ID and the Outline.",
         _REPLY_STEP,

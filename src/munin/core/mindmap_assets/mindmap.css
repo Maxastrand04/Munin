@@ -59,3 +59,19 @@
 .copies li{border-bottom:1px solid var(--line);padding:12px 0;font-size:12px}
 .copies a{display:block;text-decoration:none}
 .copies a::after{content:'↗';float:right}
+
+#explanation .katex{white-space:normal}
+#explanation,#worked{overflow-wrap:anywhere}
+#worked{font-family:KaTeX_Main,"Times New Roman",serif;font-size:15px;line-height:1.6;background:#fff;border:1px solid var(--line);border-radius:10px;padding:16px 18px;margin:12px 0 24px;white-space:normal}
+#worked .katex{white-space:normal;font-size:1.1em}
+#worked h3{margin:0 0 12px;padding-bottom:6px;border-bottom:2px solid #d9701c;color:#d9701c;font-size:11px;font-weight:700;font-variant:small-caps;letter-spacing:1.4px;text-transform:none}
+#worked .task{white-space:pre-line}
+#worked summary{font-family:Inter,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;font-size:12px;font-weight:600;cursor:pointer;padding:8px 0}
+#worked .count{color:var(--muted);font-weight:400;margin-left:4px}
+#worked details{border-top:1px solid var(--line);margin-top:10px}
+#worked details.answer[open]{background:#d9701c14;padding:0 10px 10px;border-radius:6px}
+#worked .step{display:flex;gap:10px;padding:6px 0}
+#worked .step-number{flex:none;width:1.4em;color:var(--muted)}
+#worked .step-body{min-width:0;flex:1}
+#worked .step-reason{color:var(--muted);font-style:italic;font-size:.9em}
+#worked .no-solution{color:var(--muted);font-style:italic;margin-top:10px}
