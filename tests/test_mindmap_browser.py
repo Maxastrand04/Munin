@@ -1028,10 +1028,14 @@ def test_selected_example_panel_rule_is_orange(page, render_outline):
     assert is_orange(page.locator(".panel-rule").evaluate("rule => getComputedStyle(rule).borderTopColor"))
 
 
+def under_a_slide(*children: dict) -> dict:
+    """The main topic Matriser, topic A, slide node Slide, and these nodes under it."""
+    return node("main-topic", "Matriser", node("topic", "A", node("slide", "Slide", *children)))
+
+
 def worked_under_a_slide(kind: str = "exempel", **parts) -> dict:
     """The main topic Matriser, topic A, slide node Slide, and under it one exempel or övning labelled Rad gånger kolonn."""
-    child = {**worked(kind, "Rad gånger kolonn"), **parts}
-    return node("main-topic", "Matriser", node("topic", "A", node("slide", "Slide", child)))
+    return under_a_slide({**worked(kind, "Rad gånger kolonn"), **parts})
 
 
 def card_labels(page) -> list[str]:
@@ -1069,6 +1073,300 @@ def test_explore_next_button_shows_the_type_prefix(page, render_outline):
     show_every_node(page, render_outline(worked_under_a_slide()))
     click_card(page, "Slide")
     assert "Exempel: Rad gånger kolonn" in page.locator("#related button").all_text_contents()
+
+
+# Math and the exempel box in the panel
+
+BOX_ORANGE = "rgb(217, 112, 28)"
+TRY_YOURSELF = "Ingen lösning i föreläsningen. Försök själv."
+
+
+def solved(
+    kind: str = "exempel",
+    label: str = "Rad gånger kolonn",
+    *,
+    task: str = "Lös $x + 1 = 2$",
+    steps=(("x = 2 - 1", "subtrahera 1"), ("x = 1", "")),
+    answer: str = "$x = 1$",
+    slides=(),
+) -> dict:
+    """An exempel or övning with a task, steps given as (calculation, reason) pairs, and an answer."""
+    return {
+        **worked(kind, label),
+        "slides": list(slides),
+        "task": task,
+        "steps": [{"calculation": calculation, "reason": reason} for calculation, reason in steps],
+        "answer": answer,
+    }
+
+
+def open_card_panel(page, url: str, label: str) -> None:
+    """Open the page with every node shown, then the panel of the node whose card label ends with `label`."""
+    show_every_node(page, url)
+    click_card(page, label)
+
+
+def katex_count(page, selector: str) -> int:
+    return page.locator(f"{selector} .katex").count()
+
+
+def box(page):
+    return page.locator("#panel #worked")
+
+
+def section(page, summary: str):
+    return box(page).locator("details", has=page.locator("summary", has_text=summary))
+
+
+def open_solution(page) -> None:
+    section(page, "Visa lösning").locator("summary").click()
+
+
+def top(locator) -> float:
+    return locator.bounding_box()["y"]
+
+
+def bottom(locator) -> float:
+    found = locator.bounding_box()
+    return found["y"] + found["height"]
+
+
+def test_explanation_math_typesets(page, render_outline):
+    """The math in an explanation typesets with KaTeX."""
+    open_card_panel(page, render_outline(under_a_slide(term("Gauss", explanation="Arean är $\\pi r^2$."))), "Gauss")
+    assert katex_count(page, "#explanation") == 1
+
+
+def test_math_typesets_with_no_network(page, render_outline):
+    """A page opened with every network request blocked still typesets its math."""
+    url = render_outline(under_a_slide(term("Gauss", explanation="Arean är $\\pi r^2$.")))
+    page.route("**/*", lambda route: route.continue_() if route.request.url.startswith("file:") else route.abort())
+    open_card_panel(page, url, "Gauss")
+    assert katex_count(page, "#explanation") == 1
+
+
+def test_math_is_always_inline(page, render_outline):
+    """Math typesets inline in the line of prose, never as a display block."""
+    open_card_panel(page, render_outline(under_a_slide(term("Gauss", explanation="Låt $x = 1$ vara givet."))), "Gauss")
+    kinds = page.locator("#explanation .katex").evaluate_all(
+        "found => found.map(math => math.closest('.katex-display') ? 'display' : 'inline')"
+    )
+    assert kinds == ["inline"]
+
+
+def test_long_math_breaks_over_lines(page, render_outline):
+    """A sum too long for the panel breaks over more than one line, at its `=` and `+`."""
+    long_sum = " + ".join(f"a_{{{n}}}" for n in range(1, 31)) + " = b"
+    open_card_panel(page, render_outline(under_a_slide(term("Gauss", explanation=f"${long_sum}$"))), "Gauss")
+    tops = page.locator("#explanation .katex .base").evaluate_all(
+        "found => [...new Set(found.map(base => Math.round(base.getBoundingClientRect().top)))]"
+    )
+    assert len(tops) > 1
+
+
+def test_escaped_dollar_shows_a_dollar_sign(page, render_outline):
+    """`\\$` shows as a literal dollar sign."""
+    open_card_panel(page, render_outline(under_a_slide(term("Gauss", explanation="Kostar 5 \\$ styck."))), "Gauss")
+    assert page.locator("#explanation").inner_text() == "Kostar 5 $ styck."
+
+
+def test_label_latex_stays_raw_while_explanation_typesets(page, render_outline):
+    """In one panel, LaTeX in the label shows as its source while the explanation's math typesets."""
+    open_card_panel(page, render_outline(under_a_slide(term("$x^2$", explanation="$x^2$"))), "$x^2$")
+    assert (katex_count(page, "#panel-title"), katex_count(page, "#explanation")) == (0, 1)
+
+
+@pytest.mark.parametrize("kind, label", [("exempel", "Exempel"), ("övning", "Övning")])
+def test_worked_panel_label_names_its_type(page, render_outline, kind: str, label: str):
+    """The label above an exempel's or övning's text reads `Exempel` or `Övning`."""
+    open_card_panel(page, render_outline(under_a_slide(solved(kind))), "Rad gånger kolonn")
+    assert page.locator(".explanation-label").text_content() == label
+
+
+def test_box_takes_the_explanations_place(page, render_outline):
+    """An exempel's panel hides the explanation and shows the box in its place."""
+    open_card_panel(page, render_outline(under_a_slide(term("Gauss", explanation="Arean är stor."), solved())), "Gauss")
+    click_card(page, "Rad gånger kolonn")
+    assert (page.locator("#explanation").is_visible(), box(page).is_visible()) == (False, True)
+
+
+def test_box_is_a_white_bordered_card(page, render_outline):
+    """The box is a white card with a thin border and rounded corners."""
+    open_card_panel(page, render_outline(under_a_slide(solved())), "Rad gånger kolonn")
+    style = box(page).evaluate(
+        "box => { const s = getComputedStyle(box);"
+        " return [s.backgroundColor, parseFloat(s.borderTopWidth) > 0, parseFloat(s.borderTopLeftRadius) > 0]; }"
+    )
+    assert style == ["rgb(255, 255, 255)", True, True]
+
+
+def test_box_heading_is_orange_small_capitals_underlined_in_orange(page, render_outline):
+    """The box heading is in small orange capitals with an orange underline."""
+    open_card_panel(page, render_outline(under_a_slide(solved())), "Rad gånger kolonn")
+    style = box(page).get_by_role("heading").evaluate(
+        "h => { const s = getComputedStyle(h);"
+        " return [s.color, s.borderBottomColor, parseFloat(s.borderBottomWidth) > 0, s.fontVariantCaps]; }"
+    )
+    assert style == [BOX_ORANGE, BOX_ORANGE, True, "small-caps"]
+
+
+def test_open_answer_is_tinted_orange(page, render_outline):
+    """The Visa svar section is tinted orange once open."""
+    open_card_panel(page, render_outline(under_a_slide(solved())), "Rad gånger kolonn")
+    answer = section(page, "Visa svar")
+    answer.locator("summary").click()
+    background = answer.evaluate("details => getComputedStyle(details).backgroundColor")
+    assert background.startswith("rgba(217, 112, 28,")
+
+
+def test_step_reason_is_muted_italic(page, render_outline):
+    """A step's reason is set in muted italic, apart from its calculation."""
+    open_card_panel(page, render_outline(under_a_slide(solved(steps=(("x = 1", "subtrahera 1"),)))), "Rad gånger kolonn")
+    open_solution(page)
+    style = box(page).locator(".step-reason").evaluate(
+        "reason => { const s = getComputedStyle(reason), box = getComputedStyle(reason.closest('#worked'));"
+        " return [s.fontStyle, s.color !== box.color]; }"
+    )
+    assert style == ["italic", True]
+
+
+@pytest.mark.parametrize(
+    "label, heading", [("Andra", "Exempel 2"), ("Tredje", "Övning 1")], ids=["second-exempel", "first-ovning"]
+)
+def test_box_heading_counts_exempel_and_ovning_separately(page, render_outline, label: str, heading: str):
+    """The box heading counts exempel and övning separately, in Outline order."""
+    outline = under_a_slide(solved("exempel", "Första"), solved("exempel", "Andra"), solved("övning", "Tredje"))
+    open_card_panel(page, render_outline(outline), label)
+    assert box(page).get_by_role("heading").text_content() == heading
+
+
+def test_box_shows_the_task_under_its_heading(page, render_outline):
+    """The task is the first text in the box after its heading."""
+    open_card_panel(page, render_outline(under_a_slide(solved(task="Lös uppgiften nu"))), "Rad gånger kolonn")
+    assert box(page).inner_text().splitlines()[1] == "Lös uppgiften nu"
+
+
+def test_box_task_math_typesets(page, render_outline):
+    """The math in a task typesets."""
+    open_card_panel(page, render_outline(under_a_slide(solved(task="Lös $x + 1 = 2$"))), "Rad gånger kolonn")
+    assert box(page).locator(".task .katex").count() == 1
+
+
+def test_long_task_prose_wraps_inside_the_box(page, render_outline):
+    """A long task wraps inside the box instead of running off it."""
+    task = "Bestäm " + " och ".join(f"värdet av $x_{{{n}}}$" for n in range(1, 25)) + "."
+    open_card_panel(page, render_outline(under_a_slide(solved(task=task))), "Rad gånger kolonn")
+    fits = box(page).evaluate_all("found => found.map(box => box.scrollWidth <= box.clientWidth)")
+    assert fits == [True]
+
+
+def test_solution_starts_closed(page, render_outline):
+    """The Visa lösning section starts closed."""
+    open_card_panel(page, render_outline(under_a_slide(solved())), "Rad gånger kolonn")
+    assert section(page, "Visa lösning").evaluate("details => details.open") is False
+
+
+def test_solution_toggle_shows_the_step_count(page, render_outline):
+    """The Visa lösning toggle shows how many steps the solution has."""
+    steps = (("a = 1", ""), ("b = 2", ""), ("c = 3", ""))
+    open_card_panel(page, render_outline(under_a_slide(solved(steps=steps))), "Rad gånger kolonn")
+    assert "3" in section(page, "Visa lösning").locator("summary").text_content()
+
+
+def test_open_solution_numbers_steps_from_one(page, render_outline):
+    """Opened, the solution shows one row per step, numbered 1, 2 and on."""
+    open_card_panel(page, render_outline(under_a_slide(solved())), "Rad gånger kolonn")
+    open_solution(page)
+    numbers = box(page).locator(".step").evaluate_all("rows => rows.map(row => row.innerText.trim().split(/\\s/)[0])")
+    assert numbers == ["1", "2"]
+
+
+def test_step_calculation_typesets_inline(page, render_outline):
+    """A step's calculation typesets as inline math."""
+    open_card_panel(page, render_outline(under_a_slide(solved(steps=(("x = \\frac{1}{2}", ""),)))), "Rad gånger kolonn")
+    open_solution(page)
+    assert box(page).locator(".step-calculation .katex").count() == 1
+
+
+def test_step_reason_math_typesets(page, render_outline):
+    """Math in a step's reason typesets, such as a Greek letter."""
+    outline = under_a_slide(solved(steps=(("x = 1", "sätt in $\\alpha$"),)))
+    open_card_panel(page, render_outline(outline), "Rad gånger kolonn")
+    open_solution(page)
+    assert box(page).locator(".step-reason .katex").count() == 1
+
+
+def test_step_reason_sits_under_its_calculation(page, render_outline):
+    """A step's reason sits under its calculation."""
+    open_card_panel(page, render_outline(under_a_slide(solved(steps=(("x = 1", "subtrahera 1"),)))), "Rad gånger kolonn")
+    open_solution(page)
+    assert top(box(page).locator(".step-reason")) >= bottom(box(page).locator(".step-calculation"))
+
+
+def test_answer_starts_closed(page, render_outline):
+    """The Visa svar section starts closed."""
+    open_card_panel(page, render_outline(under_a_slide(solved())), "Rad gånger kolonn")
+    assert section(page, "Visa svar").evaluate("details => details.open") is False
+
+
+def test_answer_comes_after_the_solution(page, render_outline):
+    """The Visa svar section sits below the Visa lösning section."""
+    open_card_panel(page, render_outline(under_a_slide(solved())), "Rad gånger kolonn")
+    assert top(section(page, "Visa svar")) >= bottom(section(page, "Visa lösning"))
+
+
+def test_box_without_steps_has_no_solution_section(page, render_outline):
+    """A box whose node has no steps shows no Visa lösning section."""
+    open_card_panel(page, render_outline(under_a_slide(solved(steps=()))), "Rad gånger kolonn")
+    shown = box(page).evaluate_all("found => found.map(box => box.textContent.includes('Visa lösning'))")
+    assert shown == [False]
+
+
+def test_box_without_answer_has_no_answer_section(page, render_outline):
+    """A box whose node has an empty answer shows no Visa svar section."""
+    open_card_panel(page, render_outline(under_a_slide(solved(answer=""))), "Rad gånger kolonn")
+    shown = box(page).evaluate_all("found => found.map(box => box.textContent.includes('Visa svar'))")
+    assert shown == [False]
+
+
+def test_box_with_neither_says_to_try_yourself(page, render_outline):
+    """A box with no steps and no answer shows the try-it-yourself line."""
+    open_card_panel(page, render_outline(under_a_slide(solved(steps=(), answer=""))), "Rad gånger kolonn")
+    assert TRY_YOURSELF in box(page).text_content()
+
+
+def test_box_with_steps_does_not_say_to_try_yourself(page, render_outline):
+    """A box that has steps leaves the try-it-yourself line out."""
+    open_card_panel(page, render_outline(under_a_slide(solved(answer=""))), "Rad gånger kolonn")
+    shown = box(page).evaluate_all(f"found => found.map(box => box.textContent.includes({TRY_YOURSELF!r}))")
+    assert shown == [False]
+
+
+def test_box_text_is_set_in_katex_main(page, render_outline):
+    """Box text is set in KaTeX_Main, so prose and math share one face."""
+    open_card_panel(page, render_outline(under_a_slide(solved())), "Rad gånger kolonn")
+    families = box(page).evaluate_all("found => found.map(box => getComputedStyle(box).fontFamily)")
+    assert [family.split(",")[0].strip("\"' ") for family in families] == ["KaTeX_Main"]
+
+
+def test_section_toggles_use_the_app_sans(page, render_outline):
+    """The Visa lösning and Visa svar toggles use the app's sans, Inter."""
+    open_card_panel(page, render_outline(under_a_slide(solved())), "Rad gånger kolonn")
+    families = box(page).locator("summary").evaluate_all("found => found.map(s => getComputedStyle(s).fontFamily)")
+    assert families and all(family.startswith("Inter") for family in families)
+
+
+@pytest.mark.parametrize("slides_outline", [under_a_slide(solved(slides=[1]))], ids=["exempel-with-a-slide"])
+def test_slides_sit_below_the_box(page, slides_url):
+    """An exempel's Slides sit below its box."""
+    open_card_panel(page, slides_url, "Rad gånger kolonn")
+    assert top(page.locator("#slides")) >= bottom(box(page))
+
+
+def test_source_link_sits_below_the_box(page, render_outline):
+    """The Source link sits below the box."""
+    open_card_panel(page, render_outline(under_a_slide(solved())), "Rad gånger kolonn")
+    assert top(page.locator("#panel-source")) >= bottom(box(page))
 
 
 def test_panel_shows_slides_in_slide_order(page, slides_url):
