@@ -15,6 +15,7 @@ from munin.core.errors import (
     OutlineSyntaxError,
     UnknownDeckError,
 )
+from munin.core.latex import KATEX_OPTIONS, katex_css, katex_js
 from munin.core.outline import check_outline
 from munin.core.slides import deck_path, standalone_deck_path
 from munin.core.sources import Source, Video
@@ -77,7 +78,22 @@ def render_mindmap(
       stored audio duration,
     - a Slide number below 1, a Slide number past the last Slide of the Deck
       attached to the Transcript, any Slide number when the Transcript has no
-      Deck, and a Slide number listed twice on one node.
+      Deck, and a Slide number listed twice on one node,
+    - broken LaTeX, meaning a piece the page's KaTeX cannot draw inline. The
+      pieces are each `$...$` in an explanation, a task, an answer or a step
+      reason, and each step calculation as a whole. A `$` with no closing `$`
+      is broken from that `$` to the end of the part, and `$$` is broken,
+      since math is never display mode. `\\$` is a literal dollar sign and
+      never opens or closes math. Labels are not checked.
+
+    Each broken piece is one problem, whose message names the part, as
+    `explanation`, `task`, `answer`, `step 2 calculation` or `step 2 reason`,
+    then the piece exactly as the part holds it, dollars included, then
+    KaTeX's own reason, unedited, with `at end of input` or `at position N`
+    (N counted from 1) added when KaTeX knows where, such as `Unexpected end
+    of input in a macro argument, expected '}' at end of input`.
+    The LaTeX check accepts exactly what the page's KaTeX draws, because it
+    runs the same KaTeX build the page embeds.
 
     A node of an unknown type is one problem, and nothing else about it is
     checked. A part of the wrong kind is one problem, and what it holds is
@@ -85,7 +101,8 @@ def render_mindmap(
     whatever the list holds, and the nodes in it are not checked. Every other
     fault is a problem of its own, so a misspelled key gives one problem for
     the unknown key and one for the missing part. Stamps and Slide numbers
-    are checked only on nodes whose parts have the right kind. Any problem
+    are checked only on nodes whose parts have the right kind, and LaTeX
+    only in parts that are strings. Any problem
     raises `OutlineStructureError` with all of them.
 
     An Outline that passes renders every node. Each stamp becomes a Timestamp
@@ -96,11 +113,26 @@ def render_mindmap(
     explanation, then its linked Slides in Slide order, each captioned and
     alt-texted `Slide N`, then the Source link. The page embeds each linked
     Slide's image once, as a base64 `data:image/png` URI, and no Slide that no
-    node links. An exempel or övning panel shows, where an explanation would
-    be, one line each: the task, then `Steg N: <calculation>` per step,
-    counted from 1, with ` (<reason>)` after it when the reason is not empty,
-    then `Svar: <answer>` when the answer is not empty. LaTeX shows as
-    written. Labels, explanations and every other text show as plain text.
+    node links.
+
+    An explanation's math typesets inline with KaTeX, prose wraps like a
+    paragraph, and long math breaks at `=` and `+`. An explanation with no
+    `$` shows as plain text, line breaks kept. A piece the browser's KaTeX
+    still cannot draw shows as written, dollars included, and the rest
+    typesets. Labels show as plain text everywhere, LaTeX included.
+
+    An exempel or övning panel labels its text `Exempel` or `Övning` in place
+    of "A simple explanation", and shows a box where the explanation would
+    be. The box's heading is `Exempel N` or `Övning N`, where N counts
+    exempel and övning nodes separately in Outline order, from 1. Under it
+    come the task, then a closed "Visa lösning" section with the step count
+    beside it, holding the steps numbered from 1, each with its calculation
+    as inline math and its reason under it, then a closed "Visa svar"
+    section holding the answer. A task, reason or answer typesets as an
+    explanation does. A box with no steps leaves out "Visa lösning", one with
+    an empty answer leaves out "Visa svar", and one with neither shows the
+    muted line "Ingen lösning i föreläsningen. Försök själv." Box text is set
+    in KaTeX_Main, and the section toggles in the app's sans.
 
     Each topic gives its branch one colour. Exempel and övning nodes are
     orange because of their type, whatever their label says: an orange of hue
@@ -121,9 +153,9 @@ def render_mindmap(
     listed without a link. Only nodes of type `term` count.
 
     The page is `<transcript_id>.html` in `output_dir`, replacing any earlier
-    page for the same Transcript. CSS, JavaScript, Outline data and Slide
-    images are embedded, so it opens straight from disk without network
-    access. Radial rings is the default layout; settings also offers Topic
+    page for the same Transcript. CSS, JavaScript, KaTeX with its fonts,
+    Outline data and Slide images are embedded, so it opens straight from
+    disk and typesets its math without network access. Radial rings is the default layout; settings also offers Topic
     circles.
 
     `cache_dir` defaults to the per-user cache folder for Munin.
@@ -205,6 +237,7 @@ def _parsed(outline: dict | str) -> object:
 def _flat_nodes(outline: dict, source: Source | None) -> list[dict]:
     """Return the checked Outline's nodes in Outline order, each pointing at its parent by index."""
     nodes: list[dict] = []
+    counts = {"exempel": 0, "övning": 0}
 
     def add(node: dict, parent: int | None) -> None:
         index = len(nodes)
@@ -212,6 +245,10 @@ def _flat_nodes(outline: dict, source: Source | None) -> list[dict]:
         for stamp in node["stamps"]:
             offset = stamp_seconds(f"[{stamp}]")
             links.append({"text": display_stamp(offset), "url": _timestamp_url(source, offset)})
+        worked = None
+        if node["type"] in counts:
+            counts[node["type"]] += 1
+            worked = _worked_box(node, counts[node["type"]])
         nodes.append(
             {
                 "id": index,
@@ -221,7 +258,8 @@ def _flat_nodes(outline: dict, source: Source | None) -> list[dict]:
                 "links": links,
                 "slides": sorted(node["slides"]),
                 "term": " ".join(node["label"].split()).casefold(),
-                "explanation": node["explanation"] if "explanation" in node else _worked_text(node),
+                "explanation": node.get("explanation", ""),
+                "worked": worked,
             }
         )
         for child in node.get("children", []):
@@ -231,15 +269,16 @@ def _flat_nodes(outline: dict, source: Source | None) -> list[dict]:
     return nodes
 
 
-def _worked_text(node: dict) -> str:
-    """Return an exempel's or övning's task, steps and answer as the lines its panel shows."""
-    lines = [node["task"]]
-    for number, step in enumerate(node["steps"], start=1):
-        reason = f" ({step['reason']})" if step["reason"] else ""
-        lines.append(f"Steg {number}: {step['calculation']}{reason}")
-    if node["answer"]:
-        lines.append(f"Svar: {node['answer']}")
-    return "\n".join(lines)
+def _worked_box(node: dict, number: int) -> dict:
+    """Return what an exempel's or övning's box shows, `number` counting its type in Outline order."""
+    title = node["type"].capitalize()
+    return {
+        "title": title,
+        "heading": f"{title} {number}",
+        "task": node["task"],
+        "steps": node["steps"],
+        "answer": node["answer"],
+    }
 
 
 def _slide_images(deck: Path, numbers: list[int]) -> dict[str, str]:
@@ -267,16 +306,24 @@ def _page_html(page_id: str, nodes: list[dict], source: Source | None, slide_ima
     replacements = {
         "__CSS__": (_ASSETS / "mindmap.css").read_text(encoding="utf-8"),
         "__JS__": (_ASSETS / "mindmap.js").read_text(encoding="utf-8"),
+        "__KATEX_CSS__": katex_css(),
+        "__KATEX_JS__": katex_js().replace("</script", "<\\/script"),
         "__DATA__": _script_safe_json(nodes),
         "__PAGE__": _script_safe_json(
-            {"title": title, "source_url": source_url, "page_id": page_id, "slides": slide_images}
+            {
+                "title": title,
+                "source_url": source_url,
+                "page_id": page_id,
+                "slides": slide_images,
+                "katex_options": KATEX_OPTIONS,
+            }
         ),
         "__TITLE__": escape(title),
         "__SOURCE_LINK__": source_link,
     }
     template = (_ASSETS / "mindmap.html").read_text(encoding="utf-8")
     return re.sub(
-        r"__(?:CSS|JS|DATA|PAGE|TITLE|SOURCE_LINK)__",
+        r"__(?:CSS|JS|KATEX_CSS|KATEX_JS|DATA|PAGE|TITLE|SOURCE_LINK)__",
         lambda match: replacements[match[0]],
         template,
     )

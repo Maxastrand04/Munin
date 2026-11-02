@@ -404,6 +404,12 @@ def test_mcp_lecture_prompt_asks_for_a_json_outline(cache_dir: Path, source: str
     assert "JSON" in prompt_text(create_server(cache_dir=cache_dir), source, deck)
 
 
+@pytest.mark.parametrize("source, deck", PROMPT_VARIANTS, ids=PROMPT_VARIANT_IDS)
+def test_mcp_lecture_prompt_asks_for_latex(cache_dir: Path, source: str | None, deck: str | None):
+    """Every variant of the prompt asks for LaTeX for every math expression."""
+    assert "LaTeX" in prompt_text(create_server(cache_dir=cache_dir), source, deck)
+
+
 def test_mcp_lecture_prompt_carries_no_stamp(cache_dir: Path):
     """The prompt carries no stamp format of its own."""
     assert "[m:ss]" not in prompt_text(create_server(cache_dir=cache_dir), WATCH_URL)
@@ -530,6 +536,42 @@ def test_mcp_render_description_writes_out_examples_and_exercises(cache_dir: Pat
 def test_mcp_render_description_makes_examples_read_without_the_video(cache_dir: Path):
     """The render tool's description asks for an example's panel to read on its own, without the video or the Slide."""
     assert "without the video or the Slide" in tool_description(create_server(cache_dir=cache_dir), "render_mindmap")
+
+
+@pytest.mark.parametrize("tool", ["render_mindmap", "render_deck_mindmap"])
+def test_mcp_render_description_asks_for_math_between_dollars(cache_dir: Path, tool: str):
+    """Both render tool descriptions ask for math between `$...$`."""
+    assert "$...$" in tool_description(create_server(cache_dir=cache_dir), tool)
+
+
+@pytest.mark.parametrize("tool", ["render_mindmap", "render_deck_mindmap"])
+def test_mcp_render_description_forbids_double_dollars(cache_dir: Path, tool: str):
+    """Both render tool descriptions say never to write `$$`."""
+    assert "$$" in tool_description(create_server(cache_dir=cache_dir), tool)
+
+
+@pytest.mark.parametrize("tool", ["render_mindmap", "render_deck_mindmap"])
+def test_mcp_render_description_forbids_dollars_in_a_calculation(cache_dir: Path, tool: str):
+    """Both render tool descriptions say a step's calculation holds no `$`."""
+    assert "with no `$`" in tool_description(create_server(cache_dir=cache_dir), tool)
+
+
+@pytest.mark.parametrize("tool", ["render_mindmap", "render_deck_mindmap"])
+def test_mcp_render_description_asks_for_one_calculation_per_step(cache_dir: Path, tool: str):
+    """Both render tool descriptions ask for each step to be one calculation."""
+    assert "one calculation" in tool_description(create_server(cache_dir=cache_dir), tool)
+
+
+@pytest.mark.parametrize("tool", ["render_mindmap", "render_deck_mindmap"])
+def test_mcp_render_description_limits_a_reason_to_one_sentence(cache_dir: Path, tool: str):
+    """Both render tool descriptions allow at most one short Swedish sentence per reason."""
+    assert "one short Swedish sentence" in tool_description(create_server(cache_dir=cache_dir), tool)
+
+
+@pytest.mark.parametrize("tool", ["render_mindmap", "render_deck_mindmap"])
+def test_mcp_render_description_says_to_fix_broken_latex(cache_dir: Path, tool: str):
+    """Both render tool descriptions say broken LaTeX is among the problems to fix before rendering again."""
+    assert "broken LaTeX" in tool_description(create_server(cache_dir=cache_dir), tool)
 
 
 def test_mcp_read_deck_first_block_gives_the_deck_id(deck: Path, cache_dir: Path):

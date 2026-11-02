@@ -35,6 +35,7 @@ FIXED_URL = f"https://play.kth.se/media/t/{ENTRY_ID}"
 SLUG_URL = f"https://play.kth.se/media/Föreläsning+4A+Matriser/{ENTRY_ID}"
 SAMPLE_OUTLINES = ["matriser-outline.json", "gauss-sats-outline.json"]
 SLIDE_PATH = ("Matriser", "Rader", "Slide 1")
+BROKEN_LATEX = "$\\frac{1}{2$"
 TEN_MINUTES_S = 600
 SAMPLE_RATE = 8_000
 
@@ -118,6 +119,13 @@ def problem_paths(transcript_id: str, outline, cache_dir: Path, tmp_path: Path) 
     with pytest.raises(OutlineStructureError) as caught:
         render_mindmap(transcript_id, outline, cache_dir=cache_dir, output_dir=tmp_path / "out")
     return [problem.path for problem in caught.value.problems]
+
+
+def problem_messages(transcript_id: str, outline, cache_dir: Path, tmp_path: Path) -> list[str]:
+    """Render an Outline that must fail the check, and return each problem's message in the order reported."""
+    with pytest.raises(OutlineStructureError) as caught:
+        render_mindmap(transcript_id, outline, cache_dir=cache_dir, output_dir=tmp_path / "out")
+    return [problem.message for problem in caught.value.problems]
 
 
 @pytest.fixture
@@ -681,6 +689,139 @@ def test_slide_number_without_a_deck_is_a_problem(transcript_id: str, cache_dir:
     assert problem_paths(transcript_id, lecture(slides=[1]), cache_dir, tmp_path) == [SLIDE_PATH]
 
 
+# The Outline check: LaTeX
+
+
+def test_broken_latex_in_an_explanation_is_a_problem(transcript_id: str, cache_dir: Path, tmp_path: Path):
+    """An explanation holding a `$...$` KaTeX cannot draw fails the check."""
+    outline = lecture(term(explanation=f"Hälften är {BROKEN_LATEX}."))
+    with pytest.raises(OutlineStructureError):
+        render_page(transcript_id, outline, cache_dir=cache_dir, output_dir=tmp_path)
+
+
+def test_broken_latex_writes_nothing(transcript_id: str, cache_dir: Path, tmp_path: Path):
+    """A render that fails on broken LaTeX writes no page."""
+    with pytest.raises(OutlineStructureError):
+        render_page(transcript_id, lecture(term(explanation=BROKEN_LATEX)), cache_dir=cache_dir, output_dir=tmp_path / "out")
+    assert not (tmp_path / "out").exists()
+
+
+def test_broken_latex_problem_names_its_node_by_label_path(transcript_id: str, cache_dir: Path, tmp_path: Path):
+    """A broken-LaTeX problem's path is the labels from the main topic down to its node."""
+    outline = lecture(term("Bråk", explanation=BROKEN_LATEX))
+    assert problem_paths(transcript_id, outline, cache_dir, tmp_path) == [(*SLIDE_PATH, "Bråk")]
+
+
+@pytest.mark.parametrize(
+    "outline, part",
+    [
+        (lecture(term(explanation=BROKEN_LATEX)), "explanation"),
+        (lecture(worked("exempel", "Rad gånger kolonn", task=f"Lös {BROKEN_LATEX}")), "task"),
+        (lecture(worked("exempel", "Rad gånger kolonn", answer=BROKEN_LATEX)), "answer"),
+        (lecture(worked("exempel", "Rad gånger kolonn", steps=(("x = 1", ""), ("\\frac{1}{2", "")))), "step 2 calculation"),
+        (
+            lecture(worked("exempel", "Rad gånger kolonn", steps=(("x = 1", ""), ("x = 2", f"dela med {BROKEN_LATEX}")))),
+            "step 2 reason",
+        ),
+    ],
+    ids=["explanation", "task", "answer", "step-calculation", "step-reason"],
+)
+def test_broken_latex_problem_names_its_part(transcript_id: str, cache_dir: Path, tmp_path: Path, outline, part: str):
+    """A broken-LaTeX problem's message starts with the part the piece sits in, steps counted from 1."""
+    [message] = problem_messages(transcript_id, outline, cache_dir, tmp_path)
+    assert message.startswith(part)
+
+
+def test_broken_latex_problem_quotes_the_piece_with_its_dollars(transcript_id: str, cache_dir: Path, tmp_path: Path):
+    """The message holds the broken piece exactly as the part has it, dollars included."""
+    outline = lecture(worked("exempel", "Rad gånger kolonn", task=f"Lös {BROKEN_LATEX} nu"))
+    [message] = problem_messages(transcript_id, outline, cache_dir, tmp_path)
+    assert BROKEN_LATEX in message
+
+
+def test_broken_latex_problem_gives_katex_reason(transcript_id: str, cache_dir: Path, tmp_path: Path):
+    """The message ends with KaTeX's own reason, and where in the piece it hit it."""
+    [message] = problem_messages(transcript_id, lecture(term(explanation=BROKEN_LATEX)), cache_dir, tmp_path)
+    assert message.endswith(": Unexpected end of input in a macro argument, expected '}' at end of input")
+
+
+def test_broken_latex_problem_gives_the_position_counted_from_one(transcript_id: str, cache_dir: Path, tmp_path: Path):
+    """When KaTeX stops inside the piece, the message says where, counting the piece's characters from 1."""
+    [message] = problem_messages(transcript_id, lecture(term(explanation="Se $x + \\foo$.")), cache_dir, tmp_path)
+    assert message.endswith("Undefined control sequence: \\foo at position 5")
+
+
+def test_broken_calculation_is_quoted_whole(transcript_id: str, cache_dir: Path, tmp_path: Path):
+    """A broken calculation is quoted whole, with no dollars added."""
+    outline = lecture(worked("exempel", "Rad gånger kolonn", steps=(("x = \\frac{1}{2", ""),)))
+    [message] = problem_messages(transcript_id, outline, cache_dir, tmp_path)
+    assert '"x = \\frac{1}{2"' in message
+
+
+def test_unclosed_dollar_is_broken_to_the_end_of_the_part(transcript_id: str, cache_dir: Path, tmp_path: Path):
+    """A `$` with no closing `$` is one broken piece, from that `$` to the end of the part."""
+    outline = lecture(worked("exempel", "Rad gånger kolonn", task="Lös $x + 1 nu"))
+    [message] = problem_messages(transcript_id, outline, cache_dir, tmp_path)
+    assert '"$x + 1 nu"' in message
+
+
+def test_double_dollar_is_broken(transcript_id: str, cache_dir: Path, tmp_path: Path):
+    """`$$` is broken, since math is never display mode."""
+    outline = lecture(worked("exempel", "Rad gånger kolonn", task="Lös $$x^2 = 4$$"))
+    assert any('"$$"' in message for message in problem_messages(transcript_id, outline, cache_dir, tmp_path))
+
+
+def test_unknown_latex_command_is_broken(transcript_id: str, cache_dir: Path, tmp_path: Path):
+    """A command KaTeX does not know is broken, though its braces balance."""
+    messages = problem_messages(transcript_id, lecture(term(explanation="Se $\\foo{x}$.")), cache_dir, tmp_path)
+    assert messages[0].startswith("explanation")
+
+
+def test_dollar_in_a_calculation_is_broken(transcript_id: str, cache_dir: Path, tmp_path: Path):
+    """A calculation is LaTeX alone, so a `$` in it is broken."""
+    outline = lecture(worked("exempel", "Rad gånger kolonn", steps=(("$x = 1$", ""),)))
+    assert problem_messages(transcript_id, outline, cache_dir, tmp_path)[0].startswith("step 1 calculation")
+
+
+def test_supported_latex_is_not_a_problem(transcript_id: str, cache_dir: Path, tmp_path: Path):
+    """Only the broken piece is a problem, while a matrix KaTeX can draw beside it is not."""
+    matrix = term("Matris", explanation="$\\begin{pmatrix} 1 & 2 \\\\ 3 & 4 \\end{pmatrix}$")
+    outline = lecture(matrix, term("Bråk", explanation=BROKEN_LATEX))
+    assert problem_paths(transcript_id, outline, cache_dir, tmp_path) == [(*SLIDE_PATH, "Bråk")]
+
+
+def test_escaped_dollar_does_not_open_math(transcript_id: str, cache_dir: Path, tmp_path: Path):
+    """`\\$` is a literal dollar sign, so the broken piece starts at the next real `$`."""
+    outline = lecture(term(explanation=f"Kostar 5 \\$ och {BROKEN_LATEX}"))
+    [message] = problem_messages(transcript_id, outline, cache_dir, tmp_path)
+    assert f'"{BROKEN_LATEX}"' in message
+
+
+def test_escaped_dollar_inside_math_does_not_close_it(transcript_id: str, cache_dir: Path, tmp_path: Path):
+    """`\\$` inside math stays math, so the piece runs to the next real `$`."""
+    piece = "$5\\$ + \\frac{1}{2$"
+    [message] = problem_messages(transcript_id, lecture(term(explanation=f"Pris {piece}")), cache_dir, tmp_path)
+    assert f'"{piece}"' in message
+
+
+def test_latex_in_a_label_is_not_checked(transcript_id: str, cache_dir: Path, tmp_path: Path):
+    """A label is not checked, so broken LaTeX in one gives no problem."""
+    outline = lecture(term(BROKEN_LATEX), term("Bråk", explanation=BROKEN_LATEX))
+    assert problem_paths(transcript_id, outline, cache_dir, tmp_path) == [(*SLIDE_PATH, "Bråk")]
+
+
+def test_latex_in_a_part_of_the_wrong_kind_is_not_checked(transcript_id: str, cache_dir: Path, tmp_path: Path):
+    """A part that is not a string gives only its wrong-kind problem, whatever LaTeX it holds."""
+    outline = lecture(term(explanation=[BROKEN_LATEX]))
+    assert problem_messages(transcript_id, outline, cache_dir, tmp_path) == ["explanation must be a string"]
+
+
+def test_two_broken_pieces_in_one_part_are_two_problems(transcript_id: str, cache_dir: Path, tmp_path: Path):
+    """Each broken piece in a part is a problem of its own."""
+    outline = lecture(term(explanation=f"{BROKEN_LATEX} och $\\foo$"))
+    assert len(problem_messages(transcript_id, outline, cache_dir, tmp_path)) == 2
+
+
 # The Outline check: every problem, at once
 
 
@@ -729,6 +870,12 @@ def test_outline_with_problems_writes_nothing(transcript_id: str, cache_dir: Pat
     with pytest.raises(OutlineStructureError):
         render_page(transcript_id, lecture(node("definition", "Gauss")), cache_dir=cache_dir, output_dir=tmp_path / "out")
     assert not (tmp_path / "out").exists()
+
+
+def test_broken_latex_is_listed_with_other_problems(transcript_id: str, cache_dir: Path, tmp_path: Path):
+    """Broken LaTeX is listed in the same error as a malformed stamp, not after a second render."""
+    outline = lecture(term("Stamp", stamps=["1:75"]), term("Bråk", explanation=BROKEN_LATEX))
+    assert problem_paths(transcript_id, outline, cache_dir, tmp_path) == [(*SLIDE_PATH, "Stamp"), (*SLIDE_PATH, "Bråk")]
 
 
 # Failures
@@ -798,6 +945,13 @@ def test_deck_render_slide_past_the_deck_end_is_a_problem(standalone_deck, cache
     with pytest.raises(OutlineStructureError) as caught:
         render_deck_mindmap(standalone_deck.deck_id, lecture(term(slides=[4])), cache_dir=cache_dir, output_dir=tmp_path)
     assert [problem.path for problem in caught.value.problems] == [(*SLIDE_PATH, "Gauss")]
+
+
+def test_deck_render_broken_latex_is_a_problem(standalone_deck, cache_dir: Path, tmp_path: Path):
+    """Broken LaTeX in an Outline rendered against a standalone Deck fails the check."""
+    outline = lecture(term(explanation=BROKEN_LATEX))
+    with pytest.raises(OutlineStructureError):
+        render_deck_mindmap(standalone_deck.deck_id, outline, cache_dir=cache_dir, output_dir=tmp_path)
 
 
 def test_deck_page_has_no_lecture_link(standalone_deck, cache_dir: Path, tmp_path: Path):

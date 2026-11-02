@@ -40,6 +40,16 @@ def test_schema_is_json_schema_draft_2020_12():
     assert get_outline_schema().schema["$schema"] == "https://json-schema.org/draft/2020-12/schema"
 
 
+def test_schema_description_puts_reason_math_between_dollars():
+    """The schema's description says a step's reason is prose with math between `$...$`."""
+    assert re.search(r"reason[^.]*\$\.\.\.\$", get_outline_schema().schema["description"], re.IGNORECASE)
+
+
+def test_schema_description_forbids_double_dollars():
+    """The schema's description tells the LLM never to write `$$`."""
+    assert "$$" in get_outline_schema().schema["description"]
+
+
 @pytest.mark.parametrize("kind", NODE_TYPES)
 def test_schema_names_every_node_type(kind: str):
     """The schema names each of the six node types."""

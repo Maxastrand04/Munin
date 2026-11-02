@@ -2,34 +2,49 @@
 
 import re
 from dataclasses import dataclass
+from typing import NamedTuple
 
 from munin.core.errors import OutlineProblem
+from munin.core.latex import BrokenLatex, calculation_problems, prose_problems
 from munin.core.stamps import display_stamp, stamp_seconds
 
-# Each part's kind says what its value holds. `text` and `prose` are strings,
-# and only `prose` may hold control characters, such as newlines.
+
+class _Part(NamedTuple):
+    """One part in the parts table.
+
+    `kind` says what the value holds. `text` and `prose` are strings, and only
+    `prose` may hold control characters, such as newlines. `required` says the
+    part must be non-blank. `math` says how the render checks its LaTeX:
+    `prose` for math between `$...$`, `calculation` for LaTeX alone, or None
+    for no check.
+    """
+
+    kind: str
+    required: bool
+    math: str | None = None
+
+
 _TREE_PARTS = {
-    "label": ("text", True),
-    "explanation": ("prose", False),
-    "stamps": ("stamps", False),
-    "slides": ("slides", False),
-    "children": ("nodes", False),
+    "label": _Part("text", True),
+    "explanation": _Part("prose", False, "prose"),
+    "stamps": _Part("stamps", False),
+    "slides": _Part("slides", False),
+    "children": _Part("nodes", False),
 }
 _WORKED_PARTS = {
-    "label": ("text", True),
-    "stamps": ("stamps", False),
-    "slides": ("slides", False),
-    "task": ("text", True),
-    "steps": ("steps", False),
-    "answer": ("text", False),
+    "label": _Part("text", True),
+    "stamps": _Part("stamps", False),
+    "slides": _Part("slides", False),
+    "task": _Part("text", True, "prose"),
+    "steps": _Part("steps", False),
+    "answer": _Part("text", False, "prose"),
 }
 _STEP_PARTS = {
-    "calculation": ("text", True),
-    "reason": ("text", False),
+    "calculation": _Part("text", True, "calculation"),
+    "reason": _Part("text", False, "prose"),
 }
-# The parts table: every node type, its parts, and for each part its kind and
-# whether it must be non-blank. The schema and the check are both built from it.
-_PARTS: dict[str, dict[str, tuple[str, bool]]] = {
+# The parts table: every node type and its parts. The schema and the check are both built from it.
+_PARTS: dict[str, dict[str, _Part]] = {
     "main-topic": _TREE_PARTS,
     "topic": _TREE_PARTS,
     "slide": _TREE_PARTS,
@@ -54,6 +69,7 @@ _WORKED_PREFIX = re.compile(r"\s*(exempel|övning)\s*:", re.IGNORECASE)
 _NO_CONTROL = "^[^\\u0000-\\u001f\\u007f-\\u009f]*$"
 _NON_BLANK = "\\S"
 _STAMP = "^(\\d+:[0-5]\\d|\\d+:[0-5]\\d:[0-5]\\d)$"
+_MATH_CHECKS = {"prose": prose_problems, "calculation": calculation_problems}
 _SCHEMA_ID = "https://json-schema.org/draft/2020-12/schema"
 
 
@@ -88,10 +104,12 @@ def get_outline_schema() -> OutlineSchema:
       `explanation` and no `children`.
 
     `type`, `label`, `task` and each step's `calculation` must be non-blank.
-    Every other part may be empty, `""` or `[]`. Math is LaTeX. A task, an
-    answer and an explanation are prose with math between `$...$`, and a
-    literal dollar sign is `\\$`. A step's calculation is LaTeX alone, with no
-    `$`. Reasons are short Swedish. One table in this module
+    Every other part may be empty, `""` or `[]`. Math is LaTeX, always
+    inline, never `$$`. A task, an answer, an explanation and a step's
+    reason are prose with math between `$...$`, and a literal dollar sign is
+    `\\$`. A step's calculation is LaTeX alone, with no `$`. Each step is one
+    calculation, and its reason at most one short Swedish sentence on why.
+    The schema's description says all of this. One table in this module
     says which parts each type has and which must be non-blank, and both the
     schema and the check are built from it, so making a part required is a
     one-line change.
@@ -128,6 +146,10 @@ def check_outline(
     return tuple(check.problems)
 
 
+def _latex_message(key: str, broken: BrokenLatex) -> str:
+    return f'{key} has LaTeX that cannot be drawn, "{broken.piece}": {broken.reason}'
+
+
 def _node_path_label(node: object, position: int) -> str:
     """Return how a node stands in a label path: its label, or `#N` when the label is missing or blank."""
     label = node.get("label") if isinstance(node, dict) else None
@@ -160,35 +182,38 @@ class _Check:
         for key in node:
             if key != "type" and key not in parts:
                 self.add(path, f"{kind} nodes have no {_quoted(key)} part")
-        for key, (part_kind, required) in parts.items():
+        for key, part in parts.items():
             if key not in node:
                 self.add(path, f"missing {key}")
             else:
-                self.part(path, key, node[key], part_kind, required)
+                self.part(path, key, node[key], part)
         self.label_prefix(path, node.get("label"))
         children = node.get("children") if "children" in parts else None
         if isinstance(children, list):
             for index, child in enumerate(children, start=1):
                 self.node(child, path, index, kind)
 
-    def part(self, path: tuple[str, ...], key: str, value: object, kind: str, required: bool) -> None:
-        if not _has_kind(value, kind):
-            self.add(path, f"{key} must be {_KIND_NAMES[kind]}")
-        elif kind in ("text", "prose"):
-            self.text(path, key, value, kind, required)
-        elif kind == "stamps":
+    def part(self, path: tuple[str, ...], key: str, value: object, part: _Part) -> None:
+        if not _has_kind(value, part.kind):
+            self.add(path, f"{key} must be {_KIND_NAMES[part.kind]}")
+        elif part.kind in ("text", "prose"):
+            self.text(path, key, value, part)
+        elif part.kind == "stamps":
             self.stamps(path, value)
-        elif kind == "slides":
+        elif part.kind == "slides":
             self.slides(path, value)
-        elif kind == "steps":
+        elif part.kind == "steps":
             for number, step in enumerate(value, start=1):
                 self.step(path, number, step)
 
-    def text(self, path: tuple[str, ...], key: str, value: str, kind: str, required: bool) -> None:
-        if required and not value.strip():
+    def text(self, path: tuple[str, ...], key: str, value: str, part: _Part) -> None:
+        if part.required and not value.strip():
             self.add(path, f"{key} is blank")
-        if kind == "text" and _CONTROL.search(value):
+        if part.kind == "text" and _CONTROL.search(value):
             self.add(path, f"{key} holds a control character; escape every LaTeX backslash as \\\\")
+        elif part.math is not None:
+            for piece in _MATH_CHECKS[part.math](value):
+                self.add(path, _latex_message(key, piece))
 
     def label_prefix(self, path: tuple[str, ...], label: object) -> None:
         prefix = _WORKED_PREFIX.match(label) if isinstance(label, str) else None
@@ -203,11 +228,11 @@ class _Check:
         for key in step:
             if key not in _STEP_PARTS:
                 self.add(path, f"step {number} has no {_quoted(key)} part")
-        for key, (kind, required) in _STEP_PARTS.items():
+        for key, part in _STEP_PARTS.items():
             if key not in step:
                 self.add(path, f"step {number} is missing {key}")
             else:
-                self.part(path, f"step {number} {key}", step[key], kind, required)
+                self.part(path, f"step {number} {key}", step[key], part)
 
     def stamps(self, path: tuple[str, ...], stamps: list[str]) -> None:
         for stamp in stamps:
@@ -273,9 +298,9 @@ def _schema() -> dict:
             "One main-topic node at the root. Every node carries every part its type has; "
             "a part that may be empty is written as \"\" or []. Stamps are \"m:ss\" or \"h:mm:ss\" "
             "without brackets, and Slide numbers count from 1. Math is LaTeX, so escape every "
-            "backslash as \\\\ in JSON. Task, answer and explanation are prose with math between "
-            "$...$, and a literal dollar sign is \\\\$. A step's calculation is LaTeX alone, with no $. "
-            "Reasons are short Swedish."
+            "backslash as \\\\ in JSON. Task, answer, explanation and a step's reason are prose with math "
+            "between $...$, never $$, and a literal dollar sign is \\\\$. A step's calculation is LaTeX "
+            "alone, with no $. Each step is one calculation, and its reason one short Swedish sentence."
         ),
         "$ref": "#/$defs/main-topic",
         "$defs": defs,
@@ -288,10 +313,10 @@ def _node_schema(kind: str) -> dict:
     return _object_schema(_PARTS[kind], {"type": {"const": kind}}, nodes)
 
 
-def _object_schema(parts: dict[str, tuple[str, bool]], extra: dict, nodes: dict | None = None) -> dict:
+def _object_schema(parts: dict[str, _Part], extra: dict, nodes: dict | None = None) -> dict:
     properties = dict(extra)
-    for key, (kind, required) in parts.items():
-        properties[key] = _part_schema(kind, required, nodes)
+    for key, part in parts.items():
+        properties[key] = _part_schema(part.kind, part.required, nodes)
     return {
         "type": "object",
         "properties": properties,

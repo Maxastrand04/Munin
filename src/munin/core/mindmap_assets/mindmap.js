@@ -191,11 +191,64 @@ function fit(floor=minScale){
   centre(root);
 }
 function centre(n){const rect=$('canvas').getBoundingClientRect();tx=rect.width/2-n.x*scale;ty=rect.height/2-n.y*scale;transform();}
+function unescapeDollars(text){return text.replace(/\\\$/g,'$');}
+function mathNode(source,raw){
+  const span=document.createElement('span');
+  try{katex.render(source,span,PAGE.katex_options);}
+  catch(error){span.textContent=raw;}
+  return span;
+}
+function typeset(target,text){
+  const parts=[];let plain='',i=0;
+  while(i<text.length){
+    const c=text[i];
+    if(c==='\\'){plain+=text.slice(i,i+2);i+=2;continue;}
+    if(c==='$'){
+      let j=i+1;while(j<text.length&&text[j]!=='$'){j+=text[j]==='\\'?2:1;}
+      if(text[i+1]==='$'||j>=text.length){plain+=text.slice(i);i=text.length;continue;}
+      if(plain){parts.push(unescapeDollars(plain));plain='';}
+      parts.push(mathNode(text.slice(i+1,j),text.slice(i,j+1)));i=j+1;continue;
+    }
+    plain+=c;i++;
+  }
+  if(plain)parts.push(unescapeDollars(plain));
+  target.replaceChildren(...parts);
+}
+function div(className,text){const e=document.createElement('div');e.className=className;if(text!==undefined)e.textContent=text;return e;}
+function toggle(title,count){
+  const details=document.createElement('details'),summary=document.createElement('summary');
+  summary.append(title);if(count!==undefined)summary.append(' ',Object.assign(document.createElement('span'),{className:'count',textContent:count}));
+  details.append(summary);return details;
+}
+function showWorked(box,w){
+  const heading=document.createElement('h3');heading.textContent=w.heading;
+  const task=div('task');typeset(task,w.task);
+  box.replaceChildren(heading,task);
+  if(w.steps.length){
+    const solution=toggle('Visa lösning',`${w.steps.length} steg`);solution.className='solution';
+    w.steps.forEach((step,k)=>{
+      const row=div('step'),body=div('step-body'),calculation=div('step-calculation');
+      calculation.append(mathNode(step.calculation,step.calculation));body.append(calculation);
+      if(step.reason){const reason=div('step-reason');typeset(reason,step.reason);body.append(reason);}
+      row.append(div('step-number',String(k+1)),body);solution.append(row);
+    });
+    box.append(solution);
+  }
+  if(w.answer){const answer=toggle('Visa svar');answer.className='answer';const body=div('answer-body');typeset(body,w.answer);answer.append(body);box.append(answer);}
+  if(!w.steps.length&&!w.answer)box.append(div('no-solution','Ingen lösning i föreläsningen. Försök själv.'));
+}
+function showText(n){
+  const worked=n.worked;
+  $('worked').hidden=!worked;$('explanation').hidden=!!worked;
+  document.querySelector('.explanation-label').textContent=worked?worked.title:'A simple explanation';
+  if(worked)showWorked($('worked'),worked);
+  else typeset($('explanation'),n.explanation||'Open the Source to explore this idea in context.');
+}
 function select(id){
   selected=id;const n=nodes[id];$('panel').hidden=false;
   showSelectedColor();
   const path=[];let p=n.parent;while(p!==null){path.unshift(nodes[p].label);p=nodes[p].parent;}
-  $('panel-path').textContent=path.join(' / ')||'Lecture overview';$('panel-title').textContent=n.label;$('explanation').textContent=n.explanation||'Open the Source to explore this idea in context.';
+  $('panel-path').textContent=path.join(' / ')||'Lecture overview';$('panel-title').textContent=n.label;showText(n);
   $('slides').replaceChildren();
   n.slides.forEach(number=>{
     const figure=document.createElement('figure'),image=document.createElement('img'),caption=document.createElement('figcaption');
