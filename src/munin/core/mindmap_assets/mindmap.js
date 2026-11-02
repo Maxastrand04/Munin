@@ -194,7 +194,7 @@ function centre(n){const rect=$('canvas').getBoundingClientRect();tx=rect.width/
 function unescapeDollars(text){return text.replace(/\\\$/g,'$');}
 function mathNode(source,raw){
   const span=document.createElement('span');
-  try{katex.render(source,span,{throwOnError:true,displayMode:false,strict:'ignore'});}
+  try{katex.render(source,span,PAGE.katex_options);}
   catch(error){span.textContent=raw;}
   return span;
 }
@@ -240,7 +240,7 @@ function showWorked(box,w){
 function showText(n){
   const worked=n.worked;
   $('worked').hidden=!worked;$('explanation').hidden=!!worked;
-  document.querySelector('.explanation-label').textContent=worked?worked.heading.split(' ')[0]:'A simple explanation';
+  document.querySelector('.explanation-label').textContent=worked?worked.title:'A simple explanation';
   if(worked)showWorked($('worked'),worked);
   else typeset($('explanation'),n.explanation||'Open the Source to explore this idea in context.');
 }

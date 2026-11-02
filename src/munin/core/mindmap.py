@@ -15,7 +15,7 @@ from munin.core.errors import (
     OutlineSyntaxError,
     UnknownDeckError,
 )
-from munin.core.latex import katex_css, katex_js
+from munin.core.latex import KATEX_OPTIONS, katex_css, katex_js
 from munin.core.outline import check_outline
 from munin.core.slides import deck_path, standalone_deck_path
 from munin.core.sources import Source, Video
@@ -248,12 +248,7 @@ def _flat_nodes(outline: dict, source: Source | None) -> list[dict]:
         worked = None
         if node["type"] in counts:
             counts[node["type"]] += 1
-            worked = {
-                "heading": f"{node['type'].capitalize()} {counts[node['type']]}",
-                "task": node["task"],
-                "steps": node["steps"],
-                "answer": node["answer"],
-            }
+            worked = _worked_box(node, counts[node["type"]])
         nodes.append(
             {
                 "id": index,
@@ -272,6 +267,18 @@ def _flat_nodes(outline: dict, source: Source | None) -> list[dict]:
 
     add(outline, None)
     return nodes
+
+
+def _worked_box(node: dict, number: int) -> dict:
+    """Return what an exempel's or övning's box shows, `number` counting its type in Outline order."""
+    title = node["type"].capitalize()
+    return {
+        "title": title,
+        "heading": f"{title} {number}",
+        "task": node["task"],
+        "steps": node["steps"],
+        "answer": node["answer"],
+    }
 
 
 def _slide_images(deck: Path, numbers: list[int]) -> dict[str, str]:
@@ -303,7 +310,13 @@ def _page_html(page_id: str, nodes: list[dict], source: Source | None, slide_ima
         "__KATEX_JS__": katex_js().replace("</script", "<\\/script"),
         "__DATA__": _script_safe_json(nodes),
         "__PAGE__": _script_safe_json(
-            {"title": title, "source_url": source_url, "page_id": page_id, "slides": slide_images}
+            {
+                "title": title,
+                "source_url": source_url,
+                "page_id": page_id,
+                "slides": slide_images,
+                "katex_options": KATEX_OPTIONS,
+            }
         ),
         "__TITLE__": escape(title),
         "__SOURCE_LINK__": source_link,

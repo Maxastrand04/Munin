@@ -1,5 +1,7 @@
 """The one module that wraps `mini-racer`: it runs the page's own KaTeX in V8 (ADR-0021, PCR-0004)."""
 
+import base64
+import json
 import re
 from dataclasses import dataclass
 from functools import lru_cache
@@ -8,10 +10,11 @@ from pathlib import Path
 from py_mini_racer import MiniRacer
 
 _KATEX = Path(__file__).parent / "_vendor" / "katex"
-_OPTIONS = "{throwOnError: true, displayMode: false, strict: 'ignore'}"
+# The options both the LaTeX check and the page pass to KaTeX.
+KATEX_OPTIONS = {"throwOnError": True, "displayMode": False, "strict": "ignore"}
 _CHECK = (
     "function check(expression) {"
-    f" try {{ katex.renderToString(expression, {_OPTIONS}); return null; }}"
+    f" try {{ katex.renderToString(expression, {json.dumps(KATEX_OPTIONS)}); return null; }}"
     " catch (error) {"
     " var reason = error.rawMessage || String(error.message);"
     " if (error.position === undefined) return reason;"
@@ -22,7 +25,11 @@ _FONT_URLS = re.compile(r'url\(fonts/([^)]+?)\.woff2\) format\("woff2"\)(?:,url\
 
 @dataclass(frozen=True)
 class BrokenLatex:
-    """One piece of prose or one calculation that KaTeX cannot draw."""
+    """One piece of prose or one calculation that KaTeX cannot draw.
+
+    `piece` is the broken text exactly as the part holds it, dollars included
+    for prose. `reason` says why KaTeX cannot draw it.
+    """
 
     piece: str
     reason: str
@@ -35,8 +42,6 @@ def katex_js() -> str:
 
 def katex_css() -> str:
     """Return the vendored KaTeX stylesheet with every font embedded as a base64 woff2 data URI, so it needs no network."""
-    import base64
-
     def embed(match: re.Match) -> str:
         data = base64.b64encode((_KATEX / "fonts" / f"{match[1]}.woff2").read_bytes()).decode()
         return f'url(data:font/woff2;base64,{data}) format("woff2")'
