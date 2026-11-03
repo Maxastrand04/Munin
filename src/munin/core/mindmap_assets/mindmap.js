@@ -317,6 +317,7 @@ $('panel-edge').addEventListener('pointerdown',e=>{if(e.button!==0)return;e.prev
 $('panel-edge').addEventListener('pointermove',e=>{if(resize)setPanelWidth(resize.width+resize.x-e.clientX);});
 function stopResize(){resize=null;$('panel-edge').classList.remove('dragging');}
 ['pointerup','pointercancel','lostpointercapture'].forEach(type=>$('panel-edge').addEventListener(type,stopResize));
+$('panel-edge').addEventListener('keydown',e=>{const step={ArrowLeft:PANEL_STEP,ArrowRight:-PANEL_STEP}[e.key];if(!step)return;e.preventDefault();setPanelWidth(panelWidth+step);});
 document.addEventListener('keydown',e=>{
   if(e.key!=='Escape')return;
   if(!$('mindmap-settings').hidden){e.preventDefault();setSettings(false,true);}
