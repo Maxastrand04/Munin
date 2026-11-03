@@ -307,6 +307,7 @@ $('canvas').addEventListener('pointerup',stopDrag);$('canvas').addEventListener(
 // Every node's panel shares one width until the page reloads, and the map always keeps MAP_MIN_WIDTH.
 const PANEL_MIN_WIDTH=326,MAP_MIN_WIDTH=360,PANEL_STEP=20;
 let panelWidth=PANEL_MIN_WIDTH,resize=null;
+$('panel').style.maxWidth=`max(${PANEL_MIN_WIDTH}px, calc(100% - ${MAP_MIN_WIDTH}px))`;
 function setPanelWidth(width){
   const widest=Math.max(PANEL_MIN_WIDTH,$('workspace').clientWidth-MAP_MIN_WIDTH);
   panelWidth=Math.round(Math.min(widest,Math.max(PANEL_MIN_WIDTH,width)));
@@ -323,5 +324,5 @@ document.addEventListener('keydown',e=>{
   if(!$('mindmap-settings').hidden){e.preventDefault();setSettings(false,true);}
   else if(!$('panel').hidden)$('close').click();
 });
-window.addEventListener('resize',()=>{if(selected!==null)centre(nodes[selected]);else fit();});
+window.addEventListener('resize',()=>{setPanelWidth(panelWidth);if(selected===null)fit();});
 resetDepth();choose(variant);
