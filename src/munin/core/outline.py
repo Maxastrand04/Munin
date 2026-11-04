@@ -63,9 +63,11 @@ _PARENTS: dict[str, tuple[str, ...]] = {
     "exercise": _TREE_TYPES,
 }
 
+# The word the page names each worked type with. The page adds it to the label as a prefix, so no label may start with one.
+WORKED_TITLES = {"example": "Exempel", "exercise": "Övning"}
+
 _CONTROL = re.compile(r"[\x00-\x1f\x7f-\x9f]")
-# The page adds these prefixes to example and exercise labels, so no label may start with one.
-_WORKED_PREFIX = re.compile(r"\s*(exempel|övning)\s*:", re.IGNORECASE)
+_WORKED_PREFIX = re.compile(rf"\s*({'|'.join(WORKED_TITLES.values())})\s*:", re.IGNORECASE)
 _NO_CONTROL = "^[^\\u0000-\\u001f\\u007f-\\u009f]*$"
 _NON_BLANK = "\\S"
 _STAMP = "^(\\d+:[0-5]\\d|\\d+:[0-5]\\d:[0-5]\\d)$"

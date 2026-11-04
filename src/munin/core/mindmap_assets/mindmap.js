@@ -20,9 +20,8 @@ const orangeColors = ['#c27418','#fbebd6','#a8570f'],ORANGE_HUE=32.5,ORANGE_CLEA
 const GOLDEN_ANGLE=137.508;
 // The main topic stays in the Linen neutrals so no group shares its colour.
 const mainTopicColors = ['#756a59','#f8f4ec','#433b31'];
-// An example or exercise is orange because of its type, and the page names it with its type's prefix.
-const prefixes = {'example':'Exempel: ','exercise':'Övning: '};
-const nodes = DATA.map(n => ({...n,label:(prefixes[n.type]||'')+n.label,children:[],depth:0,group:-1,orange:n.type in prefixes,x:0,y:0,w:220,h:96}));
+// Only an example or exercise has a worked box, because of its type, so it is orange and the page names it with the box's title.
+const nodes = DATA.map(n => ({...n,label:(n.worked?`${n.worked.title}: `:'')+n.label,children:[],depth:0,group:-1,orange:!!n.worked,x:0,y:0,w:220,h:96}));
 // An example or exercise directly under the main topic takes no topic colour, so it takes no palette slot either.
 let topics = 0;
 nodes.forEach(n=>{if(n.parent!==null){const p=nodes[n.parent];p.children.push(n.id);n.depth=p.depth+1;n.group=n.depth===1?(n.orange?-1:topics++):p.group;}});
