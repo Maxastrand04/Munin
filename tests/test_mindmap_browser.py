@@ -1568,3 +1568,296 @@ def test_explanation_with_template_tokens_shows_as_written(page, template_token_
     page.goto(template_token_url)
     page.get_by_role("button", name=f"Explore {TEMPLATE_TOKEN_LABEL}", exact=True).click()
     assert page.locator("#explanation").text_content() == TEMPLATE_TOKEN_EXPLANATION
+
+
+# The student resizes the explanation panel
+
+PANEL_MIN_WIDTH = 326
+MAP_MIN_WIDTH = 360
+VIEWPORT_WIDTH = 1200
+ACCENT = "rgb(137, 109, 69)"
+RESIZE_OUTLINE = under_a_slide(
+    term("Gauss", explanation="Radoperationer ger trappform. " * 12),
+    term("Rang", explanation="Antalet pivåelement."),
+    solved(steps=[(" + ".join(f"a_{{{n}}}" for n in range(1, 25)) + " = b", "")]),
+)
+
+
+def panel_edge(page):
+    return page.get_by_role("separator", name="Resize explanation")
+
+
+def panel_width(page) -> float:
+    return page.locator("#panel").bounding_box()["width"]
+
+
+def edge_centre(page) -> tuple[float, float]:
+    found = panel_edge(page).bounding_box()
+    return found["x"] + found["width"] / 2, found["y"] + found["height"] / 2
+
+
+def drag_edge(page, dx: float) -> None:
+    """Drag the panel's edge `dx` pixels with the mouse, negative to the left, and let go."""
+    x, y = edge_centre(page)
+    page.mouse.move(x, y)
+    page.mouse.down()
+    page.mouse.move(x + dx, y, steps=8)
+    page.mouse.up()
+
+
+def open_resize_panel(page, render_outline, label: str = "Gauss") -> None:
+    open_card_panel(page, render_outline(RESIZE_OUTLINE), label)
+
+
+def edge_line(page) -> list[str]:
+    """The colour and width of the line the panel's edge draws."""
+    return panel_edge(page).evaluate(
+        "edge => { const s = getComputedStyle(edge, '::after'); return [s.backgroundColor, s.width]; }"
+    )
+
+
+def width_of(locator) -> float:
+    return locator.bounding_box()["width"]
+
+
+def test_panel_first_opens_326px_wide(page, render_outline):
+    """The panel opens 326px wide the first time a node is clicked, with an edge to drag."""
+    open_resize_panel(page, render_outline)
+    assert (panel_width(page), panel_edge(page).is_visible()) == (PANEL_MIN_WIDTH, True)
+
+
+def test_resting_edge_looks_like_the_panel_border(page, render_outline):
+    """Before it is hovered, the edge is a 1px line in the border colour."""
+    open_resize_panel(page, render_outline)
+    page.mouse.move(600, 400)
+    assert edge_line(page) == ["rgb(210, 199, 181)", "1px"]
+
+
+def test_hovered_edge_turns_accent_and_thickens(page, render_outline):
+    """Hovering the edge turns its line the accent colour and 3px wide."""
+    open_resize_panel(page, render_outline)
+    panel_edge(page).hover()
+    assert edge_line(page) == [ACCENT, "3px"]
+
+
+def test_edge_shows_a_resize_cursor_over_a_12px_area(page, render_outline):
+    """The edge shows a column-resize cursor over a 12px area centred on the panel's left side."""
+    open_resize_panel(page, render_outline)
+    left = page.locator("#panel").bounding_box()["x"]
+    found = panel_edge(page).bounding_box()
+    cursor = panel_edge(page).evaluate("edge => getComputedStyle(edge).cursor")
+    assert (cursor, found["width"], found["x"] + found["width"] / 2) == ("col-resize", 12, left)
+
+
+def test_dragging_the_edge_left_widens_the_panel(page, render_outline):
+    """Dragging the edge 200px left with the mouse widens the panel by 200px."""
+    open_resize_panel(page, render_outline)
+    drag_edge(page, -200)
+    assert panel_width(page) == PANEL_MIN_WIDTH + 200
+
+
+def test_dragging_the_edge_right_narrows_the_panel(page, render_outline):
+    """Dragging a widened panel's edge right narrows it again."""
+    open_resize_panel(page, render_outline)
+    drag_edge(page, -300)
+    drag_edge(page, 100)
+    assert panel_width(page) == PANEL_MIN_WIDTH + 200
+
+
+def test_panel_never_narrows_below_326px(page, render_outline):
+    """Dragging the edge far right leaves the panel 326px wide."""
+    open_resize_panel(page, render_outline)
+    drag_edge(page, 400)
+    assert panel_width(page) == PANEL_MIN_WIDTH
+
+
+def test_panel_never_widens_past_leaving_360px_of_map(page, render_outline):
+    """Dragging the edge far left stops where the map keeps 360px."""
+    open_resize_panel(page, render_outline)
+    drag_edge(page, -1000)
+    assert panel_width(page) == VIEWPORT_WIDTH - MAP_MIN_WIDTH
+
+
+def test_dragging_the_edge_by_touch_widens_the_panel(browser, render_outline):
+    """Dragging the edge 200px left by touch widens the panel by 200px."""
+    context = browser.new_context(viewport={"width": VIEWPORT_WIDTH, "height": 800}, has_touch=True)
+    page = context.new_page()
+    open_resize_panel(page, render_outline)
+    x, y = edge_centre(page)
+    touch = context.new_cdp_session(page)
+    for kind, at in [("touchStart", x), *(("touchMove", x - 25 * k) for k in range(1, 9)), ("touchEnd", None)]:
+        points = [] if at is None else [{"x": at, "y": y}]
+        touch.send("Input.dispatchTouchEvent", {"type": kind, "touchPoints": points})
+    width = panel_width(page)
+    context.close()
+    assert width == PANEL_MIN_WIDTH + 200
+
+
+def test_explanation_rewraps_to_the_wider_panel(page, render_outline):
+    """Widening the panel widens the explanation by as much, at the same font size."""
+    open_resize_panel(page, render_outline)
+    explanation = page.locator("#explanation")
+    before = width_of(explanation), explanation.evaluate("e => getComputedStyle(e).fontSize")
+    drag_edge(page, -200)
+    after = width_of(explanation), explanation.evaluate("e => getComputedStyle(e).fontSize")
+    assert after == (before[0] + 200, before[1])
+
+
+def test_box_rewraps_to_the_wider_panel(page, render_outline):
+    """Widening the panel widens the exempel box by as much, and its long step takes fewer lines."""
+    open_resize_panel(page, render_outline, "Rad gånger kolonn")
+    open_solution(page)
+    step = box(page).locator(".step-calculation")
+    before = width_of(box(page)), step.bounding_box()["height"]
+    drag_edge(page, -400)
+    after = width_of(box(page)), step.bounding_box()["height"]
+    assert (after[0] == before[0] + 400, after[1] < before[1]) == (True, True)
+
+
+def test_slides_scale_to_the_wider_panel(page, slides_url):
+    """Widening the panel widens each Slide image by as much."""
+    open_panel(page, slides_url, "Gauss")
+    before = width_of(panel_images(page).first)
+    drag_edge(page, -200)
+    assert width_of(panel_images(page).first) == before + 200
+
+
+def test_selected_node_stays_inside_the_map_while_widening(page, render_outline):
+    """While the panel widens, the selected node's card stays inside the map."""
+    open_resize_panel(page, render_outline)
+    x, y = edge_centre(page)
+    page.mouse.move(x, y)
+    page.mouse.down()
+    page.mouse.move(x - 400, y, steps=8)
+    card = page.locator(".node", has=page.get_by_role("button", name="Explore Gauss", exact=True)).bounding_box()
+    canvas = page.locator("#canvas").bounding_box()
+    page.mouse.up()
+    assert canvas["x"] <= card["x"] and card["x"] + card["width"] <= canvas["x"] + canvas["width"]
+
+
+def test_panel_keeps_its_width_after_letting_go(page, render_outline):
+    """After the student lets go, moving the mouse no longer changes the panel's width."""
+    open_resize_panel(page, render_outline)
+    drag_edge(page, -200)
+    page.mouse.move(300, 400, steps=4)
+    assert panel_width(page) == PANEL_MIN_WIDTH + 200
+
+
+def test_another_node_opens_at_the_same_width(page, render_outline):
+    """Clicking another node opens its panel at the width the student chose."""
+    open_resize_panel(page, render_outline)
+    drag_edge(page, -200)
+    click_card(page, "Rang")
+    assert panel_width(page) == PANEL_MIN_WIDTH + 200
+
+
+def test_reopened_panel_opens_at_the_same_width(page, render_outline):
+    """Closing the panel and opening it again keeps the width the student chose."""
+    open_resize_panel(page, render_outline)
+    drag_edge(page, -200)
+    page.get_by_role("button", name="Close explanation").click()
+    click_card(page, "Gauss")
+    assert panel_width(page) == PANEL_MIN_WIDTH + 200
+
+
+def test_edge_takes_keyboard_focus(page, render_outline):
+    """The edge can take keyboard focus."""
+    open_resize_panel(page, render_outline)
+    panel_edge(page).focus()
+    assert panel_edge(page).evaluate("edge => document.activeElement === edge")
+
+
+def test_left_arrow_widens_and_right_arrow_narrows(page, render_outline):
+    """With the edge focused, the left arrow widens the panel and the right arrow narrows it back."""
+    open_resize_panel(page, render_outline)
+    panel_edge(page).focus()
+    page.keyboard.press("ArrowLeft")
+    wider = panel_width(page)
+    page.keyboard.press("ArrowRight")
+    assert (wider > PANEL_MIN_WIDTH, panel_width(page)) == (True, PANEL_MIN_WIDTH)
+
+
+def test_arrows_stay_inside_the_width_limits(page, render_outline):
+    """Arrow keys never take the panel below 326px or past leaving 360px of map."""
+    open_resize_panel(page, render_outline)
+    panel_edge(page).focus()
+    page.keyboard.press("ArrowRight")
+    narrowest = panel_width(page)
+    for _ in range(100):
+        page.keyboard.press("ArrowLeft")
+    assert (narrowest, panel_width(page)) == (PANEL_MIN_WIDTH, VIEWPORT_WIDTH - MAP_MIN_WIDTH)
+
+
+def test_dragging_the_edge_does_not_pan_the_map(page, render_outline):
+    """Dragging the edge leaves the selected node centred in the map instead of moving it with the pointer."""
+    open_resize_panel(page, render_outline)
+    drag_edge(page, -200)
+    card = page.locator(".node", has=page.get_by_role("button", name="Explore Gauss", exact=True)).bounding_box()
+    canvas = page.locator("#canvas").bounding_box()
+    centre_x = canvas["x"] + canvas["width"] / 2
+    assert (panel_width(page), round(card["x"] + card["width"] / 2)) == (PANEL_MIN_WIDTH + 200, round(centre_x))
+
+
+def test_dragging_the_edge_does_not_select_panel_text(page, render_outline):
+    """Dragging the edge across the panel's text selects none of it."""
+    open_resize_panel(page, render_outline)
+    drag_edge(page, -300)
+    x, y = edge_centre(page)
+    page.mouse.move(x, y)
+    page.mouse.down()
+    page.mouse.move(x + 600, y + 100, steps=8)
+    page.mouse.up()
+    assert (panel_width(page), page.evaluate("getSelection().toString()")) == (PANEL_MIN_WIDTH, "")
+
+
+def test_letting_go_outside_the_window_ends_the_drag(page, render_outline):
+    """Letting go of the mouse past the window's left side ends the drag."""
+    open_resize_panel(page, render_outline)
+    x, y = edge_centre(page)
+    page.mouse.move(x, y)
+    page.mouse.down()
+    page.mouse.move(-40, y, steps=8)
+    page.mouse.up()
+    page.mouse.move(x + 300, y, steps=4)
+    assert panel_width(page) == VIEWPORT_WIDTH - MAP_MIN_WIDTH
+
+
+def test_shrinking_window_narrows_a_wide_panel_to_fit(page, render_outline):
+    """When the window shrinks, a wide panel narrows so the map keeps 360px."""
+    open_resize_panel(page, render_outline)
+    drag_edge(page, -500)
+    page.set_viewport_size({"width": 1000, "height": 800})
+    assert panel_width(page) == 1000 - MAP_MIN_WIDTH
+
+
+def test_shrinking_window_never_narrows_the_panel_below_326px(page, render_outline):
+    """When the window shrinks below 326px plus the map's 360px, a wide panel stops at 326px."""
+    open_resize_panel(page, render_outline)
+    drag_edge(page, -500)
+    page.set_viewport_size({"width": 600, "height": 800})
+    assert panel_width(page) == PANEL_MIN_WIDTH
+
+
+def test_narrow_window_keeps_the_panel_at_326px(page, render_outline):
+    """In a window too narrow for 326px plus 360px of map, dragging the edge left leaves the panel 326px wide."""
+    page.set_viewport_size({"width": 600, "height": 800})
+    open_resize_panel(page, render_outline)
+    drag_edge(page, -150)
+    assert panel_width(page) == PANEL_MIN_WIDTH
+
+
+def test_closed_panel_has_no_edge_to_grab(page, render_outline):
+    """Closing the panel hides its edge along with it."""
+    open_resize_panel(page, render_outline)
+    page.get_by_role("button", name="Close explanation").click()
+    edge = page.get_by_role("separator", name="Resize explanation", include_hidden=True)
+    assert (edge.count(), edge.is_visible()) == (1, False)
+
+
+def test_reload_opens_the_panel_at_326px(page, render_outline):
+    """After a reload, the panel opens 326px wide again."""
+    open_resize_panel(page, render_outline)
+    drag_edge(page, -200)
+    page.reload()
+    click_card(page, "Gauss")
+    assert panel_width(page) == PANEL_MIN_WIDTH

@@ -75,3 +75,10 @@
 #worked .step-body{min-width:0;flex:1}
 #worked .step-reason{color:var(--muted);font-style:italic;font-size:.9em}
 #worked .no-solution{color:var(--muted);font-style:italic;margin-top:10px}
+
+/* The panel's left edge looks like its border until hovered or dragged. */
+.panel-edge{flex:none;width:12px;margin:0 -6px;position:relative;z-index:3;cursor:col-resize;touch-action:none}
+.panel-edge:has(+#panel[hidden]){display:none}
+.panel-edge::after{content:'';position:absolute;top:0;bottom:0;left:6px;width:1px;background:var(--line)}
+.panel-edge:hover::after,.panel-edge.dragging::after,.panel-edge:focus-visible::after{left:5px;width:3px;background:var(--accent)}
+.panel-edge:focus-visible{outline:0}

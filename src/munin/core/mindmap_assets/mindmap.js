@@ -304,10 +304,25 @@ $('canvas').addEventListener('pointerdown',e=>{if(e.button!==0||e.target.closest
 $('canvas').addEventListener('pointermove',e=>{if(!drag)return;tx=drag.tx+e.clientX-drag.x;ty=drag.ty+e.clientY-drag.y;transform();});
 function stopDrag(){drag=null;$('canvas').classList.remove('dragging');}
 $('canvas').addEventListener('pointerup',stopDrag);$('canvas').addEventListener('pointercancel',stopDrag);
+// Every node's panel shares one width until the page reloads, and the map always keeps MAP_MIN_WIDTH.
+const PANEL_MIN_WIDTH=326,MAP_MIN_WIDTH=360,PANEL_STEP=20;
+let panelWidth=PANEL_MIN_WIDTH,resize=null;
+$('panel').style.maxWidth=`max(${PANEL_MIN_WIDTH}px, calc(100% - ${MAP_MIN_WIDTH}px))`;
+function setPanelWidth(width){
+  const widest=Math.max(PANEL_MIN_WIDTH,$('workspace').clientWidth-MAP_MIN_WIDTH);
+  panelWidth=Math.round(Math.min(widest,Math.max(PANEL_MIN_WIDTH,width)));
+  $('panel').style.width=`${panelWidth}px`;
+  if(selected!==null)centre(nodes[selected]);
+}
+$('panel-edge').addEventListener('pointerdown',e=>{if(e.button!==0)return;e.preventDefault();resize={x:e.clientX,width:panelWidth};$('panel-edge').setPointerCapture(e.pointerId);$('panel-edge').classList.add('dragging');});
+$('panel-edge').addEventListener('pointermove',e=>{if(resize)setPanelWidth(resize.width+resize.x-e.clientX);});
+function stopResize(){resize=null;$('panel-edge').classList.remove('dragging');}
+['pointerup','pointercancel','lostpointercapture'].forEach(type=>$('panel-edge').addEventListener(type,stopResize));
+$('panel-edge').addEventListener('keydown',e=>{const step={ArrowLeft:PANEL_STEP,ArrowRight:-PANEL_STEP}[e.key];if(!step)return;e.preventDefault();setPanelWidth(panelWidth+step);});
 document.addEventListener('keydown',e=>{
   if(e.key!=='Escape')return;
   if(!$('mindmap-settings').hidden){e.preventDefault();setSettings(false,true);}
   else if(!$('panel').hidden)$('close').click();
 });
-window.addEventListener('resize',()=>{if(selected!==null)centre(nodes[selected]);else fit();});
+window.addEventListener('resize',()=>{setPanelWidth(panelWidth);if(selected===null)fit();});
 resetDepth();choose(variant);
