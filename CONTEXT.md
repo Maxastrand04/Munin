@@ -41,7 +41,7 @@ The rendered HTML page built from an Outline, with every stamp turned into a Tim
 _Avoid_: map, graph, diagram
 
 **Example or exercise**:
-An Outline node of type `exempel` or `övning`. It sits under any node but another exempel or övning, has no children, and carries a `task`, a list of `steps` and an `answer` instead of an explanation. Each step has a `calculation` and a `reason`. The Mindmap paints it in a reserved orange that no topic gets, and adds `Exempel: ` or `Övning: ` before its label. Its panel shows it as a box headed `Exempel N` or `Övning N`, where N counts each type separately in Outline order, with the task, then the steps and the answer each behind a closed toggle. A Slide that is only one example or exercise is one of these, under its topic, and gets no slide node. No node's label may start with `Exempel:` or `Övning:`, so the render fails on a slide, topic or term labelled that way.
+An Outline node of type `example` or `exercise`. It sits under any node but another example or exercise, has no children, and carries a `task`, a list of `steps` and an `answer` instead of an explanation. Each step has a `calculation` and a `reason`. The Mindmap paints it in a reserved orange that no topic gets, and adds `Exempel: ` or `Övning: ` before its label. Its panel shows it as a box headed `Exempel N` or `Övning N`, where N counts each type separately in Outline order, with the task, then the steps and the answer each behind a closed toggle. A Slide that is only one example or exercise is one of these, under its topic, and gets no slide node. No node's label may start with `Exempel:` or `Övning:`, so the render fails on a slide, topic or term labelled that way.
 _Avoid_: task, problem, worked example
 
 **Timestamp link**:

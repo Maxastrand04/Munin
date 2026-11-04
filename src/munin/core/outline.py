@@ -49,8 +49,8 @@ _PARTS: dict[str, dict[str, _Part]] = {
     "topic": _TREE_PARTS,
     "slide": _TREE_PARTS,
     "term": _TREE_PARTS,
-    "exempel": _WORKED_PARTS,
-    "övning": _WORKED_PARTS,
+    "example": _WORKED_PARTS,
+    "exercise": _WORKED_PARTS,
 }
 _TREE_TYPES = ("main-topic", "topic", "slide", "term")
 # Which parent types each type may sit under. The main-topic sits only at the root.
@@ -59,12 +59,12 @@ _PARENTS: dict[str, tuple[str, ...]] = {
     "topic": ("main-topic",),
     "slide": ("topic",),
     "term": ("slide",),
-    "exempel": _TREE_TYPES,
-    "övning": _TREE_TYPES,
+    "example": _TREE_TYPES,
+    "exercise": _TREE_TYPES,
 }
 
 _CONTROL = re.compile(r"[\x00-\x1f\x7f-\x9f]")
-# The page adds these prefixes to exempel and övning labels, so no label may start with one.
+# The page adds these prefixes to example and exercise labels, so no label may start with one.
 _WORKED_PREFIX = re.compile(r"\s*(exempel|övning)\s*:", re.IGNORECASE)
 _NO_CONTROL = "^[^\\u0000-\\u001f\\u007f-\\u009f]*$"
 _NON_BLANK = "\\S"
@@ -220,8 +220,8 @@ class _Check:
         if prefix:
             self.add(
                 path,
-                f"label starts with {_quoted(prefix.group(1).capitalize() + ':')}; write an example or exercise "
-                "as an exempel or övning node and leave the prefix out, since the page adds it",
+                f"label starts with {_quoted(prefix.group(1).capitalize() + ':')}; use an example or exercise "
+                "node and leave the prefix out, since the page adds it",
             )
 
     def step(self, path: tuple[str, ...], number: int, step: dict) -> None:
@@ -341,8 +341,8 @@ def _part_schema(kind: str, required: bool, nodes: dict | None) -> dict:
 
 
 def _samples() -> tuple[dict, dict]:
-    exempel = {
-        "type": "exempel",
+    example = {
+        "type": "example",
         "label": "Förenkla ett bråk",
         "stamps": [],
         "slides": [],
@@ -353,8 +353,8 @@ def _samples() -> tuple[dict, dict]:
         ],
         "answer": "$\\frac{3}{4}$",
     }
-    ovning = {
-        "type": "övning",
+    exercise = {
+        "type": "exercise",
         "label": "Matrisprodukt",
         "stamps": [],
         "slides": [],
@@ -362,4 +362,4 @@ def _samples() -> tuple[dict, dict]:
         "steps": [{"calculation": "1 \\cdot 3 + 2 \\cdot 4", "reason": "rad gånger kolonn"}],
         "answer": "$\\begin{pmatrix} 11 \\end{pmatrix}$",
     }
-    return exempel, ovning
+    return example, exercise

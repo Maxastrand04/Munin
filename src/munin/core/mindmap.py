@@ -237,7 +237,7 @@ def _parsed(outline: dict | str) -> object:
 def _flat_nodes(outline: dict, source: Source | None) -> list[dict]:
     """Return the checked Outline's nodes in Outline order, each pointing at its parent by index."""
     nodes: list[dict] = []
-    counts = {"exempel": 0, "övning": 0}
+    counts = {"example": 0, "exercise": 0}
 
     def add(node: dict, parent: int | None) -> None:
         index = len(nodes)
@@ -269,9 +269,12 @@ def _flat_nodes(outline: dict, source: Source | None) -> list[dict]:
     return nodes
 
 
+_WORKED_TITLES = {"example": "Exempel", "exercise": "Övning"}
+
+
 def _worked_box(node: dict, number: int) -> dict:
-    """Return what an exempel's or övning's box shows, `number` counting its type in Outline order."""
-    title = node["type"].capitalize()
+    """Return what an example's or exercise's box shows, `number` counting its type in Outline order."""
+    title = _WORKED_TITLES[node["type"]]
     return {
         "title": title,
         "heading": f"{title} {number}",
