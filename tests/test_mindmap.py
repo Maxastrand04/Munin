@@ -84,7 +84,7 @@ def worked(
     steps=(("x = 2 - 1", "subtrahera 1"),),
     answer: str = "x = 1",
 ) -> dict:
-    """An exempel or övning node, with every part present."""
+    """An example or exercise node, with every part present."""
     return {
         "type": kind,
         "label": label,
@@ -404,9 +404,9 @@ def test_slide_node_without_slide_numbers_renders_without_a_deck(transcript_id: 
 
 
 @pytest.mark.parametrize("parent", ["main-topic", "topic", "slide", "term"])
-def test_exempel_renders_under_every_other_type(transcript_id: str, cache_dir: Path, tmp_path: Path, parent: str):
-    """An exempel may sit under a main-topic, topic, slide or term node."""
-    example = worked("exempel", "Rad gånger kolonn")
+def test_example_renders_under_every_other_type(transcript_id: str, cache_dir: Path, tmp_path: Path, parent: str):
+    """An example may sit under a main-topic, topic, slide or term node."""
+    example = worked("example", "Rad gånger kolonn")
     outline = {
         "main-topic": node("main-topic", "Matriser", example),
         "topic": node("main-topic", "Matriser", node("topic", "Rader", example)),
@@ -416,9 +416,9 @@ def test_exempel_renders_under_every_other_type(transcript_id: str, cache_dir: P
     assert render_page(transcript_id, outline, cache_dir=cache_dir, output_dir=tmp_path).is_file()
 
 
-def test_exempel_with_no_steps_and_no_answer_renders(transcript_id: str, cache_dir: Path, tmp_path: Path):
-    """An exempel's steps and answer may be empty."""
-    outline = lecture(worked("exempel", "Rad gånger kolonn", steps=(), answer=""))
+def test_example_with_no_steps_and_no_answer_renders(transcript_id: str, cache_dir: Path, tmp_path: Path):
+    """An example's steps and answer may be empty."""
+    outline = lecture(worked("example", "Rad gånger kolonn", steps=(), answer=""))
     assert render_page(transcript_id, outline, cache_dir=cache_dir, output_dir=tmp_path).is_file()
 
 
@@ -499,7 +499,7 @@ def test_child_that_is_not_an_object_is_a_problem(transcript_id: str, cache_dir:
 
 def test_step_missing_its_reason_is_a_problem(transcript_id: str, cache_dir: Path, tmp_path: Path):
     """A step with no `reason` fails the check, even though a reason may be empty."""
-    example = worked("exempel", "Rad gånger kolonn")
+    example = worked("example", "Rad gånger kolonn")
     example["steps"] = [{"calculation": "x = 2 - 1"}]
     assert problem_paths(transcript_id, lecture(example), cache_dir, tmp_path) == [(*SLIDE_PATH, "Rad gånger kolonn")]
 
@@ -524,8 +524,8 @@ def test_missing_part_is_a_problem(transcript_id: str, cache_dir: Path, tmp_path
 
 
 def test_part_the_type_does_not_have_is_a_problem(transcript_id: str, cache_dir: Path, tmp_path: Path):
-    """An exempel with an explanation fails the check, since exempel nodes have no explanation."""
-    outline = lecture({**worked("exempel", "Rad gånger kolonn"), "explanation": ""})
+    """An example with an explanation fails the check, since example nodes have no explanation."""
+    outline = lecture({**worked("example", "Rad gånger kolonn"), "explanation": ""})
     assert problem_paths(transcript_id, outline, cache_dir, tmp_path) == [(*SLIDE_PATH, "Rad gånger kolonn")]
 
 
@@ -536,16 +536,16 @@ def test_misspelled_part_is_a_problem_of_its_own(transcript_id: str, cache_dir: 
     assert problem_paths(transcript_id, outline, cache_dir, tmp_path) == [(*SLIDE_PATH, "Gauss"), (*SLIDE_PATH, "Gauss")]
 
 
-@pytest.mark.parametrize("kind", ["exempel", "övning"])
+@pytest.mark.parametrize("kind", ["example", "exercise"])
 @pytest.mark.parametrize(
     "children",
-    [[], [worked("exempel", "Inre")], [worked("övning", "Inre")], [term("Inre")]],
-    ids=["empty", "exempel", "övning", "term"],
+    [[], [worked("example", "Inre")], [worked("exercise", "Inre")], [term("Inre")]],
+    ids=["empty", "example", "exercise", "term"],
 )
-def test_children_on_an_exempel_or_ovning_is_one_problem(
+def test_children_on_an_example_or_exercise_is_one_problem(
     transcript_id: str, cache_dir: Path, tmp_path: Path, kind: str, children: list
 ):
-    """An exempel or övning with a `children` part fails once, whatever the list holds, so nothing nests under one."""
+    """An example or exercise with a `children` part fails once, whatever the list holds, so nothing nests under one."""
     outline = lecture({**worked(kind, "Rad gånger kolonn"), "children": children})
     assert problem_paths(transcript_id, outline, cache_dir, tmp_path) == [(*SLIDE_PATH, "Rad gånger kolonn")]
 
@@ -555,10 +555,10 @@ def test_children_on_an_exempel_or_ovning_is_one_problem(
     "labelled",
     [
         lambda label: lecture(term(label)),
-        lambda label: lecture(worked("exempel", label)),
-        lambda label: lecture(worked("övning", label)),
+        lambda label: lecture(worked("example", label)),
+        lambda label: lecture(worked("exercise", label)),
     ],
-    ids=["term", "exempel", "övning"],
+    ids=["term", "example", "exercise"],
 )
 def test_label_with_a_worked_prefix_is_a_problem(
     transcript_id: str, cache_dir: Path, tmp_path: Path, prefix: str, labelled
@@ -569,17 +569,17 @@ def test_label_with_a_worked_prefix_is_a_problem(
 
 
 def test_slide_labelled_with_a_worked_prefix_is_a_problem(transcript_id: str, cache_dir: Path, tmp_path: Path):
-    """A slide node labelled `Exempel:` fails the check, so a Slide that is only an example becomes an exempel node."""
+    """A slide node labelled `Exempel:` fails the check, so a Slide that is only an example becomes an example node."""
     outline = node("main-topic", "Matriser", node("topic", "Rader", node("slide", "Exempel: summaformeln")))
     assert problem_paths(transcript_id, outline, cache_dir, tmp_path) == [("Matriser", "Rader", "Exempel: summaformeln")]
 
 
 def test_worked_prefix_problem_says_to_leave_the_prefix_out(transcript_id: str, cache_dir: Path, tmp_path: Path):
-    """The problem for a prefixed label tells the LLM to drop the prefix and use an exempel or övning node."""
+    """The problem for a prefixed label tells the LLM to drop the prefix and use an example or exercise node."""
     with pytest.raises(OutlineStructureError) as caught:
         render_mindmap(transcript_id, lecture(term("Exempel: Rad")), cache_dir=cache_dir, output_dir=tmp_path / "out")
     message = caught.value.problems[0].message
-    assert '"Exempel:"' in message and "exempel or övning node" in message
+    assert '"Exempel:"' in message and "example or exercise node" in message
 
 
 @pytest.mark.parametrize("label", ["Exempel på rader", "Övningar", "Ett exempel: rader"])
@@ -597,14 +597,14 @@ def test_blank_label_is_a_problem_named_by_position(transcript_id: str, cache_di
 
 
 def test_blank_task_is_a_problem(transcript_id: str, cache_dir: Path, tmp_path: Path):
-    """An exempel with a blank task fails the check."""
-    outline = lecture(worked("exempel", "Rad gånger kolonn", task=" "))
+    """An example with a blank task fails the check."""
+    outline = lecture(worked("example", "Rad gånger kolonn", task=" "))
     assert problem_paths(transcript_id, outline, cache_dir, tmp_path) == [(*SLIDE_PATH, "Rad gånger kolonn")]
 
 
 def test_blank_calculation_is_a_problem(transcript_id: str, cache_dir: Path, tmp_path: Path):
-    """An övning with a step whose calculation is blank fails the check."""
-    outline = lecture(worked("övning", "Rad gånger kolonn", steps=(("", "subtrahera 1"),)))
+    """An exercise with a step whose calculation is blank fails the check."""
+    outline = lecture(worked("exercise", "Rad gånger kolonn", steps=(("", "subtrahera 1"),)))
     assert problem_paths(transcript_id, outline, cache_dir, tmp_path) == [(*SLIDE_PATH, "Rad gånger kolonn")]
 
 
@@ -639,10 +639,10 @@ def test_root_that_is_a_list_is_a_problem_at_the_root(transcript_id: str, cache_
     "outline",
     [
         lecture(term("Gauss\x0celimination")),
-        lecture(worked("exempel", "Bråk", task="Förenkla \x0crac{2}{4}")),
-        lecture(worked("exempel", "Bråk", steps=(("2 \times 2", ""),))),
-        lecture(worked("exempel", "Bråk", steps=(("2 + 2", "\x08eta saknas"),))),
-        lecture(worked("exempel", "Bråk", answer="x \neq 0")),
+        lecture(worked("example", "Bråk", task="Förenkla \x0crac{2}{4}")),
+        lecture(worked("example", "Bråk", steps=(("2 \times 2", ""),))),
+        lecture(worked("example", "Bråk", steps=(("2 + 2", "\x08eta saknas"),))),
+        lecture(worked("example", "Bråk", answer="x \neq 0")),
     ],
     ids=["label", "task", "calculation", "reason", "answer"],
 )
@@ -716,11 +716,11 @@ def test_broken_latex_problem_names_its_node_by_label_path(transcript_id: str, c
     "outline, part",
     [
         (lecture(term(explanation=BROKEN_LATEX)), "explanation"),
-        (lecture(worked("exempel", "Rad gånger kolonn", task=f"Lös {BROKEN_LATEX}")), "task"),
-        (lecture(worked("exempel", "Rad gånger kolonn", answer=BROKEN_LATEX)), "answer"),
-        (lecture(worked("exempel", "Rad gånger kolonn", steps=(("x = 1", ""), ("\\frac{1}{2", "")))), "step 2 calculation"),
+        (lecture(worked("example", "Rad gånger kolonn", task=f"Lös {BROKEN_LATEX}")), "task"),
+        (lecture(worked("example", "Rad gånger kolonn", answer=BROKEN_LATEX)), "answer"),
+        (lecture(worked("example", "Rad gånger kolonn", steps=(("x = 1", ""), ("\\frac{1}{2", "")))), "step 2 calculation"),
         (
-            lecture(worked("exempel", "Rad gånger kolonn", steps=(("x = 1", ""), ("x = 2", f"dela med {BROKEN_LATEX}")))),
+            lecture(worked("example", "Rad gånger kolonn", steps=(("x = 1", ""), ("x = 2", f"dela med {BROKEN_LATEX}")))),
             "step 2 reason",
         ),
     ],
@@ -734,7 +734,7 @@ def test_broken_latex_problem_names_its_part(transcript_id: str, cache_dir: Path
 
 def test_broken_latex_problem_quotes_the_piece_with_its_dollars(transcript_id: str, cache_dir: Path, tmp_path: Path):
     """The message holds the broken piece exactly as the part has it, dollars included."""
-    outline = lecture(worked("exempel", "Rad gånger kolonn", task=f"Lös {BROKEN_LATEX} nu"))
+    outline = lecture(worked("example", "Rad gånger kolonn", task=f"Lös {BROKEN_LATEX} nu"))
     [message] = problem_messages(transcript_id, outline, cache_dir, tmp_path)
     assert BROKEN_LATEX in message
 
@@ -753,21 +753,21 @@ def test_broken_latex_problem_gives_the_position_counted_from_one(transcript_id:
 
 def test_broken_calculation_is_quoted_whole(transcript_id: str, cache_dir: Path, tmp_path: Path):
     """A broken calculation is quoted whole, with no dollars added."""
-    outline = lecture(worked("exempel", "Rad gånger kolonn", steps=(("x = \\frac{1}{2", ""),)))
+    outline = lecture(worked("example", "Rad gånger kolonn", steps=(("x = \\frac{1}{2", ""),)))
     [message] = problem_messages(transcript_id, outline, cache_dir, tmp_path)
     assert '"x = \\frac{1}{2"' in message
 
 
 def test_unclosed_dollar_is_broken_to_the_end_of_the_part(transcript_id: str, cache_dir: Path, tmp_path: Path):
     """A `$` with no closing `$` is one broken piece, from that `$` to the end of the part."""
-    outline = lecture(worked("exempel", "Rad gånger kolonn", task="Lös $x + 1 nu"))
+    outline = lecture(worked("example", "Rad gånger kolonn", task="Lös $x + 1 nu"))
     [message] = problem_messages(transcript_id, outline, cache_dir, tmp_path)
     assert '"$x + 1 nu"' in message
 
 
 def test_double_dollar_is_broken(transcript_id: str, cache_dir: Path, tmp_path: Path):
     """`$$` is broken, since math is never display mode."""
-    outline = lecture(worked("exempel", "Rad gånger kolonn", task="Lös $$x^2 = 4$$"))
+    outline = lecture(worked("example", "Rad gånger kolonn", task="Lös $$x^2 = 4$$"))
     assert any('"$$"' in message for message in problem_messages(transcript_id, outline, cache_dir, tmp_path))
 
 
@@ -779,7 +779,7 @@ def test_unknown_latex_command_is_broken(transcript_id: str, cache_dir: Path, tm
 
 def test_dollar_in_a_calculation_is_broken(transcript_id: str, cache_dir: Path, tmp_path: Path):
     """A calculation is LaTeX alone, so a `$` in it is broken."""
-    outline = lecture(worked("exempel", "Rad gånger kolonn", steps=(("$x = 1$", ""),)))
+    outline = lecture(worked("example", "Rad gånger kolonn", steps=(("$x = 1$", ""),)))
     assert problem_messages(transcript_id, outline, cache_dir, tmp_path)[0].startswith("step 1 calculation")
 
 
@@ -828,7 +828,7 @@ def test_two_broken_pieces_in_one_part_are_two_problems(transcript_id: str, cach
 def bad_lecture() -> dict:
     """An Outline with three bad nodes, each wrong in one way: a missing part, a blank task and a malformed stamp."""
     missing = {key: value for key, value in term("Pivot").items() if key != "slides"}
-    return lecture(missing, worked("exempel", "Rad gånger kolonn", task=""), term("Gauss", stamps=["1:75"]))
+    return lecture(missing, worked("example", "Rad gånger kolonn", task=""), term("Gauss", stamps=["1:75"]))
 
 
 BAD_PATHS = [(*SLIDE_PATH, "Pivot"), (*SLIDE_PATH, "Rad gånger kolonn"), (*SLIDE_PATH, "Gauss")]

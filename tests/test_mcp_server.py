@@ -512,13 +512,13 @@ def test_mcp_render_description_adds_every_example_and_exercise(cache_dir: Path)
 
 
 def test_mcp_render_description_labels_examples_and_exercises(cache_dir: Path):
-    """The render tool's description asks for each example and exercise as an exempel or övning node."""
-    assert "as an exempel or övning node" in tool_description(create_server(cache_dir=cache_dir), "render_mindmap")
+    """The render tool's description asks for each example and exercise as an example or exercise node."""
+    assert "as an example or exercise node" in tool_description(create_server(cache_dir=cache_dir), "render_mindmap")
 
 
 @pytest.mark.parametrize("tool", ["render_mindmap", "render_deck_mindmap"])
-def test_mcp_render_description_turns_an_example_slide_into_an_exempel(cache_dir: Path, tool: str):
-    """Both render tools ask for a Slide that is only an example or exercise as an exempel or övning node, not a slide node."""
+def test_mcp_render_description_turns_an_example_slide_into_an_example(cache_dir: Path, tool: str):
+    """Both render tools ask for a Slide that is only an example or exercise as an example or exercise node, not a slide node."""
     assert "in place of a slide node" in tool_description(create_server(cache_dir=cache_dir), tool)
 
 
@@ -679,8 +679,8 @@ def test_mcp_deck_render_description_lists_each_slide_number_in_slides(cache_dir
 
 
 def test_mcp_deck_render_description_labels_examples_and_exercises(cache_dir: Path):
-    """The slides-only guidance asks for each example and exercise as an exempel or övning node."""
-    assert "as an exempel or övning node" in tool_description(create_server(cache_dir=cache_dir), "render_deck_mindmap")
+    """The slides-only guidance asks for each example and exercise as an example or exercise node."""
+    assert "as an example or exercise node" in tool_description(create_server(cache_dir=cache_dir), "render_deck_mindmap")
 
 
 def test_mcp_deck_render_description_writes_out_examples_and_exercises(cache_dir: Path):
