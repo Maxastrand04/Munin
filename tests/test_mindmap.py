@@ -35,6 +35,8 @@ FIXED_URL = f"https://play.kth.se/media/t/{ENTRY_ID}"
 SLUG_URL = f"https://play.kth.se/media/Föreläsning+4A+Matriser/{ENTRY_ID}"
 SAMPLE_OUTLINES = ["matriser-outline.json", "gauss-sats-outline.json"]
 SLIDE_PATH = ("Matriser", "Rader", "Slide 1")
+WORKED_PATH = (*SLIDE_PATH, "Rad gånger kolonn")
+WORKED_TYPES = ["example", "exercise"]
 BROKEN_LATEX = "$\\frac{1}{2$"
 TEN_MINUTES_S = 600
 SAMPLE_RATE = 8_000
@@ -126,6 +128,13 @@ def problem_messages(transcript_id: str, outline, cache_dir: Path, tmp_path: Pat
     with pytest.raises(OutlineStructureError) as caught:
         render_mindmap(transcript_id, outline, cache_dir=cache_dir, output_dir=tmp_path / "out")
     return [problem.message for problem in caught.value.problems]
+
+
+def problems_of(transcript_id: str, outline, cache_dir: Path, tmp_path: Path) -> list[tuple[tuple[str, ...], str]]:
+    """Render an Outline that must fail the check, and return each problem as (path, message) in the order reported."""
+    with pytest.raises(OutlineStructureError) as caught:
+        render_mindmap(transcript_id, outline, cache_dir=cache_dir, output_dir=tmp_path / "out")
+    return [(problem.path, problem.message) for problem in caught.value.problems]
 
 
 @pytest.fixture
@@ -403,22 +412,28 @@ def test_slide_node_without_slide_numbers_renders_without_a_deck(transcript_id: 
     assert render_page(transcript_id, lecture(term()), cache_dir=cache_dir, output_dir=tmp_path).is_file()
 
 
+@pytest.mark.parametrize("kind", WORKED_TYPES)
 @pytest.mark.parametrize("parent", ["main-topic", "topic", "slide", "term"])
-def test_example_renders_under_every_other_type(transcript_id: str, cache_dir: Path, tmp_path: Path, parent: str):
-    """An example may sit under a main-topic, topic, slide or term node."""
-    example = worked("example", "Rad gånger kolonn")
+def test_example_or_exercise_renders_under_every_other_type(
+    transcript_id: str, cache_dir: Path, tmp_path: Path, parent: str, kind: str
+):
+    """An example or exercise may sit under a main-topic, topic, slide or term node."""
+    child = worked(kind, "Rad gånger kolonn")
     outline = {
-        "main-topic": node("main-topic", "Matriser", example),
-        "topic": node("main-topic", "Matriser", node("topic", "Rader", example)),
-        "slide": lecture(example),
-        "term": lecture(term("Gauss", example)),
+        "main-topic": node("main-topic", "Matriser", child),
+        "topic": node("main-topic", "Matriser", node("topic", "Rader", child)),
+        "slide": lecture(child),
+        "term": lecture(term("Gauss", child)),
     }[parent]
     assert render_page(transcript_id, outline, cache_dir=cache_dir, output_dir=tmp_path).is_file()
 
 
-def test_example_with_no_steps_and_no_answer_renders(transcript_id: str, cache_dir: Path, tmp_path: Path):
-    """An example's steps and answer may be empty."""
-    outline = lecture(worked("example", "Rad gånger kolonn", steps=(), answer=""))
+@pytest.mark.parametrize("kind", WORKED_TYPES)
+def test_example_or_exercise_with_no_steps_and_no_answer_renders(
+    transcript_id: str, cache_dir: Path, tmp_path: Path, kind: str
+):
+    """An example's or exercise's steps and answer may be empty."""
+    outline = lecture(worked(kind, "Rad gånger kolonn", steps=(), answer=""))
     assert render_page(transcript_id, outline, cache_dir=cache_dir, output_dir=tmp_path).is_file()
 
 
@@ -485,6 +500,13 @@ def test_unknown_type_is_a_problem(transcript_id: str, cache_dir: Path, tmp_path
     assert problem_paths(transcript_id, outline, cache_dir, tmp_path) == [(*SLIDE_PATH, "Gauss")]
 
 
+@pytest.mark.parametrize("kind", ["exempel", "övning"])
+def test_swedish_type_name_is_an_unknown_type(transcript_id: str, cache_dir: Path, tmp_path: Path, kind: str):
+    """A node typed `exempel` or `övning` is one unknown-type problem, named by its label path."""
+    outline = lecture(worked(kind, "Rad gånger kolonn"))
+    assert problems_of(transcript_id, outline, cache_dir, tmp_path) == [(WORKED_PATH, f'unknown type "{kind}"')]
+
+
 def test_node_with_no_type_is_a_problem(transcript_id: str, cache_dir: Path, tmp_path: Path):
     """A node with no `type` fails the check, named by its label path."""
     outline = lecture({key: value for key, value in term().items() if key != "type"})
@@ -502,6 +524,13 @@ def test_step_missing_its_reason_is_a_problem(transcript_id: str, cache_dir: Pat
     example = worked("example", "Rad gånger kolonn")
     example["steps"] = [{"calculation": "x = 2 - 1"}]
     assert problem_paths(transcript_id, lecture(example), cache_dir, tmp_path) == [(*SLIDE_PATH, "Rad gånger kolonn")]
+
+
+def test_step_with_a_part_it_does_not_have_is_a_problem(transcript_id: str, cache_dir: Path, tmp_path: Path):
+    """A step with a key other than `calculation` and `reason` fails the check, naming the step and the key."""
+    example = worked("example", "Rad gånger kolonn")
+    example["steps"] = [{"calculation": "x = 2 - 1", "reason": "", "note": "kort"}]
+    assert problem_messages(transcript_id, lecture(example), cache_dir, tmp_path) == ['step 1 has no "note" part']
 
 
 def test_part_of_the_wrong_kind_is_a_problem(transcript_id: str, cache_dir: Path, tmp_path: Path):
@@ -523,10 +552,18 @@ def test_missing_part_is_a_problem(transcript_id: str, cache_dir: Path, tmp_path
     assert problem_paths(transcript_id, outline, cache_dir, tmp_path) == [(*SLIDE_PATH, "Gauss")]
 
 
-def test_part_the_type_does_not_have_is_a_problem(transcript_id: str, cache_dir: Path, tmp_path: Path):
-    """An example with an explanation fails the check, since example nodes have no explanation."""
-    outline = lecture({**worked("example", "Rad gånger kolonn"), "explanation": ""})
-    assert problem_paths(transcript_id, outline, cache_dir, tmp_path) == [(*SLIDE_PATH, "Rad gånger kolonn")]
+@pytest.mark.parametrize("kind", WORKED_TYPES)
+def test_example_or_exercise_missing_its_task_is_a_problem(transcript_id: str, cache_dir: Path, tmp_path: Path, kind: str):
+    """An example or exercise must carry a task."""
+    child = {key: value for key, value in worked(kind, "Rad gånger kolonn").items() if key != "task"}
+    assert problems_of(transcript_id, lecture(child), cache_dir, tmp_path) == [(WORKED_PATH, "missing task")]
+
+
+@pytest.mark.parametrize("kind", WORKED_TYPES)
+def test_part_the_type_does_not_have_is_a_problem(transcript_id: str, cache_dir: Path, tmp_path: Path, kind: str):
+    """An example or exercise with an explanation fails the check, since those nodes have no explanation."""
+    outline = lecture({**worked(kind, "Rad gånger kolonn"), "explanation": ""})
+    assert problems_of(transcript_id, outline, cache_dir, tmp_path) == [(WORKED_PATH, f'{kind} nodes have no "explanation" part')]
 
 
 def test_misspelled_part_is_a_problem_of_its_own(transcript_id: str, cache_dir: Path, tmp_path: Path):
@@ -536,7 +573,7 @@ def test_misspelled_part_is_a_problem_of_its_own(transcript_id: str, cache_dir: 
     assert problem_paths(transcript_id, outline, cache_dir, tmp_path) == [(*SLIDE_PATH, "Gauss"), (*SLIDE_PATH, "Gauss")]
 
 
-@pytest.mark.parametrize("kind", ["example", "exercise"])
+@pytest.mark.parametrize("kind", WORKED_TYPES)
 @pytest.mark.parametrize(
     "children",
     [[], [worked("example", "Inre")], [worked("exercise", "Inre")], [term("Inre")]],
@@ -547,39 +584,41 @@ def test_children_on_an_example_or_exercise_is_one_problem(
 ):
     """An example or exercise with a `children` part fails once, whatever the list holds, so nothing nests under one."""
     outline = lecture({**worked(kind, "Rad gånger kolonn"), "children": children})
-    assert problem_paths(transcript_id, outline, cache_dir, tmp_path) == [(*SLIDE_PATH, "Rad gånger kolonn")]
+    assert problems_of(transcript_id, outline, cache_dir, tmp_path) == [(WORKED_PATH, f'{kind} nodes have no "children" part')]
 
 
-@pytest.mark.parametrize("prefix", ["Exempel:", "Övning:", "exempel:", "ÖVNING:", "  Exempel :"])
+def labelled_node(kind: str, label: str) -> tuple[dict, tuple[str, ...]]:
+    """An Outline holding a node of this type with this label, and that node's label path."""
+    return {
+        "main-topic": (node("main-topic", label), (label,)),
+        "topic": (node("main-topic", "Matriser", node("topic", label)), ("Matriser", label)),
+        "slide": (node("main-topic", "Matriser", node("topic", "Rader", node("slide", label))), ("Matriser", "Rader", label)),
+        "term": (lecture(term(label)), (*SLIDE_PATH, label)),
+        "example": (lecture(worked("example", label)), (*SLIDE_PATH, label)),
+        "exercise": (lecture(worked("exercise", label)), (*SLIDE_PATH, label)),
+    }[kind]
+
+
+@pytest.mark.parametrize("kind", ["main-topic", "topic", "slide", "term", *WORKED_TYPES])
 @pytest.mark.parametrize(
-    "labelled",
+    "label, prefix",
     [
-        lambda label: lecture(term(label)),
-        lambda label: lecture(worked("example", label)),
-        lambda label: lecture(worked("exercise", label)),
+        ("Exempel: Gauss", "Exempel:"),
+        ("EXEMPEL: Gauss", "Exempel:"),
+        ("exempel : Gauss", "Exempel:"),
+        ("  Exempel : Gauss", "Exempel:"),
+        ("Övning: Gauss", "Övning:"),
+        ("ÖVNING: Gauss", "Övning:"),
+        ("övning : Gauss", "Övning:"),
     ],
-    ids=["term", "example", "exercise"],
 )
 def test_label_with_a_worked_prefix_is_a_problem(
-    transcript_id: str, cache_dir: Path, tmp_path: Path, prefix: str, labelled
+    transcript_id: str, cache_dir: Path, tmp_path: Path, kind: str, label: str, prefix: str
 ):
-    """A label that starts with `Exempel:` or `Övning:`, in any case, fails the check, since the page adds the prefix."""
-    label = f"{prefix} Rad gånger kolonn"
-    assert problem_paths(transcript_id, labelled(label), cache_dir, tmp_path) == [(*SLIDE_PATH, label)]
-
-
-def test_slide_labelled_with_a_worked_prefix_is_a_problem(transcript_id: str, cache_dir: Path, tmp_path: Path):
-    """A slide node labelled `Exempel:` fails the check, so a Slide that is only an example becomes an example node."""
-    outline = node("main-topic", "Matriser", node("topic", "Rader", node("slide", "Exempel: summaformeln")))
-    assert problem_paths(transcript_id, outline, cache_dir, tmp_path) == [("Matriser", "Rader", "Exempel: summaformeln")]
-
-
-def test_worked_prefix_problem_says_to_leave_the_prefix_out(transcript_id: str, cache_dir: Path, tmp_path: Path):
-    """The problem for a prefixed label tells the LLM to drop the prefix and use an example or exercise node."""
-    with pytest.raises(OutlineStructureError) as caught:
-        render_mindmap(transcript_id, lecture(term("Exempel: Rad")), cache_dir=cache_dir, output_dir=tmp_path / "out")
-    message = caught.value.problems[0].message
-    assert '"Exempel:"' in message and "example or exercise node" in message
+    """A label starting with `Exempel:` or `Övning:`, in any case, fails on any node, and says to use a worked node."""
+    outline, path = labelled_node(kind, label)
+    message = f'label starts with "{prefix}"; use an example or exercise node and leave the prefix out, since the page adds it'
+    assert problems_of(transcript_id, outline, cache_dir, tmp_path) == [(path, message)]
 
 
 @pytest.mark.parametrize("label", ["Exempel på rader", "Övningar", "Ett exempel: rader"])
@@ -590,16 +629,27 @@ def test_label_mentioning_an_example_without_the_prefix_renders(
     assert render_page(transcript_id, lecture(term(label)), cache_dir=cache_dir, output_dir=tmp_path / "out").exists()
 
 
+@pytest.mark.parametrize("kind", WORKED_TYPES)
+@pytest.mark.parametrize("label", ["Example: Gauss", "Exercise: Gauss"])
+def test_english_prefix_on_an_example_or_exercise_renders(
+    transcript_id: str, cache_dir: Path, tmp_path: Path, kind: str, label: str
+):
+    """Only the Swedish prefixes fail, so an example or exercise labelled `Example:` or `Exercise:` renders."""
+    outline = lecture(worked(kind, label))
+    assert render_page(transcript_id, outline, cache_dir=cache_dir, output_dir=tmp_path / "out").exists()
+
+
 def test_blank_label_is_a_problem_named_by_position(transcript_id: str, cache_dir: Path, tmp_path: Path):
     """A node with a blank label fails the check, and its path names it by its position among its siblings."""
     outline = lecture(term("Gauss"), term("   "))
     assert problem_paths(transcript_id, outline, cache_dir, tmp_path) == [(*SLIDE_PATH, "#2")]
 
 
-def test_blank_task_is_a_problem(transcript_id: str, cache_dir: Path, tmp_path: Path):
-    """An example with a blank task fails the check."""
-    outline = lecture(worked("example", "Rad gånger kolonn", task=" "))
-    assert problem_paths(transcript_id, outline, cache_dir, tmp_path) == [(*SLIDE_PATH, "Rad gånger kolonn")]
+@pytest.mark.parametrize("kind", WORKED_TYPES)
+def test_blank_task_is_a_problem(transcript_id: str, cache_dir: Path, tmp_path: Path, kind: str):
+    """An example or exercise with a blank task fails the check."""
+    outline = lecture(worked(kind, "Rad gånger kolonn", task=" "))
+    assert problems_of(transcript_id, outline, cache_dir, tmp_path) == [(WORKED_PATH, "task is blank")]
 
 
 def test_blank_calculation_is_a_problem(transcript_id: str, cache_dir: Path, tmp_path: Path):
@@ -945,6 +995,16 @@ def test_deck_render_slide_past_the_deck_end_is_a_problem(standalone_deck, cache
     with pytest.raises(OutlineStructureError) as caught:
         render_deck_mindmap(standalone_deck.deck_id, lecture(term(slides=[4])), cache_dir=cache_dir, output_dir=tmp_path)
     assert [problem.path for problem in caught.value.problems] == [(*SLIDE_PATH, "Gauss")]
+
+
+@pytest.mark.parametrize("kind", ["exempel", "övning"])
+def test_deck_render_swedish_type_name_is_an_unknown_type(standalone_deck, cache_dir: Path, tmp_path: Path, kind: str):
+    """A node typed `exempel` or `övning` fails a render against a standalone Deck too."""
+    with pytest.raises(OutlineStructureError) as caught:
+        render_deck_mindmap(
+            standalone_deck.deck_id, lecture(worked(kind, "Rad gånger kolonn")), cache_dir=cache_dir, output_dir=tmp_path
+        )
+    assert [problem.message for problem in caught.value.problems] == [f'unknown type "{kind}"']
 
 
 def test_deck_render_broken_latex_is_a_problem(standalone_deck, cache_dir: Path, tmp_path: Path):

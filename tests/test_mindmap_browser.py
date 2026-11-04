@@ -1231,7 +1231,9 @@ def test_step_reason_is_muted_italic(page, render_outline):
 
 
 @pytest.mark.parametrize(
-    "label, heading", [("Andra", "Exempel 2"), ("Tredje", "Övning 1")], ids=["second-example", "first-exercise"]
+    "label, heading",
+    [("Första", "Exempel 1"), ("Andra", "Exempel 2"), ("Tredje", "Övning 1")],
+    ids=["first-example", "second-example", "first-exercise"],
 )
 def test_box_heading_counts_example_and_exercise_separately(page, render_outline, label: str, heading: str):
     """The box heading counts example and exercise separately, in Outline order."""
@@ -1353,7 +1355,7 @@ def test_section_toggles_use_the_app_sans(page, render_outline):
     """The Visa lösning and Visa svar toggles use the app's sans, Inter."""
     open_card_panel(page, render_outline(under_a_slide(solved())), "Rad gånger kolonn")
     families = box(page).locator("summary").evaluate_all("found => found.map(s => getComputedStyle(s).fontFamily)")
-    assert families and all(family.startswith("Inter") for family in families)
+    assert [family.split(",")[0] for family in families] == ["Inter", "Inter"]
 
 
 @pytest.mark.parametrize("slides_outline", [under_a_slide(solved(slides=[1]))], ids=["example-with-a-slide"])
@@ -1722,8 +1724,8 @@ def test_slides_scale_to_the_wider_panel(page, slides_url):
     assert width_of(panel_images(page).first) == before + 200
 
 
-def test_selected_node_stays_inside_the_map_while_widening(page, render_outline):
-    """While the panel widens, the selected node's card stays inside the map."""
+def card_and_canvas_while_widening(page, render_outline) -> tuple[dict, dict]:
+    """Drag the panel 400px wider and return the selected node's card and the canvas, as boxes, before letting go."""
     open_resize_panel(page, render_outline)
     x, y = edge_centre(page)
     page.mouse.move(x, y)
@@ -1732,7 +1734,19 @@ def test_selected_node_stays_inside_the_map_while_widening(page, render_outline)
     card = page.locator(".node", has=page.get_by_role("button", name="Explore Gauss", exact=True)).bounding_box()
     canvas = page.locator("#canvas").bounding_box()
     page.mouse.up()
-    assert canvas["x"] <= card["x"] and card["x"] + card["width"] <= canvas["x"] + canvas["width"]
+    return card, canvas
+
+
+def test_selected_node_stays_inside_the_maps_left_edge_while_widening(page, render_outline):
+    """While the panel widens, the selected node's card stays right of the map's left edge."""
+    card, canvas = card_and_canvas_while_widening(page, render_outline)
+    assert canvas["x"] <= card["x"]
+
+
+def test_selected_node_stays_inside_the_maps_right_edge_while_widening(page, render_outline):
+    """While the panel widens, the selected node's card stays left of the map's right edge."""
+    card, canvas = card_and_canvas_while_widening(page, render_outline)
+    assert card["x"] + card["width"] <= canvas["x"] + canvas["width"]
 
 
 def test_panel_keeps_its_width_after_letting_go(page, render_outline):

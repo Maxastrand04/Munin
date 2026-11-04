@@ -1,4 +1,3 @@
-import json
 import re
 from pathlib import Path
 
@@ -12,7 +11,8 @@ from munin.core import (
     transcribe,
 )
 
-NODE_TYPES = ["main-topic", "topic", "slide", "term", "example", "exercise"]
+TREE_TYPES = ["main-topic", "topic", "slide", "term"]
+WORKED_TYPES = ["example", "exercise"]
 
 
 def one_sentence(wav: Path, vocabulary: Vocabulary | None):
@@ -50,15 +50,36 @@ def test_schema_description_forbids_double_dollars():
     assert "$$" in get_outline_schema().schema["description"]
 
 
-@pytest.mark.parametrize("kind", NODE_TYPES)
-def test_schema_names_every_node_type(kind: str):
-    """The schema names each of the six node types."""
-    assert f'"{kind}"' in json.dumps(get_outline_schema().schema, ensure_ascii=False)
+@pytest.mark.parametrize("kind", [*TREE_TYPES, *WORKED_TYPES])
+def test_schema_defines_every_node_type(kind: str):
+    """The schema defines each of the six node types."""
+    assert kind in get_outline_schema().schema["$defs"]
+
+
+@pytest.mark.parametrize("kind", ["exempel", "övning"])
+def test_schema_defines_no_swedish_node_type(kind: str):
+    """The schema defines no node type under a Swedish name."""
+    assert kind not in get_outline_schema().schema["$defs"]
+
+
+@pytest.mark.parametrize("kind", WORKED_TYPES)
+def test_schema_gives_an_example_or_exercise_its_parts(kind: str):
+    """The schema gives an example or exercise its task, steps and answer, and no explanation or children."""
+    required = get_outline_schema().schema["$defs"][kind]["required"]
+    assert set(required) == {"type", "label", "stamps", "slides", "task", "steps", "answer"}
+
+
+@pytest.mark.parametrize("kind", WORKED_TYPES)
+@pytest.mark.parametrize("parent", TREE_TYPES)
+def test_schema_lets_an_example_or_exercise_sit_under_every_other_type(kind: str, parent: str):
+    """The schema offers an example or exercise among the children of each of the four other types."""
+    children = get_outline_schema().schema["$defs"][parent]["properties"]["children"]["items"]["oneOf"]
+    assert {"$ref": f"#/$defs/{kind}"} in children
 
 
 def test_samples_are_an_example_then_an_exercise():
     """The samples are an example node first and an exercise node second."""
-    assert [sample["type"] for sample in get_outline_schema().samples] == ["example", "exercise"]
+    assert [sample["type"] for sample in get_outline_schema().samples] == WORKED_TYPES
 
 
 @pytest.mark.parametrize("index", [0, 1], ids=["example", "exercise"])
