@@ -78,8 +78,8 @@ class OutlineSchema:
     """What `get_outline_schema` hands the LLM before it writes an Outline.
 
     `schema` is a JSON Schema, draft 2020-12, as a dict that `json.dumps`
-    accepts. `samples` is two bare nodes the LLM can copy: an exempel first,
-    then an övning, each with LaTeX between `$...$` in its task and its
+    accepts. `samples` is two bare nodes the LLM can copy: an example first,
+    then an exercise, each with LaTeX between `$...$` in its task and its
     answer, and LaTeX with no `$` in at least one step's calculation.
     """
 
@@ -88,7 +88,7 @@ class OutlineSchema:
 
 
 def get_outline_schema() -> OutlineSchema:
-    """Return the Outline's JSON Schema and a sample exempel node and övning node.
+    """Return the Outline's JSON Schema and a sample example node and exercise node.
 
     An Outline is one JSON object, the main-topic node. Every node is an
     object with a `type` and, for that type, exactly these parts, every one
@@ -98,7 +98,7 @@ def get_outline_schema() -> OutlineSchema:
       `explanation` (a string), `stamps` (a list of strings such as `"4:34"`
       or `"1:10:05"`, no brackets), `slides` (a list of integers, Slide
       numbers counted from 1) and `children` (a list of nodes).
-    - `exempel` and `övning`: `type`, `label`, `stamps`, `slides`, `task`
+    - `example` and `exercise`: `type`, `label`, `stamps`, `slides`, `task`
       (a string), `steps` (a list of objects with exactly `calculation`, a
       string, and `reason`, a string) and `answer` (a string). They have no
       `explanation` and no `children`.
@@ -115,9 +115,9 @@ def get_outline_schema() -> OutlineSchema:
     one-line change.
 
     Nesting: the root is the one main-topic. A topic sits under the
-    main-topic, a slide under a topic, and a term under a slide. An exempel or
-    övning sits under any node of the other four types, never under an
-    exempel or övning.
+    main-topic, a slide under a topic, and a term under a slide. An example or
+    exercise sits under any node of the other four types, never under an
+    example or exercise.
 
     The schema states all of the above, so an Outline that passes the schema
     passes the check's shape and nesting rules. The samples each pass the

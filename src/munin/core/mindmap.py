@@ -61,14 +61,14 @@ def render_mindmap(
       another type,
     - an unknown `type`,
     - a missing part, or a part the node's type does not have, such as an
-      `explanation` on an exempel, a misspelled key, or `children` on an
-      exempel or övning, even an empty list,
+      `explanation` on an example, a misspelled key, or `children` on an
+      example or exercise, even an empty list,
     - a part of the wrong kind, such as a `stamps` that is not a list of
       strings, or a Slide number that is not an integer, `true` included,
     - a blank `label`, `task` or step `calculation`,
     - a `label` on any node that starts with `Exempel:` or `Övning:`, in any
       case and with any spaces before the colon, since the page adds that
-      prefix to exempel and övning labels,
+      prefix to example and exercise labels,
     - a node under the wrong parent type, by the nesting rules
       `get_outline_schema` gives,
     - a control character in any string part but `explanation`, which is what
@@ -97,7 +97,7 @@ def render_mindmap(
 
     A node of an unknown type is one problem, and nothing else about it is
     checked. A part of the wrong kind is one problem, and what it holds is
-    not checked. A `children` part on an exempel or övning is one problem,
+    not checked. A `children` part on an example or exercise is one problem,
     whatever the list holds, and the nodes in it are not checked. Every other
     fault is a problem of its own, so a misspelled key gives one problem for
     the unknown key and one for the missing part. Stamps and Slide numbers
@@ -121,10 +121,10 @@ def render_mindmap(
     still cannot draw shows as written, dollars included, and the rest
     typesets. Labels show as plain text everywhere, LaTeX included.
 
-    An exempel or övning panel labels its text `Exempel` or `Övning` in place
+    An example or exercise panel labels its text `Exempel` or `Övning` in place
     of "A simple explanation", and shows a box where the explanation would
     be. The box's heading is `Exempel N` or `Övning N`, where N counts
-    exempel and övning nodes separately in Outline order, from 1. Under it
+    example and exercise nodes separately in Outline order, from 1. Under it
     come the task, then a closed "Visa lösning" section with the step count
     beside it, holding the steps numbered from 1, each with its calculation
     as inline math and its reason under it, then a closed "Visa svar"
@@ -134,16 +134,16 @@ def render_mindmap(
     muted line "Ingen lösning i föreläsningen. Försök själv." Box text is set
     in KaTeX_Main, and the section toggles in the app's sans.
 
-    Each topic gives its branch one colour. Exempel and övning nodes are
+    Each topic gives its branch one colour. Example and exercise nodes are
     orange because of their type, whatever their label says: an orange of hue
     25 to 45 degrees that no topic gets. An orange node's border, background,
     selected fill, stamps, and panel path and rule are orange. The edge into
-    an exempel or övning keeps its topic's colour, and the edge into one
-    directly under the main-topic is orange. An exempel or övning directly
+    an example or exercise keeps its topic's colour, and the edge into one
+    directly under the main-topic is orange. An example or exercise directly
     under the main-topic takes no topic colour, so the topics after it get the
     colours they would have had without it. A topic whose label starts with
     `Exempel:` is not orange. The page puts `Exempel: ` or `Övning: ` before
-    an exempel's or övning's label on its map card, its card's aria-label,
+    an example's or exercise's label on its map card, its card's aria-label,
     its panel title, and its button under Explore next.
 
     Term nodes whose labels match ignoring case and runs of whitespace are
