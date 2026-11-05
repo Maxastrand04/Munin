@@ -4,3 +4,4 @@ __pycache__/
 .pytest_cache/
 mindmaps/
 .DS_Store
+prototypes/english_model/work/
