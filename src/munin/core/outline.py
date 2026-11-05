@@ -49,8 +49,8 @@ _PARTS: dict[str, dict[str, _Part]] = {
     "topic": _TREE_PARTS,
     "slide": _TREE_PARTS,
     "term": _TREE_PARTS,
-    "exempel": _WORKED_PARTS,
-    "övning": _WORKED_PARTS,
+    "example": _WORKED_PARTS,
+    "exercise": _WORKED_PARTS,
 }
 _TREE_TYPES = ("main-topic", "topic", "slide", "term")
 # Which parent types each type may sit under. The main-topic sits only at the root.
@@ -59,13 +59,15 @@ _PARENTS: dict[str, tuple[str, ...]] = {
     "topic": ("main-topic",),
     "slide": ("topic",),
     "term": ("slide",),
-    "exempel": _TREE_TYPES,
-    "övning": _TREE_TYPES,
+    "example": _TREE_TYPES,
+    "exercise": _TREE_TYPES,
 }
 
+# The word the page names each worked type with. The page adds it to the label as a prefix, so no label may start with one.
+WORKED_TITLES = {"example": "Exempel", "exercise": "Övning"}
+
 _CONTROL = re.compile(r"[\x00-\x1f\x7f-\x9f]")
-# The page adds these prefixes to exempel and övning labels, so no label may start with one.
-_WORKED_PREFIX = re.compile(r"\s*(exempel|övning)\s*:", re.IGNORECASE)
+_WORKED_PREFIX = re.compile(rf"\s*({'|'.join(WORKED_TITLES.values())})\s*:", re.IGNORECASE)
 _NO_CONTROL = "^[^\\u0000-\\u001f\\u007f-\\u009f]*$"
 _NON_BLANK = "\\S"
 _STAMP = "^(\\d+:[0-5]\\d|\\d+:[0-5]\\d:[0-5]\\d)$"
@@ -78,8 +80,8 @@ class OutlineSchema:
     """What `get_outline_schema` hands the LLM before it writes an Outline.
 
     `schema` is a JSON Schema, draft 2020-12, as a dict that `json.dumps`
-    accepts. `samples` is two bare nodes the LLM can copy: an exempel first,
-    then an övning, each with LaTeX between `$...$` in its task and its
+    accepts. `samples` is two bare nodes the LLM can copy: an example first,
+    then an exercise, each with LaTeX between `$...$` in its task and its
     answer, and LaTeX with no `$` in at least one step's calculation.
     """
 
@@ -88,7 +90,7 @@ class OutlineSchema:
 
 
 def get_outline_schema() -> OutlineSchema:
-    """Return the Outline's JSON Schema and a sample exempel node and övning node.
+    """Return the Outline's JSON Schema and a sample example node and exercise node.
 
     An Outline is one JSON object, the main-topic node. Every node is an
     object with a `type` and, for that type, exactly these parts, every one
@@ -98,7 +100,7 @@ def get_outline_schema() -> OutlineSchema:
       `explanation` (a string), `stamps` (a list of strings such as `"4:34"`
       or `"1:10:05"`, no brackets), `slides` (a list of integers, Slide
       numbers counted from 1) and `children` (a list of nodes).
-    - `exempel` and `övning`: `type`, `label`, `stamps`, `slides`, `task`
+    - `example` and `exercise`: `type`, `label`, `stamps`, `slides`, `task`
       (a string), `steps` (a list of objects with exactly `calculation`, a
       string, and `reason`, a string) and `answer` (a string). They have no
       `explanation` and no `children`.
@@ -115,9 +117,9 @@ def get_outline_schema() -> OutlineSchema:
     one-line change.
 
     Nesting: the root is the one main-topic. A topic sits under the
-    main-topic, a slide under a topic, and a term under a slide. An exempel or
-    övning sits under any node of the other four types, never under an
-    exempel or övning.
+    main-topic, a slide under a topic, and a term under a slide. An example or
+    exercise sits under any node of the other four types, never under an
+    example or exercise.
 
     The schema states all of the above, so an Outline that passes the schema
     passes the check's shape and nesting rules. The samples each pass the
@@ -220,8 +222,8 @@ class _Check:
         if prefix:
             self.add(
                 path,
-                f"label starts with {_quoted(prefix.group(1).capitalize() + ':')}; write an example or exercise "
-                "as an exempel or övning node and leave the prefix out, since the page adds it",
+                f"label starts with {_quoted(prefix.group(1).capitalize() + ':')}; use an example or exercise "
+                "node and leave the prefix out, since the page adds it",
             )
 
     def step(self, path: tuple[str, ...], number: int, step: dict) -> None:
@@ -341,8 +343,8 @@ def _part_schema(kind: str, required: bool, nodes: dict | None) -> dict:
 
 
 def _samples() -> tuple[dict, dict]:
-    exempel = {
-        "type": "exempel",
+    example = {
+        "type": "example",
         "label": "Förenkla ett bråk",
         "stamps": [],
         "slides": [],
@@ -353,8 +355,8 @@ def _samples() -> tuple[dict, dict]:
         ],
         "answer": "$\\frac{3}{4}$",
     }
-    ovning = {
-        "type": "övning",
+    exercise = {
+        "type": "exercise",
         "label": "Matrisprodukt",
         "stamps": [],
         "slides": [],
@@ -362,4 +364,4 @@ def _samples() -> tuple[dict, dict]:
         "steps": [{"calculation": "1 \\cdot 3 + 2 \\cdot 4", "reason": "rad gånger kolonn"}],
         "answer": "$\\begin{pmatrix} 11 \\end{pmatrix}$",
     }
-    return exempel, ovning
+    return example, exercise

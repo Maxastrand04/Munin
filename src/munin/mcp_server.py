@@ -67,7 +67,7 @@ def create_server(
     format, and keeps its content guidance: an Outline of topics, then
     slides, then terms under the lecture title, grouped by meaning, one stamp
     per stretch of the lecture copied from `get_transcript`, and every
-    example and exercise written out as an exempel or övning node, a Slide
+    example and exercise written out as an example or exercise node, a Slide
     that is only one example or exercise included, with no `Exempel:` or
     `Övning:` in any label. It asks for LaTeX for every math expression,
     between `$...$` in explanations, tasks, answers and step reasons, never
@@ -89,7 +89,7 @@ def create_server(
     format, and keeps the slides-only content guidance: 1 to 5 topics grouped
     by meaning, one slide node per Slide carrying its Slide number, title and
     schedule Slides skipped, terms worded the same everywhere, every example
-    and exercise written out as an exempel or övning node the same way, every node's
+    and exercise written out as an example or exercise node the same way, every node's
     `stamps` left empty, and an explanation of one to three sentences on
     every term node that gives context and covers only what the Slides
     cover. It asks for LaTeX and steps as `render_mindmap`'s does, and says
@@ -145,7 +145,7 @@ def create_server(
 
     @server.tool(name="get_outline_schema")
     def get_outline_schema_tool() -> OutlineSchema:
-        """Return the JSON Schema an Outline must follow, plus a sample exempel node and övning node. Call this before writing an Outline."""
+        """Return the JSON Schema an Outline must follow, plus a sample example node and exercise node. Call this before writing an Outline."""
         return get_outline_schema()
 
     @server.tool(name="render_mindmap")
@@ -153,8 +153,8 @@ def create_server(
         """Render a JSON Outline of a lecture into a Mindmap page.
 
         Call `get_outline_schema` before writing an Outline. It gives the
-        node types, the parts every node carries and a sample exempel and
-        övning. Pass the Outline as a JSON object.
+        node types, the parts every node carries and a sample example and
+        exercise. Pass the Outline as a JSON object.
 
         Write the Outline like this:
 
@@ -165,13 +165,13 @@ def create_server(
           the lecture about it, even parts far apart in time. Aim for 1 to 5 topics.
         - Under each topic, one slide node per Slide. With no Deck, split the
           Transcript into Slide-sized parts and write one slide node per part.
-          A Slide that is only one example or exercise gets an exempel or övning
+          A Slide that is only one example or exercise gets an example or exercise
           node under its topic in place of a slide node.
         - Under each slide node, one term node per term, method or formula. Word
           a term the same under every slide node it appears on.
         - Skip content that neither helps the student grasp an idea nor gives
           concrete material. A Slide such as a title page or a schedule gets no node.
-        - Write every example and exercise in the lecture as an exempel or övning
+        - Write every example and exercise in the lecture as an example or exercise
           node under the node it belongs to, at any level. Give it the task, its
           solution steps and the answer, so the panel reads on its own without
           the video or the Slide. Leave `Exempel:` and `Övning:` out of every label,
@@ -224,8 +224,8 @@ def create_server(
         """Render a JSON Outline written from a Deck read with `read_deck` into a Mindmap page.
 
         Call `get_outline_schema` before writing an Outline. It gives the
-        node types, the parts every node carries and a sample exempel and
-        övning. Pass the Outline as a JSON object.
+        node types, the parts every node carries and a sample example and
+        exercise. Pass the Outline as a JSON object.
 
         Write the Outline like this:
 
@@ -236,13 +236,13 @@ def create_server(
           Slide about it, even Slides far apart in the Deck. Aim for 1 to 5 topics.
         - Under each topic, one slide node per Slide, listing its Slide number in
           `slides`, counted from 1. A node that two Slides cover lists both.
-          A Slide that is only one example or exercise gets an exempel or övning
+          A Slide that is only one example or exercise gets an example or exercise
           node under its topic in place of a slide node.
         - Under each slide node, one term node per term, method or formula. Word
           a term the same under every slide node it appears on.
         - Skip content that neither helps the student grasp an idea nor gives
           concrete material. A Slide such as a title page or a schedule gets no node.
-        - Write every example and exercise on the Slides as an exempel or övning
+        - Write every example and exercise on the Slides as an example or exercise
           node under the node it belongs to, at any level. Give it the task, its
           solution steps and the answer, so the panel reads on its own without
           the Slide. Leave `Exempel:` and `Övning:` out of every label, a slide

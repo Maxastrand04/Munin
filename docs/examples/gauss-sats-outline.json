@@ -101,7 +101,7 @@
       "slides": [],
       "children": [
         {
-          "type": "övning",
+          "type": "exercise",
           "label": "Flödet ut ur ett halvklot",
           "stamps": [
             "0:27"
@@ -133,7 +133,7 @@
           "answer": "$\\iiint_K y^2\\, dx\\,dy\\,dz + \\frac{16\\pi}{3}$"
         },
         {
-          "type": "övning",
+          "type": "exercise",
           "label": "Flödet ut ur ett rätblock",
           "stamps": [
             "5:03"
