@@ -13,6 +13,7 @@ from mcp.types import INVALID_PARAMS, TextContent
 from munin.core import (
     Download,
     Language,
+    LanguageError,
     MuninError,
     OutlineSchema,
     Recognize,
@@ -22,6 +23,7 @@ from munin.core import (
     Vocabulary,
     get_outline_schema,
     get_transcript,
+    parse_language,
     read_deck,
     read_slides,
     render_deck_mindmap,
@@ -147,6 +149,12 @@ def create_server(
         replaces the cached Transcript under the same Transcript ID. A call
         without a `vocabulary` returns the cached Transcript, boosted or not.
         `vocabulary` in the result is the terms and alpha used, or null.
+
+        `language` is the language the lecture is spoken in, `sv` or `en`. With
+        no `language` and nothing cached, the lecture runs as Swedish. A
+        `language` other than the cached Transcript's replaces it under the same
+        Transcript ID, and `language` in the result says which language it is.
+        Vocabulary terms do not work on English lectures yet, so give none with `en`.
         """
         with _core_errors_as_tool_errors():
             boost = Vocabulary(vocabulary or [], alpha)
@@ -291,14 +299,23 @@ def create_server(
         source: str | None = None, deck: str | None = None, language: str | None = None
     ) -> str:
         """Turn a lecture, given as a YouTube URL, a KTH Play video URL or a local file path, a slide PDF, or both, into a Mindmap page."""
-        if language is not None:
-            raise NotImplementedError
         if not source and not deck:
             raise MCPError(code=INVALID_PARAMS, message="Give a Source, a Deck, or both")
+        try:
+            lecture_language = parse_language(language or None)
+        except LanguageError as error:
+            raise MCPError(code=INVALID_PARAMS, message=str(error)) from error
         if not source:
+            if lecture_language is not None:
+                raise MCPError(code=INVALID_PARAMS, message="A language needs a Source")
             return _slides_only_prompt(deck)
+        transcribe_step = (
+            f"Call `transcribe` with that Source and language `{lecture_language}`."
+            if lecture_language
+            else "Call `transcribe` with that Source."
+        )
         steps = [
-            "Call `transcribe` with that Source.",
+            transcribe_step,
             "Call `get_transcript` with the returned Transcript ID.",
         ]
         if deck:

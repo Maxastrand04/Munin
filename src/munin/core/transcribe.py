@@ -11,9 +11,14 @@ from pathlib import Path
 from munin.core.cache_ids import cache_id, is_cache_id
 from munin.core.cache_paths import default_cache_dir
 from munin.core.decode import decode_to_wav
-from munin.core.errors import NoSpeechError, SourceError, UnknownTranscriptError
+from munin.core.errors import (
+    EnglishVocabularyError,
+    NoSpeechError,
+    SourceError,
+    UnknownTranscriptError,
+)
 from munin.core.kthplay import download_smallest_video
-from munin.core.language import Language
+from munin.core.language import Language, parse_language
 from munin.core.model import Recognize, load_recognizer
 from munin.core.segments import Segment, merge_fragments
 from munin.core.sources import Download, Source, Video, parse_source
@@ -44,7 +49,7 @@ class TranscribeResult:
     transcription_s: float
     cached: bool
     vocabulary: Vocabulary | None = None
-    language: Language | None = None  # Stub default. implement-ticket removes the None.
+    language: Language = "sv"
 
 
 @dataclass(frozen=True)
@@ -64,12 +69,18 @@ class CacheEntry:
     transcription_s: float
     segments: tuple[Segment, ...]
     vocabulary: Vocabulary | None = None
-    language: Language | None = None  # Stub default. implement-ticket removes the None.
+    language: Language = "sv"
 
     def _result(self, transcript_id: str, *, cached: bool) -> TranscribeResult:
         """Return this entry as the `TranscribeResult` for `transcript_id`, marked `cached` or not."""
         return TranscribeResult(
-            transcript_id, self.duration_s, len(self.segments), self.transcription_s, cached, self.vocabulary
+            transcript_id,
+            self.duration_s,
+            len(self.segments),
+            self.transcription_s,
+            cached,
+            self.vocabulary,
+            self.language,
         )
 
 
@@ -141,19 +152,23 @@ def transcribe(
     run or a failed run in another language leaves the previously cached
     Transcript in place.
     """
-    if language is not None:
-        raise NotImplementedError
+    lecture_language = parse_language(language)
     parsed = parse_source(source)
     resolved = parsed.expanduser().resolve() if isinstance(parsed, Path) else parsed
     transcript_id = cache_id(_source_key(resolved))
     entry_path = _entry_path(cache_dir, transcript_id)
     vocabulary = vocabulary if vocabulary and vocabulary.terms else None
-    if vocabulary is None and entry_path.is_file():
-        return _read_entry(entry_path)._result(transcript_id, cached=True)
+    cached = _read_entry(entry_path) if entry_path.is_file() else None
+    # With no language, a cached Transcript keeps its own, and a miss runs Swedish.
+    run_language = lecture_language or (cached.language if cached else "sv")
+    if run_language == "en" and vocabulary is not None:
+        raise EnglishVocabularyError()
+    if cached is not None and vocabulary is None and lecture_language in (None, cached.language):
+        return cached._result(transcript_id, cached=True)
     if isinstance(resolved, Video):
-        entry = _transcribe_video(resolved, entry_path.parent, download, recognize, vocabulary)
+        entry = _transcribe_video(resolved, entry_path.parent, download, recognize, vocabulary, run_language)
     else:
-        entry = _transcribe_fresh(source, resolved, recognize, vocabulary)
+        entry = _transcribe_fresh(source, resolved, recognize, vocabulary, run_language)
     _write_entry(entry_path, entry)
     return entry._result(transcript_id, cached=False)
 
@@ -200,16 +215,22 @@ def _transcribe_video(
     download: Download | None,
     recognize: Recognize | None,
     vocabulary: Vocabulary | None,
+    language: Language,
 ) -> CacheEntry:
     cache_folder.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(dir=cache_folder) as workdir:
         default_download = download_audio if isinstance(video, YouTubeSource) else download_smallest_video
         downloaded = (download or default_download)(video, Path(workdir))
-        return replace(_transcribe_fresh(video.url, downloaded, recognize, vocabulary), source=video)
+        entry = _transcribe_fresh(video.url, downloaded, recognize, vocabulary, language)
+        return replace(entry, source=video)
 
 
 def _transcribe_fresh(
-    given: str | os.PathLike[str], resolved: Path, recognize: Recognize | None, vocabulary: Vocabulary | None
+    given: str | os.PathLike[str],
+    resolved: Path,
+    recognize: Recognize | None,
+    vocabulary: Vocabulary | None,
+    language: Language,
 ) -> CacheEntry:
     if not resolved.is_file():
         raise SourceError(given, "not a file, a YouTube URL or a KTH Play video URL")
@@ -217,13 +238,13 @@ def _transcribe_fresh(
         wav = Path(workdir, "audio.wav")
         decode_to_wav(given, resolved, wav)
         duration_s = _duration_s(wav)
-        recognize = recognize or load_recognizer()
+        recognize = recognize or load_recognizer(language)
         started = time.perf_counter()
         segments = merge_fragments(list(recognize(wav, vocabulary)))
         transcription_s = time.perf_counter() - started
     if not segments:
         raise NoSpeechError(given)
-    return CacheEntry(resolved, duration_s, transcription_s, tuple(segments), vocabulary)
+    return CacheEntry(resolved, duration_s, transcription_s, tuple(segments), vocabulary, language)
 
 
 def _duration_s(wav: Path) -> float:
@@ -240,6 +261,7 @@ def _read_entry(entry_path: Path) -> CacheEntry:
         transcription_s=stored["transcription_s"],
         segments=tuple(Segment(s["start"], s["end"], s["text"]) for s in stored["segments"]),
         vocabulary=Vocabulary(stored_vocabulary["terms"], stored_vocabulary["alpha"]) if stored_vocabulary else None,
+        language=stored.get("language", "sv"),
     )
 
 
@@ -250,6 +272,7 @@ def _write_entry(entry_path: Path, entry: CacheEntry) -> None:
         "transcription_s": entry.transcription_s,
         "segments": [asdict(s) for s in entry.segments],
         "vocabulary": asdict(entry.vocabulary) if entry.vocabulary else None,
+        "language": entry.language,
     }
     entry_path.parent.mkdir(parents=True, exist_ok=True)
     partial = entry_path.with_suffix(".json.part")

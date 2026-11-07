@@ -1,14 +1,18 @@
-"""Loading Pianissimo and Silero VAD."""
+"""Loading a language's speech model and Silero VAD."""
 
 from collections.abc import Callable, Iterable
 from pathlib import Path
 
 from munin.core.boosting import apply_vocabulary
+from munin.core.errors import LanguageError
 from munin.core.language import Language
 from munin.core.segments import Fragment
 from munin.core.vocabulary import Vocabulary
 
-_MODEL_REPO = "KlangAI/pianissimo-sv-onnx"
+_MODEL_REPOS: dict[str, str] = {
+    "sv": "KlangAI/pianissimo-sv-onnx",
+    "en": "istupakov/parakeet-tdt-0.6b-v3-onnx",
+}
 
 Recognize = Callable[[Path, Vocabulary | None], Iterable[Fragment]]
 """Takes a 16 kHz mono wav and a Vocabulary or None, and yields the wav's raw speech fragments in time order.
@@ -37,17 +41,19 @@ def load_recognizer(language: Language = "sv") -> Recognize:
     Raises `LanguageError` when `language` is not `sv` or `en`, before anything
     loads.
     """
-    if language != "sv":
-        raise NotImplementedError
+    if language not in _MODEL_REPOS:
+        raise LanguageError(language)
     import onnx_asr
 
     providers = ["CPUExecutionProvider"]
-    asr = onnx_asr.load_model(_MODEL_REPO, quantization="int8", providers=providers)
+    asr = onnx_asr.load_model(_MODEL_REPOS[language], quantization="int8", providers=providers)
     vad = onnx_asr.load_vad("silero", providers=providers)
     pipeline = asr.with_vad(vad, min_silence_duration_ms=500)
 
     def recognize(wav: Path, vocabulary: Vocabulary | None) -> Iterable[Fragment]:
-        apply_vocabulary(asr, vocabulary)
+        # Boosting patches Pianissimo only. An English run has no Vocabulary, so there is nothing to boost.
+        if language == "sv":
+            apply_vocabulary(asr, vocabulary)
         for result in pipeline.recognize(str(wav)):
             yield Fragment(result.start, result.end, result.text)
 

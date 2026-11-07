@@ -1,6 +1,8 @@
 """The languages a lecture can be transcribed in."""
 
-from typing import Literal
+from typing import Literal, get_args
+
+from munin.core.errors import LanguageError
 
 Language = Literal["sv", "en"]
 """The language a lecture is spoken in, Swedish or English."""
@@ -16,4 +18,6 @@ def parse_language(value: str | None) -> Language | None:
     Raises `LanguageError` naming `value` when it is anything but `"sv"`, `"en"`
     or None.
     """
-    raise NotImplementedError
+    if value is None or value in get_args(Language):
+        return value
+    raise LanguageError(value)
