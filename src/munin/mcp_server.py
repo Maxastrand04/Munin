@@ -12,6 +12,8 @@ from mcp.types import INVALID_PARAMS, TextContent
 
 from munin.core import (
     Download,
+    Language,
+    LanguageError,
     MuninError,
     OutlineSchema,
     Recognize,
@@ -21,6 +23,7 @@ from munin.core import (
     Vocabulary,
     get_outline_schema,
     get_transcript,
+    parse_language,
     read_deck,
     read_slides,
     render_deck_mindmap,
@@ -44,16 +47,22 @@ def create_server(
 ) -> MCPServer:
     """Build the MCP server with seven tools and two prompts, passing its arguments to the core.
 
-    `transcribe(source: str, vocabulary: list[str] | None = None, alpha: float = 1.0)`
+    `transcribe(source: str, vocabulary: list[str] | None = None, alpha: float = 1.0, language: Language | None = None)`
     takes a local file path, a YouTube URL or a KTH Play video URL, plus
-    optional Vocabulary terms and boost strength, and returns the
-    `TranscribeResult` fields as an object, with `vocabulary` as `terms` and
-    `alpha` or null. The tool always builds a
-    `Vocabulary` from `vocabulary` and `alpha`, so an `alpha` outside 0 to 2 is
-    a tool error even without terms, and nothing is transcribed or cached.
+    optional Vocabulary terms and boost strength, and the lecture's language,
+    and returns the `TranscribeResult` fields as an object, with `vocabulary` as
+    `terms` and `alpha` or null, and `language` as `sv` or `en`. The tool always
+    builds a `Vocabulary` from `vocabulary` and `alpha`, so an `alpha` outside 0
+    to 2 is a tool error even without terms, and nothing is transcribed or cached.
+    The tool's schema lists `sv` and `en` as `language`'s only values, so any
+    other value is a tool error before the core runs.
     Its description tells the LLM that terms are case sensitive, and that it can
     build a Vocabulary from the misspellings it spots in a first pass, then call
-    again to replace the cached Transcript under the same ID.
+    again to replace the cached Transcript under the same ID. It also says
+    `language` is the language the lecture is spoken in, `sv` or `en`, that a
+    call with none and nothing cached runs Swedish, that a different language
+    replaces the cached Transcript under the same ID, and that Vocabulary terms
+    do not work on English lectures yet.
     `get_transcript(transcript_id: str)` returns the `[m:ss] text` lines.
     `get_outline_schema()` takes no arguments and returns the core's
     `OutlineSchema` fields as an object, `schema` and `samples`. Its
@@ -94,8 +103,14 @@ def create_server(
     every term node that gives context and covers only what the Slides
     cover. It asks for LaTeX and steps as `render_mindmap`'s does, and says
     to fix every problem listed, broken LaTeX included, and render again.
-    The `lecture_to_mindmap(source: str | None = None, deck: str | None = None)`
-    prompt takes a Source, a Deck, or both. With a Source, it lists the run's
+    The `lecture_to_mindmap(source: str | None = None, deck: str | None = None, language: str | None = None)`
+    prompt takes a Source, a Deck, or both, and the lecture's language. An empty
+    `language` counts as none. Any other value but `sv` or `en` fails with an
+    MCP error carrying the `LanguageError` message. With a Source and a
+    `language`, the `transcribe` step asks for that language, as in "Call
+    `transcribe` with that Source and language `en`." With a `language` and no
+    Source, getting the prompt fails with an MCP error whose message is "A
+    language needs a Source". With a Source, it lists the run's
     steps for that Source, asks for the Outline as JSON, and has the LLM call
     `get_outline_schema` before writing it, asks for LaTeX for every math
     expression, and leaves the rest of the content guidance to
@@ -121,7 +136,9 @@ def create_server(
     server = MCPServer("munin")
 
     @server.tool(name="transcribe")
-    def transcribe_tool(source: str, vocabulary: list[str] | None = None, alpha: float = 1.0) -> TranscribeResult:
+    def transcribe_tool(
+        source: str, vocabulary: list[str] | None = None, alpha: float = 1.0, language: Language | None = None
+    ) -> TranscribeResult:
         """Transcribe a local audio or video file, a YouTube video URL or a KTH Play video URL, and return its Transcript ID and stats.
 
         `vocabulary` is an optional list of course terms to spell correctly, and
@@ -132,10 +149,18 @@ def create_server(
         replaces the cached Transcript under the same Transcript ID. A call
         without a `vocabulary` returns the cached Transcript, boosted or not.
         `vocabulary` in the result is the terms and alpha used, or null.
+
+        `language` is the language the lecture is spoken in, `sv` or `en`. With
+        no `language` and nothing cached, the lecture runs as Swedish. A
+        `language` other than the cached Transcript's replaces it under the same
+        Transcript ID, and `language` in the result says which language it is.
+        Vocabulary terms do not work on English lectures yet, so give none with `en`.
         """
         with _core_errors_as_tool_errors():
             boost = Vocabulary(vocabulary or [], alpha)
-            return transcribe(source, vocabulary=boost, cache_dir=cache_dir, recognize=recognize, download=download)
+            return transcribe(
+                source, language=language, vocabulary=boost, cache_dir=cache_dir, recognize=recognize, download=download
+            )
 
     @server.tool(name="get_transcript")
     def get_transcript_tool(transcript_id: str) -> str:
@@ -270,14 +295,27 @@ def create_server(
             return render_deck_mindmap(deck_id, outline, cache_dir=cache_dir, output_dir=output_dir)
 
     @server.prompt(name="lecture_to_mindmap")
-    def lecture_to_mindmap_prompt(source: str | None = None, deck: str | None = None) -> str:
+    def lecture_to_mindmap_prompt(
+        source: str | None = None, deck: str | None = None, language: str | None = None
+    ) -> str:
         """Turn a lecture, given as a YouTube URL, a KTH Play video URL or a local file path, a slide PDF, or both, into a Mindmap page."""
         if not source and not deck:
             raise MCPError(code=INVALID_PARAMS, message="Give a Source, a Deck, or both")
+        try:
+            lecture_language = parse_language(language or None)
+        except LanguageError as error:
+            raise MCPError(code=INVALID_PARAMS, message=str(error)) from error
         if not source:
+            if lecture_language is not None:
+                raise MCPError(code=INVALID_PARAMS, message="A language needs a Source")
             return _slides_only_prompt(deck)
+        transcribe_step = (
+            f"Call `transcribe` with that Source and language `{lecture_language}`."
+            if lecture_language
+            else "Call `transcribe` with that Source."
+        )
         steps = [
-            "Call `transcribe` with that Source.",
+            transcribe_step,
             "Call `get_transcript` with the returned Transcript ID.",
         ]
         if deck:

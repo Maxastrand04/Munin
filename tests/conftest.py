@@ -1,7 +1,9 @@
 import shutil
 import wave
 from pathlib import Path
+from types import SimpleNamespace
 
+import onnx_asr
 import pytest
 
 SPEECH = Path(__file__).parent / "fixtures" / "sv_short.m4a"
@@ -75,3 +77,32 @@ def five_second_source(tmp_path: Path) -> Path:
         audio.setframerate(SAMPLE_RATE)
         audio.writeframes(bytes(2 * 5 * SAMPLE_RATE))
     return path
+
+
+@pytest.fixture
+def speech_library(monkeypatch: pytest.MonkeyPatch) -> SimpleNamespace:
+    """Fakes onnx-asr, the outside library, and records what each load asked for."""
+    library = SimpleNamespace(repos=[], model_arguments=[], vad_arguments=[], silence_breaks=[])
+
+    class FakeAsr:
+        asr = SimpleNamespace()
+
+        def with_vad(self, vad, **kwargs):
+            library.silence_breaks.append(kwargs.get("min_silence_duration_ms"))
+            return self
+
+        def recognize(self, path):
+            return [SimpleNamespace(start=1.2, end=3.0, text="Hello there.")]
+
+    def load_model(repo, *args, **kwargs):
+        library.repos.append(repo)
+        library.model_arguments.append(kwargs)
+        return FakeAsr()
+
+    def load_vad(name, *args, **kwargs):
+        library.vad_arguments.append(kwargs)
+        return object()
+
+    monkeypatch.setattr(onnx_asr, "load_model", load_model)
+    monkeypatch.setattr(onnx_asr, "load_vad", load_vad)
+    return library

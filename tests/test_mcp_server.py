@@ -27,6 +27,11 @@ def two_sentences(wav: Path, vocabulary: Vocabulary | None):
     return [Fragment(1.2, 3.0, "Idag ska vi prata om matriser."), Fragment(65.7, 68.0, "En matris är en tabell.")]
 
 
+def english_sentence(wav: Path, vocabulary: Vocabulary | None):
+    """A recognizer that ignores the audio and yields one English sentence."""
+    return [Fragment(1.2, 3.0, "Today we talk about processes.")]
+
+
 def gauss_sentence(wav: Path, vocabulary: Vocabulary | None):
     """A recognizer that ignores the audio and yields one sentence spelling Gausselimination."""
     return [Fragment(1.2, 3.0, "Idag ska vi prata om Gausselimination.")]
@@ -57,30 +62,41 @@ def call(server, tool: str, arguments: dict):
     return asyncio.run(run())
 
 
-def prompt_arguments(source: str | None, deck: str | None) -> dict:
-    return {name: value for name, value in (("source", source), ("deck", deck)) if value is not None}
+def prompt_arguments(source: str | None, deck: str | None, language: str | None = None) -> dict:
+    given = (("source", source), ("deck", deck), ("language", language))
+    return {name: value for name, value in given if value is not None}
 
 
-def prompt_text(server, source: str | None = None, deck: str | None = None) -> str:
+def prompt_text(server, source: str | None = None, deck: str | None = None, language: str | None = None) -> str:
     async def run():
         async with Client(server) as client:
-            return await client.get_prompt("lecture_to_mindmap", prompt_arguments(source, deck))
+            return await client.get_prompt("lecture_to_mindmap", prompt_arguments(source, deck, language))
 
     return asyncio.run(run()).messages[0].content.text
 
 
-def prompt_error(server, source: str | None = None, deck: str | None = None) -> MCPError | None:
+def prompt_error(
+    server, source: str | None = None, deck: str | None = None, language: str | None = None
+) -> MCPError | None:
     """Return the MCP error that getting the prompt raises, or None when it succeeds."""
 
     async def run():
         async with Client(server) as client:
             try:
-                await client.get_prompt("lecture_to_mindmap", prompt_arguments(source, deck))
+                await client.get_prompt("lecture_to_mindmap", prompt_arguments(source, deck, language))
             except MCPError as error:
                 return error
             return None
 
     return asyncio.run(run())
+
+
+def list_tools(server):
+    async def run():
+        async with Client(server) as client:
+            return await client.list_tools()
+
+    return asyncio.run(run()).tools
 
 
 def tool_description(server, name: str) -> str:
@@ -129,6 +145,7 @@ def test_mcp_transcribe_returns_result_fields(source: Path, cache_dir: Path):
         "transcription_s",
         "cached",
         "vocabulary",
+        "language",
     }
 
 
@@ -190,6 +207,79 @@ def test_mcp_transcribe_description_suggests_a_first_pass(cache_dir: Path):
 def test_mcp_transcribe_description_suggests_terms_from_misspellings(cache_dir: Path):
     """The transcribe tool's description tells the LLM to build the Vocabulary from misspellings it spots."""
     assert "misspel" in tool_description(create_server(cache_dir=cache_dir), "transcribe").lower()
+
+
+def test_mcp_transcribe_reports_english(source: Path, cache_dir: Path):
+    """The transcribe tool's `en` call returns `language` as `en`."""
+    server = create_server(cache_dir=cache_dir, recognize=english_sentence)
+    result = call(server, "transcribe", {"source": str(source), "language": "en"})
+    assert result.structured_content["language"] == "en"
+
+
+def test_mcp_transcribe_without_language_reports_swedish(source: Path, cache_dir: Path):
+    """The transcribe tool's call with no language and nothing cached returns `language` as `sv`."""
+    server = create_server(cache_dir=cache_dir, recognize=two_sentences)
+    result = call(server, "transcribe", {"source": str(source)})
+    assert result.structured_content["language"] == "sv"
+
+
+def test_mcp_transcribe_without_language_returns_cached_english(source: Path, cache_dir: Path):
+    """After an English run, the transcribe tool's call with no language returns `language` as `en`."""
+    server = create_server(cache_dir=cache_dir, recognize=english_sentence)
+    call(server, "transcribe", {"source": str(source), "language": "en"})
+    assert call(server, "transcribe", {"source": str(source)}).structured_content["language"] == "en"
+
+
+def test_mcp_transcribe_english_without_terms_reports_no_vocabulary(source: Path, cache_dir: Path):
+    """The tool builds an empty Vocabulary on every call, and that does not trip the English check."""
+    server = create_server(cache_dir=cache_dir, recognize=english_sentence)
+    result = call(server, "transcribe", {"source": str(source), "language": "en"})
+    assert result.structured_content["vocabulary"] is None
+
+
+def test_mcp_transcribe_english_with_terms_is_a_tool_error(source: Path, cache_dir: Path):
+    """The transcribe tool's `en` call with terms comes back as a tool error."""
+    server = create_server(cache_dir=cache_dir, recognize=english_sentence)
+    result = call(server, "transcribe", {"source": str(source), "language": "en", "vocabulary": ["heap"]})
+    assert result.is_error
+
+
+def test_mcp_transcribe_english_with_terms_error_carries_core_message(source: Path, cache_dir: Path):
+    """The tool error for terms on an English lecture carries the core's message."""
+    server = create_server(cache_dir=cache_dir, recognize=english_sentence)
+    result = call(server, "transcribe", {"source": str(source), "language": "en", "vocabulary": ["heap"]})
+    assert "do not work on English lectures" in result.content[0].text
+
+
+def test_mcp_transcribe_schema_lists_the_two_languages(cache_dir: Path):
+    """The transcribe tool's schema shows the LLM `sv` and `en` as the only language values."""
+    transcribe_tool = next(tool for tool in list_tools(create_server(cache_dir=cache_dir)) if tool.name == "transcribe")
+    choices = transcribe_tool.input_schema["properties"]["language"]["anyOf"]
+    assert {"enum": ["sv", "en"], "type": "string"} in choices
+
+
+@pytest.mark.parametrize("expected", ["sv", "en"])
+def test_mcp_transcribe_bad_language_error_names_both_languages(expected: str, source: Path, cache_dir: Path):
+    """The error for a bad language names `sv` and `en`."""
+    server = create_server(cache_dir=cache_dir, recognize=two_sentences)
+    result = call(server, "transcribe", {"source": str(source), "language": "de"})
+    assert f"'{expected}'" in result.content[0].text
+
+
+@pytest.mark.parametrize("phrase", ["`language`", "`sv`", "`en`"])
+def test_mcp_transcribe_description_names_the_languages(phrase: str, cache_dir: Path):
+    """The transcribe tool's description tells the LLM what `language` takes."""
+    assert phrase in tool_description(create_server(cache_dir=cache_dir), "transcribe")
+
+
+def test_mcp_transcribe_description_says_a_miss_defaults_to_swedish(cache_dir: Path):
+    """The transcribe tool's description warns the LLM that a call with no language and nothing cached runs Swedish."""
+    assert "swedish" in tool_description(create_server(cache_dir=cache_dir), "transcribe").lower()
+
+
+def test_mcp_transcribe_description_says_english_has_no_vocabulary_yet(cache_dir: Path):
+    """The transcribe tool's description tells the LLM that Vocabulary terms do not work on English lectures yet."""
+    assert "english lectures" in tool_description(create_server(cache_dir=cache_dir), "transcribe").lower()
 
 
 def test_mcp_transcribe_accepts_youtube_url(cache_dir: Path):
@@ -352,8 +442,8 @@ def test_mcp_read_slides_unknown_id_is_tool_error(deck: Path, cache_dir: Path):
     assert result.is_error is True
 
 
-def test_mcp_lists_lecture_prompt_with_optional_source_and_deck(cache_dir: Path):
-    """The server lists `lecture_to_mindmap` with an optional `source` and an optional `deck`."""
+def test_mcp_lists_lecture_prompt_with_optional_source_deck_and_language(cache_dir: Path):
+    """The server lists `lecture_to_mindmap` with an optional `source`, `deck` and `language`, in that order."""
 
     async def run():
         async with Client(create_server(cache_dir=cache_dir, recognize=two_sentences)) as client:
@@ -363,6 +453,7 @@ def test_mcp_lists_lecture_prompt_with_optional_source_and_deck(cache_dir: Path)
     assert [(arg.name, arg.required) for arg in prompts["lecture_to_mindmap"].arguments] == [
         ("source", False),
         ("deck", False),
+        ("language", False),
     ]
 
 
@@ -790,6 +881,49 @@ def test_mcp_lecture_prompt_with_neither_names_what_is_missing(cache_dir: Path):
     """The error for a prompt with neither a Source nor a Deck reads `Give a Source, a Deck, or both`."""
     error = prompt_error(create_server(cache_dir=cache_dir))
     assert getattr(error, "message", None) == "Give a Source, a Deck, or both"
+
+
+@pytest.mark.parametrize("language", ["sv", "en"])
+def test_mcp_lecture_prompt_asks_transcribe_for_the_language(language: str, cache_dir: Path):
+    """With a Source and a language, the `transcribe` step names the language."""
+    text = prompt_text(create_server(cache_dir=cache_dir), source=WATCH_URL, language=language)
+    assert f"Call `transcribe` with that Source and language `{language}`." in text
+
+
+def test_mcp_lecture_prompt_with_deck_and_language_still_reads_slides(cache_dir: Path):
+    """A language does not drop the `read_slides` step when a Deck is given too."""
+    text = prompt_text(create_server(cache_dir=cache_dir), source=WATCH_URL, deck=DECK_PATH, language="en")
+    assert "Call `read_slides`" in text
+
+
+def test_mcp_lecture_prompt_with_empty_language_matches_no_language(cache_dir: Path):
+    """An empty language counts as none, so the text is the same as with no language."""
+    server = create_server(cache_dir=cache_dir)
+    assert prompt_text(server, source=WATCH_URL, language="") == prompt_text(server, source=WATCH_URL)
+
+
+def test_mcp_lecture_prompt_with_empty_language_and_only_a_deck_matches_no_language(cache_dir: Path):
+    """An empty language on a Deck alone counts as none, so it stays the slides-only text."""
+    server = create_server(cache_dir=cache_dir)
+    assert prompt_text(server, deck=DECK_PATH, language="") == prompt_text(server, deck=DECK_PATH)
+
+
+def test_mcp_lecture_prompt_rejects_a_bad_language(cache_dir: Path):
+    """A bad language fails with an MCP error carrying the LanguageError message."""
+    error = prompt_error(create_server(cache_dir=cache_dir), source=WATCH_URL, language="de")
+    assert "Language de is not sv or en" in str(error)
+
+
+def test_mcp_lecture_prompt_rejects_a_language_with_only_a_deck(cache_dir: Path):
+    """A language with no Source fails, since a Deck alone never transcribes."""
+    error = prompt_error(create_server(cache_dir=cache_dir), deck=DECK_PATH, language="en")
+    assert "A language needs a Source" in str(error)
+
+
+def test_mcp_lecture_prompt_with_only_a_language_asks_for_a_source_or_deck(cache_dir: Path):
+    """A language with neither a Source nor a Deck gets the error for having neither."""
+    error = prompt_error(create_server(cache_dir=cache_dir), language="en")
+    assert "Give a Source, a Deck, or both" in str(error)
 
 
 def test_mcp_main_writes_pages_to_mindmaps_in_working_folder(source: Path, tmp_path: Path, monkeypatch):

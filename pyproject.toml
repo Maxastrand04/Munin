@@ -37,6 +37,6 @@ extend-exclude = ["src/munin/core/_vendor"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 markers = [
-    "slow: loads the real Pianissimo model",
+    "slow: loads a real speech model",
     "network: downloads from YouTube or KTH Play with the real downloader",
 ]
