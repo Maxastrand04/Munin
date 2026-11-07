@@ -13,6 +13,7 @@ from munin.core.cache_paths import default_cache_dir
 from munin.core.decode import decode_to_wav
 from munin.core.errors import NoSpeechError, SourceError, UnknownTranscriptError
 from munin.core.kthplay import download_smallest_video
+from munin.core.language import Language
 from munin.core.model import Recognize, load_recognizer
 from munin.core.segments import Segment, merge_fragments
 from munin.core.sources import Download, Source, Video, parse_source
@@ -31,6 +32,10 @@ class TranscribeResult:
 
     `vocabulary` is the Vocabulary the cached Transcript was made with, or None
     when it was made without one. A cache hit reports the stored one.
+
+    `language` is the language of the Transcript this result describes, `sv` or
+    `en`, and is never None on a returned result. A cache hit reports the stored
+    one, and a Transcript cached before languages existed reports `sv`.
     """
 
     transcript_id: str
@@ -39,6 +44,7 @@ class TranscribeResult:
     transcription_s: float
     cached: bool
     vocabulary: Vocabulary | None = None
+    language: Language | None = None  # Stub default. implement-ticket removes the None.
 
 
 @dataclass(frozen=True)
@@ -49,6 +55,8 @@ class CacheEntry:
     Play the video, never the file downloaded to transcribe it. `duration_s` is the
     Source's audio length in seconds, `transcription_s` how long the run that
     made the Transcript took, and `segments` the Transcript in time order.
+    `language` is the Transcript's language, and an entry cached before languages
+    existed reads back as `sv`.
     """
 
     source: Source
@@ -56,6 +64,7 @@ class CacheEntry:
     transcription_s: float
     segments: tuple[Segment, ...]
     vocabulary: Vocabulary | None = None
+    language: Language | None = None  # Stub default. implement-ticket removes the None.
 
     def _result(self, transcript_id: str, *, cached: bool) -> TranscribeResult:
         """Return this entry as the `TranscribeResult` for `transcript_id`, marked `cached` or not."""
@@ -67,6 +76,7 @@ class CacheEntry:
 def transcribe(
     source: str | os.PathLike[str],
     *,
+    language: Language | None = None,
     vocabulary: Vocabulary | None = None,
     cache_dir: Path | None = None,
     recognize: Recognize | None = None,
@@ -95,6 +105,16 @@ def transcribe(
     a cached Transcript is returned as is, whether it was boosted or not, and
     `recognize` receives None on a miss.
 
+    `language` is the lecture's language, `sv` or `en`, and is checked first, so
+    a bad one fails before any download or model load. With no `language`, a
+    cached Transcript is returned in whichever language it has, and a miss runs
+    Swedish. A `language` equal to the cached Transcript's returns it as a cache
+    hit, unless Vocabulary terms ask for a rerun. A `language` that differs from
+    the cached Transcript's always runs a fresh transcription in that language,
+    reports `cached=False`, and on success replaces the cached Transcript under
+    the same Transcript ID, stored with that run's Vocabulary or none. The Deck
+    stays attached. A Transcript cached before languages existed counts as `sv`.
+
     On a miss, a YouTube Source's audio, or a KTH Play Source's video file, is
     first fetched with `download` into a temporary work folder. The file, or the
     downloaded audio or video, is decoded with ffmpeg to 16 kHz mono and passed
@@ -105,17 +125,24 @@ def transcribe(
     `transcription_s` never includes download time.
 
     `cache_dir` defaults to the per-user cache folder for Munin.
-    `recognize` defaults to `load_recognizer()`, called only on a miss.
+    `recognize` defaults to `load_recognizer(language)` for the language the run
+    needs, called only on a miss. A passed `recognize` runs for every language.
     `download` defaults to `download_audio` for YouTube and
     `download_smallest_video` for KTH Play, called only on a miss for either.
 
-    Raises `SourceError` when `source` is not an existing file, a YouTube video
+    Raises `LanguageError` when `language` is not `sv`, `en` or None. Raises
+    `EnglishVocabularyError` when a `vocabulary` with terms meets an English
+    lecture, whether from `en` or from a cached English Transcript with no
+    `language`, before any download or model load. Raises `SourceError` when `source` is not an existing file, a YouTube video
     URL or a KTH Play video URL, with the reason "not a file, a YouTube URL or a
     KTH Play video URL", when ffmpeg cannot decode it, or when `download`
     cannot fetch the video. Raises `NoSpeechError` when no non-empty Segment
     comes out. None of these writes anything to the cache, so a failed boosted
-    run leaves the previously cached Transcript in place.
+    run or a failed run in another language leaves the previously cached
+    Transcript in place.
     """
+    if language is not None:
+        raise NotImplementedError
     parsed = parse_source(source)
     resolved = parsed.expanduser().resolve() if isinstance(parsed, Path) else parsed
     transcript_id = cache_id(_source_key(resolved))

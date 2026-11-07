@@ -129,6 +129,7 @@ def test_mcp_transcribe_returns_result_fields(source: Path, cache_dir: Path):
         "transcription_s",
         "cached",
         "vocabulary",
+        "language",
     }
 
 
@@ -352,8 +353,8 @@ def test_mcp_read_slides_unknown_id_is_tool_error(deck: Path, cache_dir: Path):
     assert result.is_error is True
 
 
-def test_mcp_lists_lecture_prompt_with_optional_source_and_deck(cache_dir: Path):
-    """The server lists `lecture_to_mindmap` with an optional `source` and an optional `deck`."""
+def test_mcp_lists_lecture_prompt_with_optional_source_deck_and_language(cache_dir: Path):
+    """The server lists `lecture_to_mindmap` with an optional `source`, `deck` and `language`, in that order."""
 
     async def run():
         async with Client(create_server(cache_dir=cache_dir, recognize=two_sentences)) as client:
@@ -363,6 +364,7 @@ def test_mcp_lists_lecture_prompt_with_optional_source_and_deck(cache_dir: Path)
     assert [(arg.name, arg.required) for arg in prompts["lecture_to_mindmap"].arguments] == [
         ("source", False),
         ("deck", False),
+        ("language", False),
     ]
 
 

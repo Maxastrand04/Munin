@@ -4,6 +4,7 @@ from collections.abc import Callable, Iterable
 from pathlib import Path
 
 from munin.core.boosting import apply_vocabulary
+from munin.core.language import Language
 from munin.core.segments import Fragment
 from munin.core.vocabulary import Vocabulary
 
@@ -19,15 +20,25 @@ ADR-0009.
 """
 
 
-def load_recognizer() -> Recognize:
-    """Load Pianissimo (int8) and Silero VAD and return a Recognize function.
+def load_recognizer(language: Language = "sv") -> Recognize:
+    """Load `language`'s speech model (int8) and Silero VAD and return a Recognize function.
+
+    `sv` loads Pianissimo from `KlangAI/pianissimo-sv-onnx`. `en` loads Parakeet
+    TDT 0.6B v3 from `istupakov/parakeet-tdt-0.6b-v3-onnx`, per ADR-0022. A call
+    loads only the one model its language needs. Each follows its repo's main
+    branch.
 
     Forces ONNX Runtime's CPU provider for both models, per ADR-0003. VAD treats
     500 ms of silence as a break between fragments and keeps onnx-asr's other
     defaults. On first use, onnx-asr downloads the weights into the Hugging Face
     cache. Later calls load them from there. Boosting goes through Klang's
     vendored phrase boosting, per ADR-0008.
+
+    Raises `LanguageError` when `language` is not `sv` or `en`, before anything
+    loads.
     """
+    if language != "sv":
+        raise NotImplementedError
     import onnx_asr
 
     providers = ["CPUExecutionProvider"]

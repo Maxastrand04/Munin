@@ -84,6 +84,31 @@ class VocabularyError(MuninError):
         super().__init__(f"Boost strength {alpha} is outside 0 to 2")
 
 
+class LanguageError(MuninError):
+    """A lecture language is anything but `sv` or `en`.
+
+    `language` is the value the caller gave, and the message names it, as in
+    "Language de is not sv or en".
+    """
+
+    def __init__(self, language: str) -> None:
+        self.language = language
+        super().__init__(f"Language {language} is not sv or en")
+
+
+class EnglishVocabularyError(MuninError):
+    """A call gave Vocabulary terms for an English lecture, which has no Vocabulary yet.
+
+    The lecture is English when the call asks for `en`, or when it gives no
+    language and the cached Transcript is English. The message tells the caller
+    what to do: "Vocabulary terms do not work on English lectures yet. Call
+    again without them."
+    """
+
+    def __init__(self) -> None:
+        super().__init__("Vocabulary terms do not work on English lectures yet. Call again without them.")
+
+
 class OutlineError(MuninError):
     """Base for every error that rejects an Outline before anything is rendered.
 

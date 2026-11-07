@@ -2,7 +2,9 @@
 
 from munin.core.errors import (
     DeckError,
+    EnglishVocabularyError,
     KlangError,
+    LanguageError,
     MuninError,
     NoSpeechError,
     OutlineError,
@@ -15,6 +17,7 @@ from munin.core.errors import (
     VocabularyError,
 )
 from munin.core.kthplay import KthPlaySource, download_smallest_video, parse_kthplay_url
+from munin.core.language import Language, parse_language
 from munin.core.mindmap import RenderResult, render_deck_mindmap, render_mindmap
 from munin.core.model import Recognize, load_recognizer
 from munin.core.outline import OutlineSchema, get_outline_schema
@@ -29,9 +32,12 @@ __all__ = [
     "DeckError",
     "DeckResult",
     "Download",
+    "EnglishVocabularyError",
     "Fragment",
     "KlangError",
     "KthPlaySource",
+    "Language",
+    "LanguageError",
     "MuninError",
     "NoSpeechError",
     "OutlineError",
@@ -59,6 +65,7 @@ __all__ = [
     "load_recognizer",
     "merge_fragments",
     "parse_kthplay_url",
+    "parse_language",
     "parse_source",
     "parse_youtube_url",
     "read_deck",
