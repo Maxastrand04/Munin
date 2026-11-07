@@ -1,6 +1,6 @@
 # Munin
 
-Munin turns a recorded Swedish lecture into a mindmap whose nodes link back to the moment in the lecture they summarize. Klang's Pianissimo model transcribes. Munin does the deterministic work, and the LLM writes the Outline. See [ADR-0001](docs/adr/0001-tools-own-deterministic-work.md).
+Munin turns a recorded Swedish or English lecture into a mindmap whose nodes link back to the moment in the lecture they summarize. Klang's Pianissimo model transcribes Swedish, and NVIDIA's Parakeet TDT 0.6B v3 transcribes English. Munin does the deterministic work, and the LLM writes the Outline. See [ADR-0001](docs/adr/0001-tools-own-deterministic-work.md).
 
 ## Language
 
@@ -12,16 +12,20 @@ _Avoid_: input, video, file
 The cached text of one Source, made of Segments and identified by a Transcript ID, which remembers its Source.
 _Avoid_: transcription (for the stored result), text, captions
 
+**Lecture language**:
+The language a Source is spoken in, `sv` for Swedish or `en` for English, which picks the model that transcribes it: Pianissimo for `sv`, Parakeet for `en`. The caller gives it, and Munin never detects it. A call with no lecture language and nothing cached runs Swedish, and a Transcript cached before lecture languages existed counts as Swedish. Any other value fails before anything downloads or loads.
+_Avoid_: locale, transcription language
+
 **Segment**:
 One span of speech in a Transcript with a start time, an end time and its text, after Fragments are merged and empty spans dropped.
 _Avoid_: chunk, line, utterance
 
 **Fragment**:
-One raw span of speech as VAD and Pianissimo return it, before merging into Segments.
+One raw span of speech as VAD and the lecture language's model return it, before merging into Segments.
 _Avoid_: chunk, piece
 
 **Vocabulary**:
-A list of terms, plus a boost strength (alpha) from 0 to 2, that steers Pianissimo toward spelling those terms correctly. Terms are case sensitive. A Vocabulary whose terms are all blank counts as none.
+A list of terms, plus a boost strength (alpha) from 0 to 2, that steers Pianissimo toward spelling those terms correctly. Terms are case sensitive. A Vocabulary whose terms are all blank counts as none. Only Swedish lectures take a Vocabulary, so terms on an English lecture fail and write nothing.
 _Avoid_: glossary, keywords, hotwords
 
 **Deck**:
@@ -55,6 +59,8 @@ _Avoid_: jump link, deep link, seek link
 - A **Segment** is merged from one or more **Fragments**
 - A **Vocabulary** is optional and applies to one transcription of a **Source**
 - A cached **Transcript** records the **Vocabulary** it was made with, or none. Transcribing with a **Vocabulary** replaces the cached **Transcript** and keeps its ID
+- A cached **Transcript** records its **Lecture language**. A call with no language, or with the same one, returns it, and a call with a different one replaces it and keeps its ID
+- A **Vocabulary** applies only to a **Transcript** whose **Lecture language** is Swedish
 - A **Transcript** has at most one **Deck**, which has one or more **Slides**
 - A node of an **Outline** lists any number of **Slides**, and a **Slide** can appear on any number of nodes
 - An **Outline** is written from exactly one **Transcript**, or from exactly one standalone **Deck**
@@ -71,4 +77,4 @@ _Avoid_: jump link, deep link, seek link
 ## Flagged ambiguities
 
 - "mindmap" was used for both what the LLM writes and the rendered page. Resolved: what the LLM writes is the **Outline**, the page is the **Mindmap**.
-- "transcription" means the act of running Pianissimo. The stored result is the **Transcript**.
+- "transcription" means the act of running the lecture language's model, Pianissimo or Parakeet. The stored result is the **Transcript**.

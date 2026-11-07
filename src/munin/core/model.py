@@ -9,7 +9,7 @@ from munin.core.language import Language
 from munin.core.segments import Fragment
 from munin.core.vocabulary import Vocabulary
 
-_MODEL_REPOS: dict[str, str] = {
+_MODEL_REPOS: dict[Language, str] = {
     "sv": "KlangAI/pianissimo-sv-onnx",
     "en": "istupakov/parakeet-tdt-0.6b-v3-onnx",
 }
@@ -36,7 +36,8 @@ def load_recognizer(language: Language = "sv") -> Recognize:
     500 ms of silence as a break between fragments and keeps onnx-asr's other
     defaults. On first use, onnx-asr downloads the weights into the Hugging Face
     cache. Later calls load them from there. Boosting goes through Klang's
-    vendored phrase boosting, per ADR-0008.
+    vendored phrase boosting, per ADR-0008, and only the `sv` recognizer boosts.
+    The `en` recognizer ignores the Vocabulary it is given, per ADR-0023.
 
     Raises `LanguageError` when `language` is not `sv` or `en`, before anything
     loads.
@@ -51,7 +52,6 @@ def load_recognizer(language: Language = "sv") -> Recognize:
     pipeline = asr.with_vad(vad, min_silence_duration_ms=500)
 
     def recognize(wav: Path, vocabulary: Vocabulary | None) -> Iterable[Fragment]:
-        # Boosting patches Pianissimo only. An English run has no Vocabulary, so there is nothing to boost.
         if language == "sv":
             apply_vocabulary(asr, vocabulary)
         for result in pipeline.recognize(str(wav)):

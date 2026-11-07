@@ -144,10 +144,10 @@ def transcribe(
     Raises `LanguageError` when `language` is not `sv`, `en` or None. Raises
     `EnglishVocabularyError` when a `vocabulary` with terms meets an English
     lecture, whether from `en` or from a cached English Transcript with no
-    `language`, before any download or model load. Raises `SourceError` when `source` is not an existing file, a YouTube video
-    URL or a KTH Play video URL, with the reason "not a file, a YouTube URL or a
-    KTH Play video URL", when ffmpeg cannot decode it, or when `download`
-    cannot fetch the video. Raises `NoSpeechError` when no non-empty Segment
+    `language`, before any download or model load. Raises `SourceError` when
+    `source` is not an existing file, a YouTube video URL or a KTH Play video
+    URL, with the reason "not a file, a YouTube URL or a KTH Play video URL",
+    when ffmpeg cannot decode it, or when `download` cannot fetch the video. Raises `NoSpeechError` when no non-empty Segment
     comes out. None of these writes anything to the cache, so a failed boosted
     run or a failed run in another language leaves the previously cached
     Transcript in place.
@@ -159,8 +159,7 @@ def transcribe(
     entry_path = _entry_path(cache_dir, transcript_id)
     vocabulary = vocabulary if vocabulary and vocabulary.terms else None
     cached = _read_entry(entry_path) if entry_path.is_file() else None
-    # With no language, a cached Transcript keeps its own, and a miss runs Swedish.
-    run_language = lecture_language or (cached.language if cached else "sv")
+    run_language = _run_language(lecture_language, cached)
     if run_language == "en" and vocabulary is not None:
         raise EnglishVocabularyError()
     if cached is not None and vocabulary is None and lecture_language in (None, cached.language):
@@ -207,6 +206,12 @@ def _source_key(source: Source) -> str:
 
 def _entry_path(cache_dir: Path | None, transcript_id: str) -> Path:
     return (cache_dir or default_cache_dir()) / f"{transcript_id}.json"
+
+
+def _run_language(asked: Language | None, cached: CacheEntry | None) -> Language:
+    if asked is not None:
+        return asked
+    return cached.language if cached else "sv"
 
 
 def _transcribe_video(
