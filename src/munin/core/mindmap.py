@@ -28,18 +28,44 @@ _DEFAULT_OUTPUT_DIR = _REPO_ROOT / "mindmaps"
 
 _ASSETS = Path(__file__).with_name("mindmap_assets")
 
-# The fixed wording of a worked box, per page language. The step count is built by `_step_count`.
-_BOX_WORDS: dict[Language, dict[str, str]] = {
-    "sv": {
-        "solution": "Visa lösning",
-        "answer": "Visa svar",
-        "no_solution": "Ingen lösning i föreläsningen. Försök själv.",
-    },
-    "en": {
-        "solution": "Show solution",
-        "answer": "Show answer",
-        "no_solution": "No solution in the lecture. Try it yourself.",
-    },
+_STANDALONE_DECK_LANGUAGE: Language = "sv"
+"""The page language of a Deck read on its own, which has no Lecture language."""
+
+
+@dataclass(frozen=True)
+class _BoxWording:
+    """The fixed wording of an example's or exercise's box in one page language.
+
+    `one_step` and `many_steps` are the words after the count beside the
+    solution toggle, for one step and for any other count.
+    """
+
+    solution_toggle: str
+    answer_toggle: str
+    no_solution: str
+    one_step: str
+    many_steps: str
+
+    def step_count(self, count: int) -> str:
+        """Return the step count beside the solution toggle, such as `2 steg` or `1 step`."""
+        return f"{count} {self.one_step if count == 1 else self.many_steps}"
+
+
+_BOX_WORDING: dict[Language, _BoxWording] = {
+    "sv": _BoxWording(
+        solution_toggle="Visa lösning",
+        answer_toggle="Visa svar",
+        no_solution="Ingen lösning i föreläsningen. Försök själv.",
+        one_step="steg",
+        many_steps="steg",
+    ),
+    "en": _BoxWording(
+        solution_toggle="Show solution",
+        answer_toggle="Show answer",
+        no_solution="No solution in the lecture. Try it yourself.",
+        one_step="step",
+        many_steps="steps",
+    ),
 }
 
 
@@ -248,7 +274,7 @@ def _write_page(
     `entry` is None when there is no Source, and `deck` need not exist.
     """
     parsed = _parsed(outline)
-    language: Language = entry.language if entry else "sv"
+    language = entry.language if entry else _STANDALONE_DECK_LANGUAGE
     deck_pages = pdf.page_count(deck) if deck.is_file() else None
     problems = check_outline(
         parsed, duration_s=entry.duration_s if entry else None, deck_pages=deck_pages, language=language
@@ -313,25 +339,18 @@ def _flat_nodes(outline: dict, source: Source | None, language: Language) -> lis
 def _worked_box(node: dict, number: int, language: Language) -> dict:
     """Return what an example's or exercise's box shows, `number` counting its type in Outline order."""
     title = WORKED_TITLES[language][node["type"]]
-    words = _BOX_WORDS[language]
+    wording = _BOX_WORDING[language]
     return {
         "title": title,
         "heading": f"{title} {number}",
         "task": node["task"],
         "steps": node["steps"],
-        "step_count": _step_count(language, len(node["steps"])),
+        "step_count": wording.step_count(len(node["steps"])),
         "answer": node["answer"],
-        "solution_toggle": words["solution"],
-        "answer_toggle": words["answer"],
-        "no_solution": words["no_solution"],
+        "solution_toggle": wording.solution_toggle,
+        "answer_toggle": wording.answer_toggle,
+        "no_solution": wording.no_solution,
     }
-
-
-def _step_count(language: Language, count: int) -> str:
-    """Return the step count beside the solution toggle, such as `2 steg` or `1 step`."""
-    if language == "sv":
-        return f"{count} steg"
-    return "1 step" if count == 1 else f"{count} steps"
 
 
 def _slide_images(deck: Path, numbers: list[int]) -> dict[str, str]:
