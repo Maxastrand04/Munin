@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from typing import NamedTuple
 
 from munin.core.errors import OutlineProblem
+from munin.core.language import Language
 from munin.core.latex import BrokenLatex, calculation_problems, prose_problems
 from munin.core.stamps import display_stamp, stamp_seconds
 
@@ -63,11 +64,17 @@ _PARENTS: dict[str, tuple[str, ...]] = {
     "exercise": _TREE_TYPES,
 }
 
-# The word the page names each worked type with. The page adds it to the label as a prefix, so no label may start with one.
-WORKED_TITLES = {"example": "Exempel", "exercise": "Övning"}
+# The word the page names each worked type with, per page language. The page adds it to the label as a prefix, so no label may start with one of its language's.
+WORKED_TITLES: dict[Language, dict[str, str]] = {
+    "sv": {"example": "Exempel", "exercise": "Övning"},
+    "en": {"example": "Example", "exercise": "Exercise"},
+}
 
 _CONTROL = re.compile(r"[\x00-\x1f\x7f-\x9f]")
-_WORKED_PREFIX = re.compile(rf"\s*({'|'.join(WORKED_TITLES.values())})\s*:", re.IGNORECASE)
+_WORKED_PREFIX: dict[Language, re.Pattern[str]] = {
+    language: re.compile(rf"\s*({'|'.join(titles.values())})\s*:", re.IGNORECASE)
+    for language, titles in WORKED_TITLES.items()
+}
 _NO_CONTROL = "^[^\\u0000-\\u001f\\u007f-\\u009f]*$"
 _NON_BLANK = "\\S"
 _STAMP = "^(\\d+:[0-5]\\d|\\d+:[0-5]\\d:[0-5]\\d)$"
@@ -133,15 +140,16 @@ def get_outline_schema() -> OutlineSchema:
 
 
 def check_outline(
-    outline: object, *, duration_s: float | None, deck_pages: int | None
+    outline: object, *, duration_s: float | None, deck_pages: int | None, language: Language
 ) -> tuple[OutlineProblem, ...]:
     """Return every problem with a parsed Outline, in Outline order, as `render_mindmap` describes them.
 
     `duration_s` is the Source's length in seconds, or None when there is no
     Source, so any stamp is a problem. `deck_pages` is the Deck's Slide count,
-    or None when there is no Deck, so any Slide number is a problem.
+    or None when there is no Deck, so any Slide number is a problem. `language`
+    is the page's language, whose example and exercise prefixes no label may start with.
     """
-    check = _Check(duration_s, deck_pages)
+    check = _Check(duration_s, deck_pages, language)
     if not isinstance(outline, dict):
         check.add((), "the Outline must be one main-topic node, not a list or a value")
         return tuple(check.problems)
@@ -164,9 +172,10 @@ def _node_path_label(node: object, position: int) -> str:
 class _Check:
     """Collects problems while walking an Outline, parents before children."""
 
-    def __init__(self, duration_s: float | None, deck_pages: int | None) -> None:
+    def __init__(self, duration_s: float | None, deck_pages: int | None, language: Language) -> None:
         self.duration_s = duration_s
         self.deck_pages = deck_pages
+        self.language = language
         self.problems: list[OutlineProblem] = []
 
     def add(self, path: tuple[str, ...], message: str) -> None:
@@ -221,7 +230,7 @@ class _Check:
                 self.add(path, _latex_message(key, piece))
 
     def label_prefix(self, path: tuple[str, ...], label: object) -> None:
-        prefix = _WORKED_PREFIX.match(label) if isinstance(label, str) else None
+        prefix = _WORKED_PREFIX[self.language].match(label) if isinstance(label, str) else None
         if prefix:
             self.add(
                 path,
@@ -305,7 +314,8 @@ def _schema() -> dict:
             "without brackets, and Slide numbers count from 1. Math is LaTeX, so escape every "
             "backslash as \\\\ in JSON. Task, answer, explanation and a step's reason are prose with math "
             "between $...$, never $$, and a literal dollar sign is \\\\$. A step's calculation is LaTeX "
-            "alone, with no $. Each step is one calculation, and its reason one short Swedish sentence."
+            "alone, with no $. Each step is one calculation, and its reason one short sentence. "
+            "Write the whole Outline, every step's reason included, in the lecture's language."
         ),
         "$ref": "#/$defs/main-topic",
         "$defs": defs,
@@ -360,11 +370,11 @@ def _samples() -> tuple[dict, dict]:
     }
     exercise = {
         "type": "exercise",
-        "label": "Matrisprodukt",
+        "label": "Matrix product",
         "stamps": [],
         "slides": [],
-        "task": "Beräkna $\\begin{pmatrix} 1 & 2 \\end{pmatrix} \\begin{pmatrix} 3 \\\\ 4 \\end{pmatrix}$",
-        "steps": [{"calculation": "1 \\cdot 3 + 2 \\cdot 4", "reason": "rad gånger kolonn"}],
+        "task": "Compute $\\begin{pmatrix} 1 & 2 \\end{pmatrix} \\begin{pmatrix} 3 \\\\ 4 \\end{pmatrix}$",
+        "steps": [{"calculation": "1 \\cdot 3 + 2 \\cdot 4", "reason": "row times column"}],
         "answer": "$\\begin{pmatrix} 11 \\end{pmatrix}$",
     }
     return example, exercise

@@ -15,6 +15,7 @@ from munin.core.errors import (
     OutlineSyntaxError,
     UnknownDeckError,
 )
+from munin.core.language import Language
 from munin.core.latex import KATEX_OPTIONS, katex_css, katex_js
 from munin.core.outline import WORKED_TITLES, check_outline
 from munin.core.slides import deck_path, standalone_deck_path
@@ -26,6 +27,20 @@ _REPO_ROOT = Path(__file__).resolve().parents[3]
 _DEFAULT_OUTPUT_DIR = _REPO_ROOT / "mindmaps"
 
 _ASSETS = Path(__file__).with_name("mindmap_assets")
+
+# The fixed wording of a worked box, per page language. The step count is built by `_step_count`.
+_BOX_WORDS: dict[Language, dict[str, str]] = {
+    "sv": {
+        "solution": "Visa lösning",
+        "answer": "Visa svar",
+        "no_solution": "Ingen lösning i föreläsningen. Försök själv.",
+    },
+    "en": {
+        "solution": "Show solution",
+        "answer": "Show answer",
+        "no_solution": "No solution in the lecture. Try it yourself.",
+    },
+}
 
 
 @dataclass(frozen=True)
@@ -233,14 +248,17 @@ def _write_page(
     `entry` is None when there is no Source, and `deck` need not exist.
     """
     parsed = _parsed(outline)
+    language: Language = entry.language if entry else "sv"
     deck_pages = pdf.page_count(deck) if deck.is_file() else None
-    problems = check_outline(parsed, duration_s=entry.duration_s if entry else None, deck_pages=deck_pages)
+    problems = check_outline(
+        parsed, duration_s=entry.duration_s if entry else None, deck_pages=deck_pages, language=language
+    )
     if problems:
         raise OutlineStructureError(problems)
     source = entry.source if entry else None
-    nodes = _flat_nodes(parsed, source)
+    nodes = _flat_nodes(parsed, source, language)
     linked = sorted({number for node in nodes for number in node["slides"]})
-    content = _page_html(page_id, nodes, source, _slide_images(deck, linked))
+    content = _page_html(page_id, nodes, source, _slide_images(deck, linked), language)
     page = (output_dir or _DEFAULT_OUTPUT_DIR).resolve() / f"{page_id}.html"
     page.parent.mkdir(parents=True, exist_ok=True)
     page.write_text(content, encoding="utf-8")
@@ -257,10 +275,10 @@ def _parsed(outline: dict | str) -> object:
         raise OutlineSyntaxError(error.lineno, error.colno, error.msg) from error
 
 
-def _flat_nodes(outline: dict, source: Source | None) -> list[dict]:
+def _flat_nodes(outline: dict, source: Source | None, language: Language) -> list[dict]:
     """Return the checked Outline's nodes in Outline order, each pointing at its parent by index."""
     nodes: list[dict] = []
-    counts = dict.fromkeys(WORKED_TITLES, 0)
+    counts = dict.fromkeys(WORKED_TITLES[language], 0)
 
     def add(node: dict, parent: int | None) -> None:
         index = len(nodes)
@@ -271,7 +289,7 @@ def _flat_nodes(outline: dict, source: Source | None) -> list[dict]:
         worked = None
         if node["type"] in counts:
             counts[node["type"]] += 1
-            worked = _worked_box(node, counts[node["type"]])
+            worked = _worked_box(node, counts[node["type"]], language)
         nodes.append(
             {
                 "id": index,
@@ -292,16 +310,28 @@ def _flat_nodes(outline: dict, source: Source | None) -> list[dict]:
     return nodes
 
 
-def _worked_box(node: dict, number: int) -> dict:
+def _worked_box(node: dict, number: int, language: Language) -> dict:
     """Return what an example's or exercise's box shows, `number` counting its type in Outline order."""
-    title = WORKED_TITLES[node["type"]]
+    title = WORKED_TITLES[language][node["type"]]
+    words = _BOX_WORDS[language]
     return {
         "title": title,
         "heading": f"{title} {number}",
         "task": node["task"],
         "steps": node["steps"],
+        "step_count": _step_count(language, len(node["steps"])),
         "answer": node["answer"],
+        "solution_toggle": words["solution"],
+        "answer_toggle": words["answer"],
+        "no_solution": words["no_solution"],
     }
+
+
+def _step_count(language: Language, count: int) -> str:
+    """Return the step count beside the solution toggle, such as `2 steg` or `1 step`."""
+    if language == "sv":
+        return f"{count} steg"
+    return "1 step" if count == 1 else f"{count} steps"
 
 
 def _slide_images(deck: Path, numbers: list[int]) -> dict[str, str]:
@@ -318,7 +348,9 @@ def _timestamp_url(source: Source, offset_s: int) -> str:
     return f"{source.as_uri()}#t={offset_s}"
 
 
-def _page_html(page_id: str, nodes: list[dict], source: Source | None, slide_images: dict[str, str]) -> str:
+def _page_html(
+    page_id: str, nodes: list[dict], source: Source | None, slide_images: dict[str, str], language: Language
+) -> str:
     title = nodes[0]["label"] or "Mindmap"
     source_url = _source_url(source)
     source_link = (
@@ -337,16 +369,18 @@ def _page_html(page_id: str, nodes: list[dict], source: Source | None, slide_ima
                 "title": title,
                 "source_url": source_url,
                 "page_id": page_id,
+                "lang": language,
                 "slides": slide_images,
                 "katex_options": KATEX_OPTIONS,
             }
         ),
         "__TITLE__": escape(title),
         "__SOURCE_LINK__": source_link,
+        "__LANG__": language,
     }
     template = (_ASSETS / "mindmap.html").read_text(encoding="utf-8")
     return re.sub(
-        r"__(?:CSS|JS|KATEX_CSS|KATEX_JS|DATA|PAGE|TITLE|SOURCE_LINK)__",
+        r"__(?:CSS|JS|KATEX_CSS|KATEX_JS|DATA|PAGE|TITLE|SOURCE_LINK|LANG)__",
         lambda match: replacements[match[0]],
         template,
     )

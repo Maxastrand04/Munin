@@ -207,8 +207,9 @@ def create_server(
         - Write every example and exercise in the lecture as an example or exercise
           node under the node it belongs to, at any level. Give it the task, its
           solution steps and the answer, so the panel reads on its own without
-          the video or the Slide. Leave `Exempel:` and `Övning:` out of every label,
-          a slide node's too, since the page adds them.
+          the video or the Slide. Leave `Exempel:`, `Övning:`, `Example:` and
+          `Exercise:` out of every label, a slide node's too, since the page adds
+          its prefix.
         - Put one stamp in each node's `stamps`, copied from the `get_transcript`
           line where that part starts, such as `"4:34"`. A topic gets one stamp
           for each separate stretch of the lecture it gathers. Never invent or
@@ -220,7 +221,9 @@ def create_server(
           piece of math between `$...$` and write the rest as plain prose, with
           `\\$` for a literal dollar sign. Write a step's calculation as LaTeX
           alone, with no `$`. Make each step one calculation, with at most one
-          short Swedish sentence on why in its reason.
+          short sentence on why in its reason.
+        - Write the whole Outline, every node's text and every step's reason
+          included, in the lecture's language, the `language` `transcribe` returned.
 
         When the lecture has a Deck read with `read_slides`, base the topics on its
         Slides, and list in a node's `slides` each Slide that covers it, counted
@@ -335,6 +338,7 @@ def create_server(
             "Call `get_outline_schema`.",
             "Write an Outline of the lecture as JSON, in the format `get_outline_schema` gives,"
             " following the guidance in the `render_mindmap` tool's description."
+            " Write the whole Outline in the lecture's language, the `language` `transcribe` returned."
             " Write every math expression as LaTeX."
             + (" List the matching Slide numbers on each node." if deck else ""),
             "Call `render_mindmap` with the Transcript ID and the Outline.",
