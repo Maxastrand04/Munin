@@ -119,20 +119,20 @@ def create_server(
     `language` counts as none. Any other value but `sv` or `en` fails with an
     MCP error carrying the `LanguageError` message. With a Source and a
     `language`, the `transcribe` step asks for that language, as in "Call
-    `transcribe` with that Source and language `en`." With a Source, it lists the run's
-    steps for that Source, asks for the Outline as JSON, and has the LLM call
-    `get_outline_schema` before writing it, asks for the whole Outline in the
-    lecture's language, the `language` `transcribe` returned, with or without
-    a `language` argument, asks for LaTeX for every math
+    `transcribe` with that Source and language `en`." With a Source, it lists
+    the run's steps for that Source, asks for the Outline as JSON, and has the
+    LLM call `get_outline_schema` before writing it, asks for the whole
+    Outline in the lecture's language, the `language` `transcribe` returned,
+    with or without a `language` argument, asks for LaTeX for every math
     expression, and leaves the rest of the content guidance to
-    `render_mindmap`'s description. With a `deck` as well, it adds a step between
-    `get_transcript` and writing the Outline that calls `read_slides` with the
-    Transcript ID and that Deck path, and asks the LLM to match each Slide to
-    the part of the Transcript covering the same content. Its `render_mindmap`
-    step never passes a language, since a Deck attached to a Transcript takes
-    the Transcript's. Without a Deck, its text is the same as before Decks
-    existed. With only a `deck`, it lists the
-    slides-only steps: call `read_deck` with that Deck path, call
+    `render_mindmap`'s description. With a `deck` as well, it adds a step
+    between `get_transcript` and writing the Outline that calls `read_slides`
+    with the Transcript ID and that Deck path, and asks the LLM to match each
+    Slide to the part of the Transcript covering the same content. Its
+    `render_mindmap` step never passes a language, since a Deck attached to a
+    Transcript takes the Transcript's. Without a Deck, its text is the same
+    as before Decks existed. With only a `deck`, it lists the slides-only
+    steps: call `read_deck` with that Deck path, call
     `get_outline_schema`, write a JSON Outline from the Slides as
     `render_deck_mindmap` describes, with LaTeX for every math expression, call
     `render_deck_mindmap` with the Deck ID, the Outline and a language, and
@@ -405,23 +405,20 @@ def _checked_language(language: str | None) -> Language | None:
 def _slides_only_prompt(deck: str, language: Language | None) -> str:
     """Return the steps that read a Deck on its own and render a Mindmap from its Slides, in `language` when given."""
     if language:
-        outline_language = f"Write the whole Outline in language `{language}`."
-        render_language = f"Call `render_deck_mindmap` with the Deck ID, the Outline and language `{language}`."
+        written_in = f"language `{language}`"
+        rendered_with = f"language `{language}`"
     else:
-        outline_language = "Write the whole Outline in the Deck's language, judged from its Slides."
-        render_language = (
-            "Call `render_deck_mindmap` with the Deck ID, the Outline and the Deck's language as `language`, `sv` or `en`."
-        )
+        written_in = "the Deck's language, judged from its Slides"
+        rendered_with = "the Deck's language as `language`, `sv` or `en`"
     steps = [
         f"Call `read_deck` with this Deck path: {deck}.",
         "Call `get_outline_schema`.",
         (
             "Write an Outline of the lecture from the Slides alone as JSON, in the format `get_outline_schema` gives,"
             " following the guidance in the `render_deck_mindmap` tool's description."
-            " Write every math expression as LaTeX. "
-            + outline_language
+            f" Write every math expression as LaTeX. Write the whole Outline in {written_in}."
         ),
-        render_language,
+        f"Call `render_deck_mindmap` with the Deck ID, the Outline and {rendered_with}.",
         _REPLY_STEP,
     ]
     return f"Turn this slide deck into a Mindmap: {deck}\n\n{_numbered(steps)}"

@@ -252,8 +252,9 @@ def render_deck_mindmap(
     the check bans, the example and exercise wording, and the `lang` on every
     element holding Outline text, exactly as a Transcript's Lecture language
     does for `render_mindmap`. Nothing about the language is stored, so each
-    render takes the language it is given. Slide numbers resolve against the copy `read_deck` stored under
-    `deck_id`, so a Slide number below 1 or past its last Slide is a problem.
+    render takes the language it is given. Slide numbers resolve against the
+    copy `read_deck` stored under `deck_id`, so a Slide number below 1 or
+    past its last Slide is a problem.
     There is no Source, so any stamp on any node is a problem. The page has no
     link to a Source: no lecture link in its header and no Source link in any
     node's panel.
