@@ -165,7 +165,7 @@ function render(){
     const shell=document.createElement('div');shell.setAttribute('xmlns','http://www.w3.org/1999/xhtml');shell.className='node-shell';
     const [color,tint,fill]=nodeColors(n);shell.style.setProperty('--group',color);shell.style.setProperty('--tint',tint);shell.style.setProperty('--fill',fill);
     const card=document.createElement('div');card.className='node-card'+(n.id===selected?' selected':'');
-    const label=document.createElement('button');label.className='node-label';label.textContent=n.label;label.lang='sv';label.setAttribute('aria-label',`Explore ${n.label}`);label.setAttribute('aria-pressed',String(n.id===selected));label.onclick=()=>select(n.id);
+    const label=document.createElement('button');label.className='node-label';label.textContent=n.label;label.lang=PAGE.lang;label.setAttribute('aria-label',`Explore ${n.label}`);label.setAttribute('aria-pressed',String(n.id===selected));label.onclick=()=>select(n.id);
     const footer=document.createElement('div');footer.className='node-footer';
     const stamps=document.createElement('span');stamps.className='node-stamps';
     n.links.forEach(timestamp=>{const link=sourceLink(timestamp,timestamp.text);link.className='stamp';stamps.append(link);});
@@ -224,7 +224,7 @@ function showWorked(box,w){
   const task=div('task');typeset(task,w.task);
   box.replaceChildren(heading,task);
   if(w.steps.length){
-    const solution=toggle('Visa lösning',`${w.steps.length} steg`);solution.className='solution';
+    const solution=toggle(w.solution_toggle,w.step_count);solution.className='solution';
     w.steps.forEach((step,k)=>{
       const row=div('step'),body=div('step-body'),calculation=div('step-calculation');
       calculation.append(mathNode(step.calculation,step.calculation));body.append(calculation);
@@ -233,8 +233,8 @@ function showWorked(box,w){
     });
     box.append(solution);
   }
-  if(w.answer){const answer=toggle('Visa svar');answer.className='answer';const body=div('answer-body');typeset(body,w.answer);answer.append(body);box.append(answer);}
-  if(!w.steps.length&&!w.answer)box.append(div('no-solution','Ingen lösning i föreläsningen. Försök själv.'));
+  if(w.answer){const answer=toggle(w.answer_toggle);answer.className='answer';const body=div('answer-body');typeset(body,w.answer);answer.append(body);box.append(answer);}
+  if(!w.steps.length&&!w.answer)box.append(div('no-solution',w.no_solution));
 }
 function showText(n){
   const worked=n.worked;
@@ -262,7 +262,7 @@ function select(id){
   showCopies(n);
   $('related').replaceChildren();
   const related=n.children.length?n.children:(n.parent===null?[]:nodes[n.parent].children.filter(c=>c!==id));
-  related.slice(0,4).forEach(cid=>{const b=document.createElement('button');b.textContent=nodes[cid].label;b.lang='sv';b.onclick=()=>{let p=nodes[cid].parent;while(p!==null){collapsed.delete(p);p=nodes[p].parent;}select(cid);};$('related').append(b);});
+  related.slice(0,4).forEach(cid=>{const b=document.createElement('button');b.textContent=nodes[cid].label;b.lang=PAGE.lang;b.onclick=()=>{let p=nodes[cid].parent;while(p!==null){collapsed.delete(p);p=nodes[p].parent;}select(cid);};$('related').append(b);});
   document.querySelector('.related').hidden=!related.length;
   $('panel').scrollTop=0;render();centre(n);
 }
@@ -271,7 +271,7 @@ function showCopies(n){
   $('copies-list').replaceChildren();
   if(copies.length>1)copies.forEach(cid=>{
     const copy=nodes[cid],slide=nodes[copy.parent],item=document.createElement('li'),text=`${nodes[slide.parent].label} › ${slide.label}`;
-    item.style.color=groupColors(copy.group)[0];item.lang='sv';
+    item.style.color=groupColors(copy.group)[0];item.lang=PAGE.lang;
     const timestamp=copy.links[0];
     if(timestamp)item.append(sourceLink(timestamp,text,`Open Source at ${timestamp.text}, ${text}`));
     else item.textContent=text;

@@ -1,3 +1,4 @@
+import json
 import re
 from pathlib import Path
 
@@ -13,6 +14,7 @@ from munin.core import (
 
 TREE_TYPES = ["main-topic", "topic", "slide", "term"]
 WORKED_TYPES = ["example", "exercise"]
+SWEDISH_LETTERS = re.compile("[åäöÅÄÖ]")
 
 
 def one_sentence(wav: Path, vocabulary: Vocabulary | None):
@@ -50,6 +52,16 @@ def test_schema_description_forbids_double_dollars():
     assert "$$" in get_outline_schema().schema["description"]
 
 
+def test_schema_description_asks_for_the_lectures_language():
+    """The schema's description asks for the Outline in the lecture's language."""
+    assert "the lecture's language" in get_outline_schema().schema["description"]
+
+
+def test_schema_description_names_no_swedish():
+    """The schema's description does not ask for Swedish."""
+    assert "Swedish" not in get_outline_schema().schema["description"]
+
+
 @pytest.mark.parametrize("kind", [*TREE_TYPES, *WORKED_TYPES])
 def test_schema_defines_every_node_type(kind: str):
     """The schema defines each of the six node types."""
@@ -80,6 +92,18 @@ def test_schema_lets_an_example_or_exercise_sit_under_every_other_type(kind: str
 def test_samples_are_an_example_then_an_exercise():
     """The samples are an example node first and an exercise node second."""
     assert [sample["type"] for sample in get_outline_schema().samples] == WORKED_TYPES
+
+
+def test_example_sample_is_written_in_swedish():
+    """The example sample is written in Swedish, so its text holds a Swedish letter."""
+    example, _ = get_outline_schema().samples
+    assert SWEDISH_LETTERS.search(json.dumps(example, ensure_ascii=False))
+
+
+def test_exercise_sample_is_written_in_english():
+    """The exercise sample is written in English, so its text holds no Swedish letter."""
+    _, exercise = get_outline_schema().samples
+    assert not SWEDISH_LETTERS.search(json.dumps(exercise, ensure_ascii=False))
 
 
 @pytest.mark.parametrize("index", [0, 1], ids=["example", "exercise"])

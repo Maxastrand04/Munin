@@ -77,11 +77,14 @@ def create_server(
     slides, then terms under the lecture title, grouped by meaning, one stamp
     per stretch of the lecture copied from `get_transcript`, and every
     example and exercise written out as an example or exercise node, a Slide
-    that is only one example or exercise included, with no `Exempel:` or
-    `Övning:` in any label. It asks for LaTeX for every math expression,
+    that is only one example or exercise included, with no `Exempel:`,
+    `Övning:`, `Example:` or `Exercise:` in any label. It asks for the whole
+    Outline, every step's reason included, in the lecture's language, the
+    `language` `transcribe` returned, and names neither Swedish nor English.
+    It asks for LaTeX for every math expression,
     between `$...$` in explanations, tasks, answers and step reasons, never
     `$$`, and with no `$` in a step's calculation, and for each step to be
-    one calculation with at most one short Swedish sentence on why. When a
+    one calculation with at most one short sentence on why. When a
     render fails, it says to fix every problem listed, broken LaTeX
     included, and render again.
     `read_slides(transcript_id: str, deck: str)` attaches the Deck through the
@@ -101,7 +104,10 @@ def create_server(
     and exercise written out as an example or exercise node the same way, every node's
     `stamps` left empty, and an explanation of one to three sentences on
     every term node that gives context and covers only what the Slides
-    cover. It asks for LaTeX and steps as `render_mindmap`'s does, and says
+    cover. It asks for LaTeX and steps as `render_mindmap`'s does, but keeps
+    a step's reason to at most one short Swedish sentence and names only
+    `Exempel:` and `Övning:` as prefixes to leave out, since a Deck's page is
+    always Swedish. It says
     to fix every problem listed, broken LaTeX included, and render again.
     The `lecture_to_mindmap(source: str | None = None, deck: str | None = None, language: str | None = None)`
     prompt takes a Source, a Deck, or both, and the lecture's language. An empty
@@ -112,7 +118,9 @@ def create_server(
     Source, getting the prompt fails with an MCP error whose message is "A
     language needs a Source". With a Source, it lists the run's
     steps for that Source, asks for the Outline as JSON, and has the LLM call
-    `get_outline_schema` before writing it, asks for LaTeX for every math
+    `get_outline_schema` before writing it, asks for the whole Outline in the
+    lecture's language, the `language` `transcribe` returned, with or without
+    a `language` argument, asks for LaTeX for every math
     expression, and leaves the rest of the content guidance to
     `render_mindmap`'s description. With a `deck` as well, it adds a step between
     `get_transcript` and writing the Outline that calls `read_slides` with the
@@ -199,8 +207,9 @@ def create_server(
         - Write every example and exercise in the lecture as an example or exercise
           node under the node it belongs to, at any level. Give it the task, its
           solution steps and the answer, so the panel reads on its own without
-          the video or the Slide. Leave `Exempel:` and `Övning:` out of every label,
-          a slide node's too, since the page adds them.
+          the video or the Slide. Leave `Exempel:`, `Övning:`, `Example:` and
+          `Exercise:` out of every label, a slide node's too, since the page adds
+          its prefix.
         - Put one stamp in each node's `stamps`, copied from the `get_transcript`
           line where that part starts, such as `"4:34"`. A topic gets one stamp
           for each separate stretch of the lecture it gathers. Never invent or
@@ -212,7 +221,9 @@ def create_server(
           piece of math between `$...$` and write the rest as plain prose, with
           `\\$` for a literal dollar sign. Write a step's calculation as LaTeX
           alone, with no `$`. Make each step one calculation, with at most one
-          short Swedish sentence on why in its reason.
+          short sentence on why in its reason.
+        - Write the whole Outline, every node's text and every step's reason
+          included, in the lecture's language, the `language` `transcribe` returned.
 
         When the lecture has a Deck read with `read_slides`, base the topics on its
         Slides, and list in a node's `slides` each Slide that covers it, counted
@@ -327,6 +338,7 @@ def create_server(
             "Call `get_outline_schema`.",
             "Write an Outline of the lecture as JSON, in the format `get_outline_schema` gives,"
             " following the guidance in the `render_mindmap` tool's description."
+            " Write the whole Outline in the lecture's language, the `language` `transcribe` returned."
             " Write every math expression as LaTeX."
             + (" List the matching Slide numbers on each node." if deck else ""),
             "Call `render_mindmap` with the Transcript ID and the Outline.",
