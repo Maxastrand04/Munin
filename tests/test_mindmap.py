@@ -11,6 +11,7 @@ import pytest
 
 from munin.core import (
     Fragment,
+    LanguageError,
     OutlineStructureError,
     OutlineSyntaxError,
     Slide,
@@ -1178,3 +1179,66 @@ def test_new_page_contains_no_demo_or_remote_content(fresh_page: Path, text: str
 @pytest.mark.parametrize("layout", ["Topic circles", "Radial rings"])
 def test_new_page_offers_both_layouts(fresh_page: Path, layout: str):
     assert layout in fresh_page.read_text()
+
+
+@pytest.mark.parametrize("label", ["Example: Rows", "exercise : Rows"])
+def test_english_deck_render_bans_the_english_prefix(standalone_deck, cache_dir: Path, tmp_path: Path, label: str):
+    """A standalone Deck rendered with `en` fails on a label starting with `Example:` or `Exercise:`, in any case."""
+    with pytest.raises(OutlineStructureError):
+        render_deck_mindmap(
+            standalone_deck.deck_id, lecture(term(label)), language="en", cache_dir=cache_dir, output_dir=tmp_path
+        )
+
+
+@pytest.mark.parametrize("label", ["Exempel: Rader", "Övning: Rader"])
+def test_english_deck_render_lets_the_swedish_prefix_pass(standalone_deck, cache_dir: Path, tmp_path: Path, label: str):
+    """A standalone Deck rendered with `en` bans only the English prefixes, so a label starting with `Exempel:` renders."""
+    page = render_deck_mindmap(
+        standalone_deck.deck_id, lecture(term(label)), language="en", cache_dir=cache_dir, output_dir=tmp_path
+    ).page
+    assert page.is_file()
+
+
+def test_deck_render_with_no_language_bans_the_swedish_prefix(standalone_deck, cache_dir: Path, tmp_path: Path):
+    """A standalone Deck rendered with no language is Swedish, so a label starting with `Exempel:` fails."""
+    with pytest.raises(OutlineStructureError):
+        render_deck_mindmap(
+            standalone_deck.deck_id, lecture(term("Exempel: Rader")), cache_dir=cache_dir, output_dir=tmp_path
+        )
+
+
+@pytest.mark.parametrize("language", ["de", "EN", ""])
+def test_deck_render_rejects_a_language_other_than_sv_or_en(
+    standalone_deck, cache_dir: Path, tmp_path: Path, language: str
+):
+    """A language other than exactly `sv` or `en` raises `LanguageError` naming it."""
+    with pytest.raises(LanguageError, match=f"^Language {language} is not sv or en$"):
+        render_deck_mindmap(
+            standalone_deck.deck_id, lecture(), language=language, cache_dir=cache_dir, output_dir=tmp_path
+        )
+
+
+def test_deck_render_with_a_bad_language_writes_nothing(standalone_deck, cache_dir: Path, tmp_path: Path):
+    """A render with a bad language writes no page."""
+    output_dir = tmp_path / "out"
+    with pytest.raises(LanguageError):
+        render_deck_mindmap(
+            standalone_deck.deck_id, lecture(), language="de", cache_dir=cache_dir, output_dir=output_dir
+        )
+    assert not output_dir.exists()
+
+
+def test_deck_render_checks_the_language_before_the_deck_id(cache_dir: Path, tmp_path: Path):
+    """A bad language raises `LanguageError` even when the Deck ID is unknown and the Outline is not JSON."""
+    with pytest.raises(LanguageError):
+        render_deck_mindmap("deadbeef0000", "# Matriser\n", language="de", cache_dir=cache_dir, output_dir=tmp_path)
+
+
+def test_english_transcript_with_a_deck_bans_the_english_prefix(
+    source: Path, deck: Path, cache_dir: Path, tmp_path: Path
+):
+    """An English Transcript with an attached Deck renders English, so a label starting with `Example:` fails."""
+    transcript_id = transcribe(source, language="en", cache_dir=cache_dir, recognize=english_sentence).transcript_id
+    read_slides(transcript_id, deck, cache_dir=cache_dir)
+    with pytest.raises(OutlineStructureError):
+        render_mindmap(transcript_id, lecture(term("Example: Rows")), cache_dir=cache_dir, output_dir=tmp_path)

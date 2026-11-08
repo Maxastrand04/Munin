@@ -15,7 +15,7 @@ from munin.core.errors import (
     OutlineSyntaxError,
     UnknownDeckError,
 )
-from munin.core.language import Language
+from munin.core.language import Language, parse_language
 from munin.core.latex import KATEX_OPTIONS, katex_css, katex_js
 from munin.core.outline import WORKED_TITLES, check_outline
 from munin.core.slides import deck_path, standalone_deck_path
@@ -28,8 +28,8 @@ _DEFAULT_OUTPUT_DIR = _REPO_ROOT / "mindmaps"
 
 _ASSETS = Path(__file__).with_name("mindmap_assets")
 
-_STANDALONE_DECK_LANGUAGE: Language = "sv"
-"""The page language of a Deck read on its own, which has no Lecture language."""
+_NO_LANGUAGE_DECK_LANGUAGE: Language = "sv"
+"""The page language of a standalone Deck render given no language, Swedish as before languages existed."""
 
 
 @dataclass(frozen=True)
@@ -231,22 +231,30 @@ def render_mindmap(
     """
     entry = cached_entry(transcript_id, cache_dir=cache_dir)
     deck = deck_path(transcript_id, cache_dir or default_cache_dir())
-    return _write_page(transcript_id, outline, entry, deck, output_dir)
+    return _write_page(transcript_id, outline, entry, deck, output_dir, entry.language)
 
 
 def render_deck_mindmap(
     deck_id: str,
     outline: dict | str,
     *,
+    language: Language | None = None,
     cache_dir: Path | None = None,
     output_dir: Path | None = None,
 ) -> RenderResult:
     """Check a JSON Outline written from a Deck read on its own, write its Mindmap page, and return what `render_mindmap` returns.
 
     Checks and renders as `render_mindmap` does, with these differences.
-    The page is always Swedish, since a Deck read on its own has no Lecture
-    language. Slide numbers resolve against the copy `read_deck` stored under
-    `deck_id`, so a Slide number below 1 or past its last Slide is a problem.
+    The page's language is `language`, `sv` or `en`, since a Deck read on its
+    own has no Lecture language and Munin never detects one. With no
+    `language` the page is Swedish, with the same wording and label prefix
+    ban as before languages existed. The language picks the label prefixes
+    the check bans, the example and exercise wording, and the `lang` on every
+    element holding Outline text, exactly as a Transcript's Lecture language
+    does for `render_mindmap`. Nothing about the language is stored, so each
+    render takes the language it is given. Slide numbers resolve against the
+    copy `read_deck` stored under `deck_id`, so a Slide number below 1 or
+    past its last Slide is a problem.
     There is no Source, so any stamp on any node is a problem. The page has no
     link to a Source: no lecture link in its header and no Source link in any
     node's panel.
@@ -255,26 +263,34 @@ def render_deck_mindmap(
     for the same Deck. `cache_dir` and `output_dir` default as for
     `render_mindmap`.
 
-    Raises `UnknownDeckError` when no Deck read on its own has this ID, before
+    Raises `LanguageError` naming `language` when it is anything but `sv`,
+    `en` or None, checked first, before the Deck ID and the Outline. Then
+    raises `UnknownDeckError` when no Deck read on its own has this ID, before
     the Outline is read, then `OutlineSyntaxError` or `OutlineStructureError`
     as `render_mindmap` does. Any of them means nothing is written.
     """
+    page_language = parse_language(language) or _NO_LANGUAGE_DECK_LANGUAGE
     cache_dir = cache_dir or default_cache_dir()
     deck = standalone_deck_path(deck_id, cache_dir)
     if not is_cache_id(deck_id) or not deck.is_file():
         raise UnknownDeckError(deck_id)
-    return _write_page(deck_id, outline, None, deck, output_dir)
+    return _write_page(deck_id, outline, None, deck, output_dir, page_language)
 
 
 def _write_page(
-    page_id: str, outline: dict | str, entry: CacheEntry | None, deck: Path, output_dir: Path | None
+    page_id: str,
+    outline: dict | str,
+    entry: CacheEntry | None,
+    deck: Path,
+    output_dir: Path | None,
+    language: Language,
 ) -> RenderResult:
     """Check the Outline, then write `<page_id>.html`, linking stamps to the entry's Source and Slide numbers to the Deck at `deck`.
 
-    `entry` is None when there is no Source, and `deck` need not exist.
+    `entry` is None when there is no Source, and `deck` need not exist. The
+    page is in `language`, which the caller has already checked.
     """
     parsed = _parsed(outline)
-    language = entry.language if entry else _STANDALONE_DECK_LANGUAGE
     deck_pages = pdf.page_count(deck) if deck.is_file() else None
     problems = check_outline(
         parsed, duration_s=entry.duration_s if entry else None, deck_pages=deck_pages, language=language

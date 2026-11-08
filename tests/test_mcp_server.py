@@ -677,12 +677,10 @@ def test_mcp_render_description_asks_for_one_calculation_per_step(cache_dir: Pat
     assert "one calculation" in tool_description(create_server(cache_dir=cache_dir), tool)
 
 
-@pytest.mark.parametrize(
-    "tool, limit", [("render_mindmap", "one short sentence"), ("render_deck_mindmap", "one short Swedish sentence")]
-)
-def test_mcp_render_description_limits_a_reason_to_one_sentence(cache_dir: Path, tool: str, limit: str):
-    """Both render tool descriptions allow at most one short sentence per reason, Swedish for a Deck."""
-    assert limit in tool_description(create_server(cache_dir=cache_dir), tool)
+@pytest.mark.parametrize("tool", ["render_mindmap", "render_deck_mindmap"])
+def test_mcp_render_description_limits_a_reason_to_one_sentence(cache_dir: Path, tool: str):
+    """Both render tool descriptions allow at most one short sentence per reason."""
+    assert "one short sentence" in tool_description(create_server(cache_dir=cache_dir), tool)
 
 
 @pytest.mark.parametrize("tool", ["render_mindmap", "render_deck_mindmap"])
@@ -751,6 +749,35 @@ def test_mcp_render_deck_mindmap_unknown_id_error_names_it(cache_dir: Path, tmp_
     server = create_server(cache_dir=cache_dir, output_dir=tmp_path / "out")
     result = call(server, "render_deck_mindmap", {"deck_id": "deadbeef0000", "outline": "# Matriser"})
     assert "deadbeef0000" in result.content[0].text
+
+
+def test_mcp_render_deck_mindmap_passes_the_language_to_the_core(deck: Path, cache_dir: Path, tmp_path: Path):
+    """The deck render tool given `en` renders English, so a label starting with `Example:` is a tool error."""
+    server = create_server(cache_dir=cache_dir, output_dir=tmp_path)
+    deck_id = deck_id_of(call(server, "read_deck", {"deck": str(deck)}))
+    outline = {**OUTLINE, "children": [{**OUTLINE, "type": "topic", "label": "Example: Rows"}]}
+    assert call(server, "render_deck_mindmap", {"deck_id": deck_id, "outline": outline, "language": "en"}).is_error
+
+
+def test_mcp_deck_render_description_asks_for_the_decks_language(cache_dir: Path):
+    """The deck render tool's description asks for the whole Outline in the Deck's language."""
+    assert "in the Deck's language" in tool_description(create_server(cache_dir=cache_dir), "render_deck_mindmap")
+
+
+def test_mcp_deck_render_description_asks_for_no_swedish_reason(cache_dir: Path):
+    """The deck render tool's description no longer asks for a Swedish step reason."""
+    assert "Swedish sentence" not in tool_description(create_server(cache_dir=cache_dir), "render_deck_mindmap")
+
+
+@pytest.mark.parametrize("prefix", ["`Example:`", "`Exercise:`"])
+def test_mcp_deck_render_description_says_to_leave_out_english_prefixes(cache_dir: Path, prefix: str):
+    """The deck render tool's description names the English prefixes among those to leave out of labels."""
+    assert prefix in tool_description(create_server(cache_dir=cache_dir), "render_deck_mindmap")
+
+
+def test_mcp_deck_render_description_asks_to_pass_the_decks_language(cache_dir: Path):
+    """The deck render tool's description asks for the Deck's language as `language`, `sv` or `en`."""
+    assert "as `language`, `sv` or `en`" in tool_description(create_server(cache_dir=cache_dir), "render_deck_mindmap")
 
 
 def test_mcp_deck_render_description_puts_the_title_on_top(cache_dir: Path):
@@ -854,23 +881,50 @@ def test_mcp_lecture_prompt_with_only_a_deck_reports_a_failed_step(cache_dir: Pa
     )
 
 
-def slides_prompt_text(server, deck: str) -> str:
+def slides_prompt_arguments(deck: str, language: str | None) -> dict:
+    return {"deck": deck} if language is None else {"deck": deck, "language": language}
+
+
+def slides_prompt_text(server, deck: str, language: str | None = None) -> str:
     async def run():
         async with Client(server) as client:
-            return await client.get_prompt("slides_to_mindmap", {"deck": deck})
+            return await client.get_prompt("slides_to_mindmap", slides_prompt_arguments(deck, language))
 
     return asyncio.run(run()).messages[0].content.text
 
 
-def test_mcp_lists_slides_prompt_with_only_a_required_deck(cache_dir: Path):
-    """The server lists `slides_to_mindmap` with one required `deck`, so a positional first argument lands in it."""
+def slides_prompt_error(server, deck: str, language: str | None = None) -> MCPError | None:
+    """Return the MCP error that getting `slides_to_mindmap` raises, or None when it succeeds."""
+
+    async def run():
+        async with Client(server) as client:
+            try:
+                await client.get_prompt("slides_to_mindmap", slides_prompt_arguments(deck, language))
+            except MCPError as error:
+                return error
+            return None
+
+    return asyncio.run(run())
+
+
+def step_naming(text: str, phrase: str) -> str:
+    """Return the one prompt line that holds `phrase`, whitespace collapsed."""
+    [line] = [" ".join(line.split()) for line in text.splitlines() if phrase in line]
+    return line
+
+
+def test_mcp_lists_slides_prompt_with_a_required_deck_first(cache_dir: Path):
+    """The server lists `slides_to_mindmap` with a required `deck` first and an optional `language` second, so a positional first argument lands in `deck`."""
 
     async def run():
         async with Client(create_server(cache_dir=cache_dir)) as client:
             return await client.list_prompts()
 
     prompts = {prompt.name: prompt for prompt in asyncio.run(run()).prompts}
-    assert [(arg.name, arg.required) for arg in prompts["slides_to_mindmap"].arguments] == [("deck", True)]
+    assert [(arg.name, arg.required) for arg in prompts["slides_to_mindmap"].arguments] == [
+        ("deck", True),
+        ("language", False),
+    ]
 
 
 def test_mcp_slides_prompt_matches_lecture_prompt_with_only_a_deck(cache_dir: Path):
@@ -945,10 +999,53 @@ def test_mcp_lecture_prompt_rejects_a_bad_language(cache_dir: Path):
     assert "Language de is not sv or en" in str(error)
 
 
-def test_mcp_lecture_prompt_rejects_a_language_with_only_a_deck(cache_dir: Path):
-    """A language with no Source fails, since a Deck alone never transcribes."""
-    error = prompt_error(create_server(cache_dir=cache_dir), deck=DECK_PATH, language="en")
-    assert "A language needs a Source" in str(error)
+@pytest.mark.parametrize("language", ["sv", "en"])
+def test_mcp_slides_prompt_renders_with_the_given_language(cache_dir: Path, language: str):
+    """With a language, the render step passes it to `render_deck_mindmap`."""
+    text = slides_prompt_text(create_server(cache_dir=cache_dir), DECK_PATH, language)
+    assert f"Call `render_deck_mindmap` with the Deck ID, the Outline and language `{language}`." in text
+
+
+def test_mcp_slides_prompt_writes_the_outline_in_the_given_language(cache_dir: Path):
+    """With a language, the writing step names that language for the Outline."""
+    text = slides_prompt_text(create_server(cache_dir=cache_dir), DECK_PATH, "en")
+    assert "`en`" in step_naming(text, "Write an Outline")
+
+
+def test_mcp_slides_prompt_without_a_language_writes_in_the_decks_language(cache_dir: Path):
+    """With no language, the writing step asks for the whole Outline in the Deck's language."""
+    text = slides_prompt_text(create_server(cache_dir=cache_dir), DECK_PATH)
+    assert "the Deck's language" in step_naming(text, "Write an Outline")
+
+
+def test_mcp_slides_prompt_without_a_language_renders_with_the_decks_language(cache_dir: Path):
+    """With no language, the render step passes the Deck's language as `language`."""
+    text = slides_prompt_text(create_server(cache_dir=cache_dir), DECK_PATH)
+    assert "`language`" in step_naming(text, "Call `render_deck_mindmap`")
+
+
+def test_mcp_slides_prompt_with_empty_language_matches_no_language(cache_dir: Path):
+    """An empty language counts as none, so the text is the same as with no language."""
+    server = create_server(cache_dir=cache_dir)
+    assert slides_prompt_text(server, DECK_PATH, "") == slides_prompt_text(server, DECK_PATH)
+
+
+def test_mcp_slides_prompt_rejects_a_bad_language(cache_dir: Path):
+    """A language other than `sv` or `en` fails with an MCP error carrying the `LanguageError` message."""
+    error = slides_prompt_error(create_server(cache_dir=cache_dir), DECK_PATH, "de")
+    assert "Language de is not sv or en" in str(error)
+
+
+def test_mcp_lecture_prompt_with_only_a_deck_and_a_language_matches_the_slides_prompt(cache_dir: Path):
+    """`lecture_to_mindmap` with only a Deck and `en` gives the same text as `slides_to_mindmap` with them."""
+    server = create_server(cache_dir=cache_dir)
+    assert prompt_text(server, deck=DECK_PATH, language="en") == slides_prompt_text(server, DECK_PATH, "en")
+
+
+def test_mcp_lecture_prompt_with_a_source_and_deck_renders_with_no_language(cache_dir: Path):
+    """With a Source, a Deck and `en`, the `render_mindmap` step passes no language, since the Transcript's applies."""
+    text = prompt_text(create_server(cache_dir=cache_dir), source=WATCH_URL, deck=DECK_PATH, language="en")
+    assert "Call `render_mindmap` with the Transcript ID and the Outline." in text
 
 
 def test_mcp_lecture_prompt_with_only_a_language_asks_for_a_source_or_deck(cache_dir: Path):

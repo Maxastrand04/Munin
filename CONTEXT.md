@@ -65,7 +65,7 @@ _Avoid_: jump link, deep link, seek link
 - A node of an **Outline** lists any number of **Slides**, and a **Slide** can appear on any number of nodes
 - An **Outline** is written from exactly one **Transcript**, or from exactly one standalone **Deck**
 - A node under an **Example or exercise** is part of it, so a topic that is one takes no topic colour
-- A **Mindmap** takes its page language from its **Transcript**'s **Lecture language**, and one rendered from a standalone **Deck** is Swedish
+- A **Mindmap** takes its page language from its **Transcript**'s **Lecture language**, and one rendered from a standalone **Deck** takes the language its render asks for, Swedish when none
 - A **Mindmap** renders exactly one **Outline** and resolves its stamps against that **Transcript**'s **Source** and the Source's duration, and its Slide numbers against that **Transcript**'s **Deck**
 
 ## Example dialogue
