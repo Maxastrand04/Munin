@@ -66,9 +66,12 @@ def render_mindmap(
     - a part of the wrong kind, such as a `stamps` that is not a list of
       strings, or a Slide number that is not an integer, `true` included,
     - a blank `label`, `task` or step `calculation`,
-    - a `label` on any node that starts with `Exempel:` or `Övning:`, in any
-      case and with any spaces before the colon, since the page adds that
-      prefix to example and exercise labels,
+    - a `label` on any node that starts with the page language's prefix, in
+      any case and with any spaces before the colon, since the page adds that
+      prefix to example and exercise labels. The prefixes are `Exempel:` and
+      `Övning:` on a Swedish page and `Example:` and `Exercise:` on an English
+      one, and the other language's prefixes pass. The problem's message names
+      the prefix, capitalized, such as `Example:`,
     - a node under the wrong parent type, by the nesting rules
       `get_outline_schema` gives,
     - a control character in any string part but `explanation`, which is what
@@ -121,17 +124,36 @@ def render_mindmap(
     still cannot draw shows as written, dollars included, and the rest
     typesets. Labels show as plain text everywhere, LaTeX included.
 
-    An example or exercise panel labels its text `Exempel` or `Övning` in place
+    The page's language is the Transcript's Lecture language, and a
+    Transcript cached before lecture languages existed renders as Swedish.
+    The language picks the example and exercise wording below, and every
+    element holding Outline text (map card labels, the panel title, the
+    explanation, the box, the buttons under Explore next and the term copies
+    list) carries `lang="sv"` or `lang="en"` to match. The fixed page text,
+    such as `SELECTED IDEA`, `A simple explanation` and `Explore next`, is
+    English in both languages.
+
+    Wording, Swedish then English:
+
+    - type name: `Exempel` / `Example`, `Övning` / `Exercise`
+    - label prefix: the type name and `: `, such as `Exempel: ` / `Example: `
+    - solution toggle: `Visa lösning` / `Show solution`
+    - step count: `N steg` / `N steps`, and `1 step` for one step in English
+    - answer toggle: `Visa svar` / `Show answer`
+    - no-solution line: `Ingen lösning i föreläsningen. Försök själv.` /
+      `No solution in the lecture. Try it yourself.`
+
+    An example or exercise panel labels its text with its type name in place
     of "A simple explanation", and shows a box where the explanation would
-    be. The box's heading is `Exempel N` or `Övning N`, where N counts
-    example and exercise nodes separately in Outline order, from 1. Under it
-    come the task, then a closed "Visa lösning" section with the step count
-    beside it, holding the steps numbered from 1, each with its calculation
-    as inline math and its reason under it, then a closed "Visa svar"
-    section holding the answer. A task, reason or answer typesets as an
-    explanation does. A box with no steps leaves out "Visa lösning", one with
-    an empty answer leaves out "Visa svar", and one with neither shows the
-    muted line "Ingen lösning i föreläsningen. Försök själv." Box text is set
+    be. The box's heading is the type name and N, such as `Exempel N` or
+    `Exercise N`, where N counts example and exercise nodes separately in
+    Outline order, from 1. Under it come the task, then the closed solution
+    toggle with the step count beside it, holding the steps numbered from 1,
+    each with its calculation as inline math and its reason under it, then
+    the closed answer toggle holding the answer. A task, reason or answer
+    typesets as an explanation does. A box with no steps leaves out the
+    solution toggle, one with an empty answer leaves out the answer toggle,
+    and one with neither shows the muted no-solution line. Box text is set
     in KaTeX_Main, and the section toggles in the app's sans.
 
     Each topic gives its branch one colour. Example and exercise nodes are
@@ -142,8 +164,8 @@ def render_mindmap(
     directly under the main-topic is orange. An example or exercise directly
     under the main-topic takes no topic colour, so the topics after it get the
     colours they would have had without it. A topic whose label starts with
-    `Exempel:` is not orange. The page puts `Exempel: ` or `Övning: ` before
-    an example's or exercise's label on its map card, its card's aria-label,
+    `Exempel` is not orange. The page puts the label prefix before an
+    example's or exercise's label on its map card, its card's aria-label,
     its panel title, and its button under Explore next.
 
     Term nodes whose labels match ignoring case and runs of whitespace are
@@ -181,7 +203,8 @@ def render_deck_mindmap(
     """Check a JSON Outline written from a Deck read on its own, write its Mindmap page, and return what `render_mindmap` returns.
 
     Checks and renders as `render_mindmap` does, with these differences.
-    Slide numbers resolve against the copy `read_deck` stored under
+    The page is always Swedish, since a Deck read on its own has no Lecture
+    language. Slide numbers resolve against the copy `read_deck` stored under
     `deck_id`, so a Slide number below 1 or past its last Slide is a problem.
     There is no Source, so any stamp on any node is a problem. The page has no
     link to a Source: no lecture link in its header and no Source link in any

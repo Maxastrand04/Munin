@@ -80,9 +80,10 @@ class OutlineSchema:
     """What `get_outline_schema` hands the LLM before it writes an Outline.
 
     `schema` is a JSON Schema, draft 2020-12, as a dict that `json.dumps`
-    accepts. `samples` is two bare nodes the LLM can copy: an example first,
-    then an exercise, each with LaTeX between `$...$` in its task and its
-    answer, and LaTeX with no `$` in at least one step's calculation.
+    accepts. `samples` is two bare nodes the LLM can copy: an example written
+    in Swedish first, then an exercise written in English, each with LaTeX
+    between `$...$` in its task and its answer, and LaTeX with no `$` in at
+    least one step's calculation.
     """
 
     schema: dict
@@ -110,8 +111,10 @@ def get_outline_schema() -> OutlineSchema:
     inline, never `$$`. A task, an answer, an explanation and a step's
     reason are prose with math between `$...$`, and a literal dollar sign is
     `\\$`. A step's calculation is LaTeX alone, with no `$`. Each step is one
-    calculation, and its reason at most one short Swedish sentence on why.
-    The schema's description says all of this. One table in this module
+    calculation, and its reason at most one short sentence on why. The whole
+    Outline, every step's reason included, is written in the lecture's
+    language, and the description names no language. The schema's
+    description says all of this. One table in this module
     says which parts each type has and which must be non-blank, and both the
     schema and the check are built from it, so making a part required is a
     one-line change.
