@@ -94,29 +94,32 @@ def create_server(
     `read_deck(deck: str)` reads a Deck on its own through the core's
     `read_deck` and returns a text block `Deck ID: <id>` first, then the same
     two blocks per Slide that `read_slides` returns.
-    `render_deck_mindmap(deck_id: str, outline: dict | str)` takes the
-    Outline as `render_mindmap` does and returns the `RenderResult` fields as
-    `render_mindmap` does. Its description tells the LLM to call
-    `get_outline_schema` before writing an Outline, describes no Markdown
-    format, and keeps the slides-only content guidance: 1 to 5 topics grouped
-    by meaning, one slide node per Slide carrying its Slide number, title and
-    schedule Slides skipped, terms worded the same everywhere, every example
-    and exercise written out as an example or exercise node the same way, every node's
-    `stamps` left empty, and an explanation of one to three sentences on
-    every term node that gives context and covers only what the Slides
-    cover. It asks for LaTeX and steps as `render_mindmap`'s does, but keeps
-    a step's reason to at most one short Swedish sentence and names only
-    `Exempel:` and `Övning:` as prefixes to leave out, since a Deck's page is
-    always Swedish. It says
+    `render_deck_mindmap(deck_id: str, outline: dict | str, language: Language | None = None)`
+    takes the Outline as `render_mindmap` does, passes `language` to the
+    core, and returns the `RenderResult` fields as `render_mindmap` does. The
+    tool's schema lists `sv` and `en` as `language`'s only values, so any
+    other value is a tool error before the core runs. Its description tells
+    the LLM to call `get_outline_schema` before writing an Outline, describes
+    no Markdown format, and keeps the slides-only content guidance: 1 to 5
+    topics grouped by meaning, one slide node per Slide carrying its Slide
+    number, title and schedule Slides skipped, terms worded the same
+    everywhere, every example and exercise written out as an example or
+    exercise node the same way, every node's `stamps` left empty, and an
+    explanation of one to three sentences on every term node that gives
+    context and covers only what the Slides cover. It asks for LaTeX and
+    steps as `render_mindmap`'s does, a step's reason included, at most one
+    short sentence, and names `Exempel:`, `Övning:`, `Example:` and
+    `Exercise:` as prefixes to leave out of every label. It asks for the
+    whole Outline, every step's reason included, in the Deck's language,
+    judged from its Slides, and for that language as `language`, `sv` or
+    `en`. It says a render with no `language` is a Swedish page. It says
     to fix every problem listed, broken LaTeX included, and render again.
     The `lecture_to_mindmap(source: str | None = None, deck: str | None = None, language: str | None = None)`
-    prompt takes a Source, a Deck, or both, and the lecture's language. An empty
+    prompt takes a Source, a Deck, or both, and a language. An empty
     `language` counts as none. Any other value but `sv` or `en` fails with an
     MCP error carrying the `LanguageError` message. With a Source and a
     `language`, the `transcribe` step asks for that language, as in "Call
-    `transcribe` with that Source and language `en`." With a `language` and no
-    Source, getting the prompt fails with an MCP error whose message is "A
-    language needs a Source". With a Source, it lists the run's
+    `transcribe` with that Source and language `en`." With a Source, it lists the run's
     steps for that Source, asks for the Outline as JSON, and has the LLM call
     `get_outline_schema` before writing it, asks for the whole Outline in the
     lecture's language, the `language` `transcribe` returned, with or without
@@ -125,20 +128,30 @@ def create_server(
     `render_mindmap`'s description. With a `deck` as well, it adds a step between
     `get_transcript` and writing the Outline that calls `read_slides` with the
     Transcript ID and that Deck path, and asks the LLM to match each Slide to
-    the part of the Transcript covering the same content. Without one, its
-    text is the same as before Decks existed. With only a `deck`, it lists the
+    the part of the Transcript covering the same content. Its `render_mindmap`
+    step never passes a language, since a Deck attached to a Transcript takes
+    the Transcript's. Without a Deck, its text is the same as before Decks
+    existed. With only a `deck`, it lists the
     slides-only steps: call `read_deck` with that Deck path, call
     `get_outline_schema`, write a JSON Outline from the Slides as
     `render_deck_mindmap` describes, with LaTeX for every math expression, call
-    `render_deck_mindmap` with the Deck ID and the Outline, and reply with only
-    the page as a `file://` link, or with which step failed and the error.
-    It never names `transcribe`. With neither, getting the prompt fails with
-    an MCP error whose message is "Give a Source, a Deck, or both", and no
-    step runs.
-    The `slides_to_mindmap(deck: str)` prompt takes only a Deck and lists the
-    same slides-only steps as `lecture_to_mindmap` with only a `deck`. It
-    exists because a client that fills prompt arguments by position, such as
-    a slash command, always puts the first argument in `source`.
+    `render_deck_mindmap` with the Deck ID, the Outline and a language, and
+    reply with only the page as a `file://` link, or with which step failed
+    and the error. With a `language` as well, the writing step asks for the
+    whole Outline in that language, naming it as `sv` or `en`, and the render
+    step passes it, as in "Call `render_deck_mindmap` with the Deck ID, the
+    Outline and language `en`." With no `language`, the writing step asks for
+    the whole Outline in the Deck's language, judged from its Slides, and the
+    render step passes that language as `language`, `sv` or `en`. It never
+    names `transcribe`. With neither a Source nor a Deck, getting the prompt
+    fails with an MCP error whose message is "Give a Source, a Deck, or
+    both", whether or not a `language` is given, and no step runs.
+    The `slides_to_mindmap(deck: str, language: str | None = None)` prompt
+    takes a Deck and an optional language, and gives the same text as
+    `lecture_to_mindmap` with only that `deck` and `language`, bad `language`
+    errors included. It exists because a client that fills prompt arguments
+    by position, such as a slash command, always puts the first argument in
+    `source`, and it puts `deck` first and `language` second.
     A `MuninError` comes back as an MCP tool error carrying its message.
     """
     server = MCPServer("munin")
@@ -256,7 +269,7 @@ def create_server(
         return [TextContent(type="text", text=f"Deck ID: {result.deck_id}"), *_slide_blocks(result.slides)]
 
     @server.tool(name="render_deck_mindmap")
-    def render_deck_mindmap_tool(deck_id: str, outline: dict | str) -> RenderResult:
+    def render_deck_mindmap_tool(deck_id: str, outline: dict | str, language: Language | None = None) -> RenderResult:
         """Render a JSON Outline written from a Deck read with `read_deck` into a Mindmap page.
 
         Call `get_outline_schema` before writing an Outline. It gives the
@@ -347,7 +360,7 @@ def create_server(
         return f"Turn this lecture into a Mindmap: {source}\n\n{_numbered(steps)}"
 
     @server.prompt(name="slides_to_mindmap")
-    def slides_to_mindmap_prompt(deck: str) -> str:
+    def slides_to_mindmap_prompt(deck: str, language: str | None = None) -> str:
         """Turn a lecture's slide PDF, with no recording, into a Mindmap page."""
         return _slides_only_prompt(deck)
 
