@@ -677,12 +677,10 @@ def test_mcp_render_description_asks_for_one_calculation_per_step(cache_dir: Pat
     assert "one calculation" in tool_description(create_server(cache_dir=cache_dir), tool)
 
 
-@pytest.mark.parametrize(
-    "tool, limit", [("render_mindmap", "one short sentence"), ("render_deck_mindmap", "one short Swedish sentence")]
-)
-def test_mcp_render_description_limits_a_reason_to_one_sentence(cache_dir: Path, tool: str, limit: str):
-    """Both render tool descriptions allow at most one short sentence per reason, Swedish for a Deck."""
-    assert limit in tool_description(create_server(cache_dir=cache_dir), tool)
+@pytest.mark.parametrize("tool", ["render_mindmap", "render_deck_mindmap"])
+def test_mcp_render_description_limits_a_reason_to_one_sentence(cache_dir: Path, tool: str):
+    """Both render tool descriptions allow at most one short sentence per reason."""
+    assert "one short sentence" in tool_description(create_server(cache_dir=cache_dir), tool)
 
 
 @pytest.mark.parametrize("tool", ["render_mindmap", "render_deck_mindmap"])
@@ -862,15 +860,18 @@ def slides_prompt_text(server, deck: str) -> str:
     return asyncio.run(run()).messages[0].content.text
 
 
-def test_mcp_lists_slides_prompt_with_only_a_required_deck(cache_dir: Path):
-    """The server lists `slides_to_mindmap` with one required `deck`, so a positional first argument lands in it."""
+def test_mcp_lists_slides_prompt_with_a_required_deck_first(cache_dir: Path):
+    """The server lists `slides_to_mindmap` with a required `deck` first and an optional `language` second, so a positional first argument lands in `deck`."""
 
     async def run():
         async with Client(create_server(cache_dir=cache_dir)) as client:
             return await client.list_prompts()
 
     prompts = {prompt.name: prompt for prompt in asyncio.run(run()).prompts}
-    assert [(arg.name, arg.required) for arg in prompts["slides_to_mindmap"].arguments] == [("deck", True)]
+    assert [(arg.name, arg.required) for arg in prompts["slides_to_mindmap"].arguments] == [
+        ("deck", True),
+        ("language", False),
+    ]
 
 
 def test_mcp_slides_prompt_matches_lecture_prompt_with_only_a_deck(cache_dir: Path):
@@ -943,12 +944,6 @@ def test_mcp_lecture_prompt_rejects_a_bad_language(cache_dir: Path):
     """A bad language fails with an MCP error carrying the LanguageError message."""
     error = prompt_error(create_server(cache_dir=cache_dir), source=WATCH_URL, language="de")
     assert "Language de is not sv or en" in str(error)
-
-
-def test_mcp_lecture_prompt_rejects_a_language_with_only_a_deck(cache_dir: Path):
-    """A language with no Source fails, since a Deck alone never transcribes."""
-    error = prompt_error(create_server(cache_dir=cache_dir), deck=DECK_PATH, language="en")
-    assert "A language needs a Source" in str(error)
 
 
 def test_mcp_lecture_prompt_with_only_a_language_asks_for_a_source_or_deck(cache_dir: Path):
