@@ -2006,3 +2006,44 @@ def test_fixed_page_text_reads_the_same_in_both_languages(
     """`SELECTED IDEA` and `Explore next` read the same on an English page and a Swedish one."""
     open_card_panel(page, render_outline_in(language)(under_a_slide(solved())), "Rad gånger kolonn")
     assert page.locator(selector).text_content() == text
+
+
+@pytest.fixture
+def render_english_deck_outline(deck: Path, cache_dir: Path, tmp_path: Path):
+    """Return a function that renders an Outline against the three-page Deck read on its own, with `en`, and returns the page's URL."""
+    deck_id = read_deck(deck, cache_dir=cache_dir).deck_id
+
+    def render(outline: dict) -> str:
+        return render_deck_mindmap(
+            deck_id, outline, language="en", cache_dir=cache_dir, output_dir=tmp_path / "english-deck"
+        ).page.as_uri()
+
+    return render
+
+
+@pytest.mark.parametrize("kind, prefix", [("example", "Example: "), ("exercise", "Exercise: ")])
+def test_english_deck_card_shows_the_type_prefix(page, render_english_deck_outline, kind: str, prefix: str):
+    """On a Deck page rendered with `en`, the map card shows `Example: ` or `Exercise: ` before the label."""
+    show_every_node(page, render_english_deck_outline(under_a_slide(english_solved(kind))))
+    assert f"{prefix}Row times column" in card_labels(page)
+
+
+@pytest.mark.parametrize("kind, heading", [("example", "Example 1"), ("exercise", "Exercise 1")])
+def test_english_deck_box_heading_names_its_type(page, render_english_deck_outline, kind: str, heading: str):
+    """On a Deck page rendered with `en`, the box is headed `Example 1` or `Exercise 1`."""
+    open_card_panel(page, render_english_deck_outline(under_a_slide(english_solved(kind))), "Row times column")
+    assert box(page).get_by_role("heading").text_content() == heading
+
+
+@pytest.mark.parametrize("expected", ["Show solution 2 steps", "Show answer"])
+def test_english_deck_box_shows_english_toggles(page, render_english_deck_outline, expected: str):
+    """On a Deck page rendered with `en`, the box's toggles read `Show solution` with `N steps`, and `Show answer`."""
+    open_card_panel(page, render_english_deck_outline(under_a_slide(english_solved())), "Row times column")
+    assert expected in toggle_summaries(page)
+
+
+def test_english_deck_page_marks_its_content_english(page, render_english_deck_outline):
+    """On a Deck page rendered with `en`, every element under the body that carries a `lang` carries `en`."""
+    outline = under_a_slide(english_solved(), term("Row"))
+    open_card_panel(page, render_english_deck_outline(outline), "Row times column")
+    assert content_langs(page) == {"en"}
