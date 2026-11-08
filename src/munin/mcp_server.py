@@ -294,8 +294,8 @@ def create_server(
         - Write every example and exercise on the Slides as an example or exercise
           node under the node it belongs to, at any level. Give it the task, its
           solution steps and the answer, so the panel reads on its own without
-          the Slide. Leave `Exempel:` and `Övning:` out of every label, a slide
-          node's too, since the page adds them.
+          the Slide. Leave `Exempel:`, `Övning:`, `Example:` and `Exercise:` out
+          of every label, a slide node's too, since the page adds its prefix.
         - Give every term node an `explanation` of one to three sentences that
           explains the term and gives context, covering only what the Slides cover.
         - Optionally, a short `explanation` on any other node that has one. It
@@ -306,7 +306,11 @@ def create_server(
           piece of math between `$...$` and write the rest as plain prose, with
           `\\$` for a literal dollar sign. Write a step's calculation as LaTeX
           alone, with no `$`. Make each step one calculation, with at most one
-          short Swedish sentence on why in its reason.
+          short sentence on why in its reason.
+        - Write the whole Outline, every node's text and every step's reason
+          included, in the Deck's language, judged from its Slides. Pass that
+          language as `language`, `sv` or `en`. A render with no `language` is
+          a Swedish page.
 
         Returns `page`, the absolute path of the written HTML page. When the
         Outline breaks the schema, carries a stamp, names a Slide past the
@@ -316,7 +320,9 @@ def create_server(
         page replaces the old one.
         """
         with _core_errors_as_tool_errors():
-            return render_deck_mindmap(deck_id, outline, cache_dir=cache_dir, output_dir=output_dir)
+            return render_deck_mindmap(
+                deck_id, outline, language=language, cache_dir=cache_dir, output_dir=output_dir
+            )
 
     @server.prompt(name="lecture_to_mindmap")
     def lecture_to_mindmap_prompt(
@@ -325,14 +331,9 @@ def create_server(
         """Turn a lecture, given as a YouTube URL, a KTH Play video URL or a local file path, a slide PDF, or both, into a Mindmap page."""
         if not source and not deck:
             raise MCPError(code=INVALID_PARAMS, message="Give a Source, a Deck, or both")
-        try:
-            lecture_language = parse_language(language or None)
-        except LanguageError as error:
-            raise MCPError(code=INVALID_PARAMS, message=str(error)) from error
+        lecture_language = _checked_language(language)
         if not source:
-            if lecture_language is not None:
-                raise MCPError(code=INVALID_PARAMS, message="A language needs a Source")
-            return _slides_only_prompt(deck)
+            return _slides_only_prompt(deck, lecture_language)
         transcribe_step = (
             f"Call `transcribe` with that Source and language `{lecture_language}`."
             if lecture_language
@@ -362,7 +363,7 @@ def create_server(
     @server.prompt(name="slides_to_mindmap")
     def slides_to_mindmap_prompt(deck: str, language: str | None = None) -> str:
         """Turn a lecture's slide PDF, with no recording, into a Mindmap page."""
-        return _slides_only_prompt(deck)
+        return _slides_only_prompt(deck, _checked_language(language))
 
     return server
 
@@ -393,17 +394,34 @@ def _slide_blocks(slides: tuple[Slide, ...]) -> list[TextContent | Image]:
     return blocks
 
 
-def _slides_only_prompt(deck: str) -> str:
-    """Return the steps that read a Deck on its own and render a Mindmap from its Slides."""
+def _checked_language(language: str | None) -> Language | None:
+    """Return the prompt's language as a Language, None when it is empty or absent, or fail with an MCP error."""
+    try:
+        return parse_language(language or None)
+    except LanguageError as error:
+        raise MCPError(code=INVALID_PARAMS, message=str(error)) from error
+
+
+def _slides_only_prompt(deck: str, language: Language | None) -> str:
+    """Return the steps that read a Deck on its own and render a Mindmap from its Slides, in `language` when given."""
+    if language:
+        outline_language = f"Write the whole Outline in language `{language}`."
+        render_language = f"Call `render_deck_mindmap` with the Deck ID, the Outline and language `{language}`."
+    else:
+        outline_language = "Write the whole Outline in the Deck's language, judged from its Slides."
+        render_language = (
+            "Call `render_deck_mindmap` with the Deck ID, the Outline and the Deck's language as `language`, `sv` or `en`."
+        )
     steps = [
         f"Call `read_deck` with this Deck path: {deck}.",
         "Call `get_outline_schema`.",
         (
             "Write an Outline of the lecture from the Slides alone as JSON, in the format `get_outline_schema` gives,"
             " following the guidance in the `render_deck_mindmap` tool's description."
-            " Write every math expression as LaTeX."
+            " Write every math expression as LaTeX. "
+            + outline_language
         ),
-        "Call `render_deck_mindmap` with the Deck ID and the Outline.",
+        render_language,
         _REPLY_STEP,
     ]
     return f"Turn this slide deck into a Mindmap: {deck}\n\n{_numbered(steps)}"
