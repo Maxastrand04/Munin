@@ -113,25 +113,45 @@ def ten_minute_source(tmp_path: Path) -> Path:
     return path
 
 
+LECTURE_SENTENCES = {"sv": "En föreläsning.", "en": "A lecture."}
+
+
 @pytest.fixture
-def render_outline(ten_minute_source: Path, cache_dir: Path, tmp_path: Path):
-    """Render an Outline against a 10-minute Source into a folder of its own and return the page's URL."""
-    transcript = transcribe(
-        ten_minute_source,
-        cache_dir=cache_dir,
-        recognize=lambda wav, vocabulary: [Fragment(0, 1, "En föreläsning.")],
-    )
+def render_outline_in(ten_minute_source: Path, cache_dir: Path, tmp_path: Path):
+    """Return a function that, given a language, returns a function rendering an Outline against a 10-minute Source in that language."""
 
-    def render(outline: str | dict, name: str = "mindmap") -> str:
-        """Render an Outline given as a dict, or as headings `outline_from_headings` reads."""
-        return render_mindmap(
-            transcript.transcript_id,
-            outline_from_headings(outline) if isinstance(outline, str) else outline,
-            cache_dir=cache_dir,
-            output_dir=tmp_path / name,
-        ).page.as_uri()
+    def renderer(language: str):
+        transcript = transcribe(
+            ten_minute_source,
+            language=language,
+            cache_dir=cache_dir / language,
+            recognize=lambda wav, vocabulary: [Fragment(0, 1, LECTURE_SENTENCES[language])],
+        )
 
-    return render
+        def render(outline: str | dict, name: str = "mindmap") -> str:
+            """Render an Outline given as a dict, or as headings `outline_from_headings` reads, and return the page's URL."""
+            return render_mindmap(
+                transcript.transcript_id,
+                outline_from_headings(outline) if isinstance(outline, str) else outline,
+                cache_dir=cache_dir / language,
+                output_dir=tmp_path / name,
+            ).page.as_uri()
+
+        return render
+
+    return renderer
+
+
+@pytest.fixture
+def render_outline(render_outline_in):
+    """Render an Outline against a Swedish 10-minute Source into a folder of its own and return the page's URL."""
+    return render_outline_in("sv")
+
+
+@pytest.fixture
+def render_english_outline(render_outline_in):
+    """Render an Outline against an English 10-minute Source into a folder of its own and return the page's URL."""
+    return render_outline_in("en")
 
 
 @pytest.fixture
@@ -1122,6 +1142,16 @@ def open_solution(page) -> None:
     section(page, "Visa lösning").locator("summary").click()
 
 
+def toggle_summaries(page) -> list[str]:
+    """Each toggle's summary text in the open box, whitespace collapsed."""
+    return [" ".join(text.split()) for text in box(page).locator("summary").all_text_contents()]
+
+
+def content_langs(page) -> set[str]:
+    """The `lang` of every element under `<body>` that carries one."""
+    return set(page.locator("body [lang]").evaluate_all("elements => elements.map(element => element.lang)"))
+
+
 def top(locator) -> float:
     return locator.bounding_box()["y"]
 
@@ -1875,3 +1905,104 @@ def test_reload_opens_the_panel_at_326px(page, render_outline):
     page.reload()
     click_card(page, "Gauss")
     assert panel_width(page) == PANEL_MIN_WIDTH
+
+
+# English pages
+
+ENGLISH_TRY_YOURSELF = "No solution in the lecture. Try it yourself."
+
+
+def english_solved(kind: str = "example", label: str = "Row times column", **parts) -> dict:
+    """An example or exercise whose label is English, with a task, two steps and an answer."""
+    return solved(kind, label, **parts)
+
+
+@pytest.mark.parametrize("kind, prefix", [("example", "Example: "), ("exercise", "Exercise: ")])
+def test_english_map_card_shows_the_type_prefix(page, render_english_outline, kind: str, prefix: str):
+    """On an English page, the map card shows `Example: ` or `Exercise: ` before the label."""
+    show_every_node(page, render_english_outline(under_a_slide(english_solved(kind))))
+    assert f"{prefix}Row times column" in card_labels(page)
+
+
+@pytest.mark.parametrize("kind, prefix", [("example", "Example: "), ("exercise", "Exercise: ")])
+def test_english_panel_title_shows_the_type_prefix(page, render_english_outline, kind: str, prefix: str):
+    """On an English page, the panel title shows `Example: ` or `Exercise: ` before the label."""
+    open_card_panel(page, render_english_outline(under_a_slide(english_solved(kind))), "Row times column")
+    assert page.locator("#panel-title").text_content() == f"{prefix}Row times column"
+
+
+@pytest.mark.parametrize("kind, heading", [("example", "Example 2"), ("exercise", "Exercise 2")])
+def test_english_box_heading_counts_its_type(page, render_english_outline, kind: str, heading: str):
+    """On an English page, the second example's box is headed `Example 2`, and the second exercise's `Exercise 2`."""
+    outline = under_a_slide(english_solved(kind, "First"), english_solved(kind))
+    open_card_panel(page, render_english_outline(outline), "Row times column")
+    assert box(page).get_by_role("heading").text_content() == heading
+
+
+@pytest.mark.parametrize("kind, label", [("example", "Example"), ("exercise", "Exercise")])
+def test_english_worked_panel_label_names_its_type(page, render_english_outline, kind: str, label: str):
+    """On an English page, the label above an example's or exercise's box reads `Example` or `Exercise`."""
+    open_card_panel(page, render_english_outline(under_a_slide(english_solved(kind))), "Row times column")
+    assert page.locator(".explanation-label").text_content() == label
+
+
+def test_english_box_shows_the_solution_toggle_with_its_step_count(page, render_english_outline):
+    """On an English page, a box with two steps shows the toggle `Show solution` with `2 steps` beside it."""
+    open_card_panel(page, render_english_outline(under_a_slide(english_solved())), "Row times column")
+    assert "Show solution 2 steps" in toggle_summaries(page)
+
+
+def test_english_box_with_one_step_says_one_step(page, render_english_outline):
+    """On an English page, a box with one step shows `1 step`, not `1 steps`."""
+    outline = under_a_slide(english_solved(steps=(("x = 1", "subtract 1"),)))
+    open_card_panel(page, render_english_outline(outline), "Row times column")
+    assert "Show solution 1 step" in toggle_summaries(page)
+
+
+def test_english_box_shows_the_answer_toggle(page, render_english_outline):
+    """On an English page, a box with an answer shows the toggle `Show answer`."""
+    open_card_panel(page, render_english_outline(under_a_slide(english_solved())), "Row times column")
+    assert "Show answer" in toggle_summaries(page)
+
+
+def test_english_box_with_neither_says_to_try_yourself(page, render_english_outline):
+    """On an English page, a box with no steps and no answer shows the try-it-yourself line in English."""
+    outline = under_a_slide(english_solved(steps=(), answer=""))
+    open_card_panel(page, render_english_outline(outline), "Row times column")
+    assert box(page).locator(".no-solution").text_content() == ENGLISH_TRY_YOURSELF
+
+
+@pytest.mark.parametrize("language, expected", [("en", {"en"}), ("sv", {"sv"})])
+def test_page_marks_its_lecture_content_with_the_transcripts_language(page, render_outline_in, language: str, expected: set):
+    """Every element under the body that carries a `lang` carries the Transcript's language."""
+    outline = under_a_slide(english_solved(), term("Row"))
+    open_card_panel(page, render_outline_in(language)(outline), "Row times column")
+    assert content_langs(page) == expected
+
+
+@pytest.mark.parametrize("expected", ["Visa lösning 2 steg", "Visa svar"])
+def test_swedish_box_shows_swedish_toggles(page, render_outline, expected: str):
+    """On a Swedish page, the box's toggles read `Visa lösning` with `N steg`, and `Visa svar`."""
+    open_card_panel(page, render_outline(under_a_slide(solved())), "Rad gånger kolonn")
+    assert expected in toggle_summaries(page)
+
+
+def test_transcript_cached_without_a_language_shows_the_swedish_prefix(
+    page, legacy_transcript_id: str, cache_dir: Path, tmp_path: Path
+):
+    """A Transcript cached with no language renders its example card as `Exempel: `."""
+    url = render_mindmap(
+        legacy_transcript_id, under_a_slide(solved()), cache_dir=cache_dir, output_dir=tmp_path / "legacy"
+    ).page.as_uri()
+    show_every_node(page, url)
+    assert "Exempel: Rad gånger kolonn" in card_labels(page)
+
+
+@pytest.mark.parametrize("selector, text", [(".panel-top .eyebrow", "SELECTED IDEA"), (".related h3", "Explore next")])
+@pytest.mark.parametrize("language", ["en", "sv"])
+def test_fixed_page_text_reads_the_same_in_both_languages(
+    selector: str, text: str, language: str, page, render_outline_in
+):
+    """`SELECTED IDEA` and `Explore next` read the same on an English page and a Swedish one."""
+    open_card_panel(page, render_outline_in(language)(under_a_slide(solved())), "Rad gånger kolonn")
+    assert page.locator(selector).text_content() == text

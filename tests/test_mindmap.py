@@ -2,6 +2,8 @@ import base64
 import json
 import re
 import shutil
+import subprocess
+import sys
 import wave
 from pathlib import Path
 
@@ -45,6 +47,11 @@ SAMPLE_RATE = 8_000
 def one_sentence(wav: Path, vocabulary: Vocabulary | None):
     """A recognizer that ignores the audio and yields one sentence."""
     return [Fragment(1.2, 3.0, "Idag ska vi prata om matriser.")]
+
+
+def english_sentence(wav: Path, vocabulary: Vocabulary | None):
+    """A recognizer that ignores the audio and yields one English sentence."""
+    return [Fragment(1.2, 3.0, "Today we talk about matrices.")]
 
 
 def transcript_of(source: Path, cache_dir: Path) -> str:
@@ -141,6 +148,12 @@ def problems_of(transcript_id: str, outline, cache_dir: Path, tmp_path: Path) ->
 def transcript_id(source: Path, cache_dir: Path) -> str:
     """A Transcript with no Deck."""
     return transcript_of(source, cache_dir)
+
+
+@pytest.fixture
+def english_transcript_id(source: Path, cache_dir: Path) -> str:
+    """An English Transcript with no Deck."""
+    return transcribe(source, language="en", cache_dir=cache_dir, recognize=english_sentence).transcript_id
 
 
 @pytest.fixture
@@ -639,6 +652,45 @@ def test_english_prefix_on_an_example_or_exercise_renders(
     assert render_page(transcript_id, outline, cache_dir=cache_dir, output_dir=tmp_path / "out").exists()
 
 
+@pytest.mark.parametrize(
+    "label",
+    ["Example: Rows", "EXAMPLE: Rows", "example : Rows", "  Example : Rows", "Exercise: Rows", "EXERCISE: Rows", "exercise : Rows"],
+)
+def test_english_prefix_fails_an_english_render(english_transcript_id: str, cache_dir: Path, tmp_path: Path, label: str):
+    """On an English Transcript, a label starting with `Example:` or `Exercise:`, in any case, fails the render."""
+    assert problem_messages(english_transcript_id, lecture(term(label)), cache_dir, tmp_path)
+
+
+@pytest.mark.parametrize("label, prefix", [("example : Rows", "Example:"), ("EXERCISE: Rows", "Exercise:")])
+def test_english_prefix_problem_names_the_prefix_capitalized(
+    english_transcript_id: str, cache_dir: Path, tmp_path: Path, label: str, prefix: str
+):
+    """The problem for a banned English prefix names it capitalized."""
+    [message] = problem_messages(english_transcript_id, lecture(term(label)), cache_dir, tmp_path)
+    assert f'"{prefix}"' in message
+
+
+@pytest.mark.parametrize("label", ["Exempel: Rader", "Övning: Rader"])
+def test_swedish_prefix_renders_on_an_english_transcript(
+    english_transcript_id: str, cache_dir: Path, tmp_path: Path, label: str
+):
+    """Only the English prefixes fail on an English Transcript, so a label starting with `Exempel:` or `Övning:` renders."""
+    assert render_page(english_transcript_id, lecture(term(label)), cache_dir=cache_dir, output_dir=tmp_path / "out").exists()
+
+
+@pytest.mark.parametrize("label", ["Example: Rows", "Exercise: Rows"])
+def test_english_prefix_renders_on_a_swedish_transcript(transcript_id: str, cache_dir: Path, tmp_path: Path, label: str):
+    """Only the Swedish prefixes fail on a Swedish Transcript, so a label starting with `Example:` or `Exercise:` renders."""
+    assert render_page(transcript_id, lecture(term(label)), cache_dir=cache_dir, output_dir=tmp_path / "out").exists()
+
+
+def test_transcript_cached_without_a_language_bans_the_swedish_prefix(
+    legacy_transcript_id: str, cache_dir: Path, tmp_path: Path
+):
+    """A Transcript cached with no language is Swedish, so a label starting with `Exempel:` fails the render."""
+    assert problem_messages(legacy_transcript_id, lecture(term("Exempel: Rader")), cache_dir, tmp_path)
+
+
 def test_blank_label_is_a_problem_named_by_position(transcript_id: str, cache_dir: Path, tmp_path: Path):
     """A node with a blank label fails the check, and its path names it by its position among its siblings."""
     outline = lecture(term("Gauss"), term("   "))
@@ -740,6 +792,25 @@ def test_slide_number_without_a_deck_is_a_problem(transcript_id: str, cache_dir:
 
 
 # The Outline check: LaTeX
+
+CHECK_AFTER_A_CLOSED_LOOP = """
+import asyncio
+from munin.core.latex import calculation_problems
+
+async def first_check():
+    calculation_problems("x = 1")
+
+asyncio.run(first_check())
+print(calculation_problems("\\\\frac{1}{2"))
+"""
+
+
+def test_latex_check_still_runs_after_the_loop_of_its_first_check_closes():
+    """The first LaTeX check may run inside an asyncio loop, as under Playwright, and a check after that loop closes still finds broken LaTeX."""
+    run = subprocess.run(
+        [sys.executable, "-c", CHECK_AFTER_A_CLOSED_LOOP], check=False, capture_output=True, text=True, cwd=REPO_ROOT
+    )
+    assert "BrokenLatex" in run.stdout
 
 
 def test_broken_latex_in_an_explanation_is_a_problem(transcript_id: str, cache_dir: Path, tmp_path: Path):

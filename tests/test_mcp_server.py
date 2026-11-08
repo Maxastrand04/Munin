@@ -627,6 +627,22 @@ def test_mcp_render_description_keeps_the_prefix_off_every_label(cache_dir: Path
     assert "out of every label, a slide" in tool_description(create_server(cache_dir=cache_dir), tool)
 
 
+def test_mcp_render_description_asks_for_the_lectures_language(cache_dir: Path):
+    """The render tool's description asks for the Outline in the lecture's language."""
+    assert "the lecture's language" in tool_description(create_server(cache_dir=cache_dir), "render_mindmap")
+
+
+def test_mcp_render_description_names_no_swedish(cache_dir: Path):
+    """The render tool's description does not ask for Swedish."""
+    assert "Swedish" not in tool_description(create_server(cache_dir=cache_dir), "render_mindmap")
+
+
+@pytest.mark.parametrize("prefix", ["`Example:`", "`Exercise:`"])
+def test_mcp_render_description_says_to_leave_out_english_prefixes(cache_dir: Path, prefix: str):
+    """The render tool's description names the English prefixes among those to leave out of labels."""
+    assert prefix in tool_description(create_server(cache_dir=cache_dir), "render_mindmap")
+
+
 def test_mcp_render_description_writes_out_examples_and_exercises(cache_dir: Path):
     """The render tool's description asks for each example and exercise's task, solution steps and answer."""
     assert "the task, its solution steps and the answer" in tool_description(create_server(cache_dir=cache_dir), "render_mindmap")
@@ -890,6 +906,19 @@ def test_mcp_lecture_prompt_asks_transcribe_for_the_language(language: str, cach
     """With a Source and a language, the `transcribe` step names the language."""
     text = prompt_text(create_server(cache_dir=cache_dir), source=WATCH_URL, language=language)
     assert f"Call `transcribe` with that Source and language `{language}`." in text
+
+
+@pytest.mark.parametrize("language", [None, "en", "sv"], ids=["no-language", "en", "sv"])
+def test_mcp_lecture_prompt_asks_for_the_lectures_language(language: str | None, cache_dir: Path):
+    """The prompt asks for the whole Outline in the lecture's language, whether or not a language was given."""
+    text = prompt_text(create_server(cache_dir=cache_dir), source=WATCH_URL, language=language)
+    assert "the lecture's language" in " ".join(text.split())
+
+
+def test_mcp_lecture_prompt_points_at_the_language_transcribe_returned(cache_dir: Path):
+    """The prompt tells the LLM the lecture's language is the `language` that `transcribe` returned."""
+    text = prompt_text(create_server(cache_dir=cache_dir), source=WATCH_URL)
+    assert "`language` `transcribe` returned" in " ".join(text.split())
 
 
 def test_mcp_lecture_prompt_with_deck_and_language_still_reads_slides(cache_dir: Path):

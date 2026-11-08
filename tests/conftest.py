@@ -1,3 +1,4 @@
+import json
 import shutil
 import wave
 from pathlib import Path
@@ -5,6 +6,8 @@ from types import SimpleNamespace
 
 import onnx_asr
 import pytest
+
+from munin.core import Fragment, transcribe
 
 SPEECH = Path(__file__).parent / "fixtures" / "sv_short.m4a"
 SAMPLE_RATE = 16_000
@@ -106,3 +109,20 @@ def speech_library(monkeypatch: pytest.MonkeyPatch) -> SimpleNamespace:
     monkeypatch.setattr(onnx_asr, "load_model", load_model)
     monkeypatch.setattr(onnx_asr, "load_vad", load_vad)
     return library
+
+
+@pytest.fixture
+def legacy_transcript_id(source: Path, cache_dir: Path) -> str:
+    """A Swedish Transcript whose cache entry is rewritten without its `language`, as before lecture languages existed."""
+    transcript_id = transcribe(
+        source,
+        language="sv",
+        cache_dir=cache_dir,
+        recognize=lambda wav, vocabulary: [Fragment(1.2, 3.0, "Idag ska vi prata om matriser.")],
+    ).transcript_id
+    for entry in cache_dir.rglob("*.json"):
+        stored = json.loads(entry.read_text(encoding="utf-8"))
+        if isinstance(stored, dict) and "language" in stored:
+            del stored["language"]
+            entry.write_text(json.dumps(stored, ensure_ascii=False), encoding="utf-8")
+    return transcript_id
