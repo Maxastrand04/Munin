@@ -661,10 +661,12 @@ def test_mcp_render_description_asks_for_one_calculation_per_step(cache_dir: Pat
     assert "one calculation" in tool_description(create_server(cache_dir=cache_dir), tool)
 
 
-@pytest.mark.parametrize("tool", ["render_mindmap", "render_deck_mindmap"])
-def test_mcp_render_description_limits_a_reason_to_one_sentence(cache_dir: Path, tool: str):
-    """Both render tool descriptions allow at most one short Swedish sentence per reason."""
-    assert "one short Swedish sentence" in tool_description(create_server(cache_dir=cache_dir), tool)
+@pytest.mark.parametrize(
+    "tool, limit", [("render_mindmap", "one short sentence"), ("render_deck_mindmap", "one short Swedish sentence")]
+)
+def test_mcp_render_description_limits_a_reason_to_one_sentence(cache_dir: Path, tool: str, limit: str):
+    """Both render tool descriptions allow at most one short sentence per reason, Swedish for a Deck."""
+    assert limit in tool_description(create_server(cache_dir=cache_dir), tool)
 
 
 @pytest.mark.parametrize("tool", ["render_mindmap", "render_deck_mindmap"])
