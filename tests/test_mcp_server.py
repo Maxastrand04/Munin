@@ -681,6 +681,15 @@ def test_mcp_render_description_asks_for_one_calculation_per_step(cache_dir: Pat
 
 
 @pytest.mark.parametrize("tool", ["render_mindmap", "render_deck_mindmap"])
+def test_mcp_render_description_keeps_a_step_to_one_object_and_never_repeats_a_fact(cache_dir: Path, tool: str):
+    """Both render tool descriptions ask for a step about one object, in source order, with no fact written twice (#67)."""
+    description = tool_description(create_server(cache_dir=cache_dir), tool)
+    assert "one object" in description
+    assert "no fact twice" in description
+    assert "in the order the source gives them" in description
+
+
+@pytest.mark.parametrize("tool", ["render_mindmap", "render_deck_mindmap"])
 def test_mcp_render_description_limits_a_reason_to_one_sentence(cache_dir: Path, tool: str):
     """Both render tool descriptions allow at most one short sentence per reason."""
     assert "one short sentence" in tool_description(create_server(cache_dir=cache_dir), tool)
