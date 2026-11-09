@@ -61,8 +61,10 @@ def create_server(
     again to replace the cached Transcript under the same ID. It also says
     `language` is the language the lecture is spoken in, `sv` or `en`, that a
     call with none and nothing cached runs Swedish, that a different language
-    replaces the cached Transcript under the same ID, and that Vocabulary terms
-    do not work on English lectures yet.
+    replaces the cached Transcript under the same ID, and that a Vocabulary
+    works in both languages. It also says boosting fixes the spelling of a
+    sound the model heard, and does not turn two spoken words into one
+    identifier such as `task_struct`.
     `get_transcript(transcript_id: str)` returns the `[m:ss] text` lines.
     `get_outline_schema()` takes no arguments and returns the core's
     `OutlineSchema` fields as an object, `schema` and `samples`. Its
@@ -175,7 +177,10 @@ def create_server(
         no `language` and nothing cached, the lecture runs as Swedish. A
         `language` other than the cached Transcript's replaces it under the same
         Transcript ID, and `language` in the result says which language it is.
-        Vocabulary terms do not work on English lectures yet, so give none with `en`.
+
+        A Vocabulary works the same in both languages, so give terms with `en`
+        too. Boosting fixes how the model spells a sound it heard. It does not
+        turn two spoken words into one identifier such as `task_struct`.
         """
         with _core_errors_as_tool_errors():
             boost = Vocabulary(vocabulary or [], alpha)

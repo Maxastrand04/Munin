@@ -12,7 +12,6 @@ from munin.core.cache_ids import cache_id, is_cache_id
 from munin.core.cache_paths import default_cache_dir
 from munin.core.decode import decode_to_wav
 from munin.core.errors import (
-    EnglishVocabularyError,
     NoSpeechError,
     SourceError,
     UnknownTranscriptError,
@@ -141,14 +140,16 @@ def transcribe(
     `download` defaults to `download_audio` for YouTube and
     `download_smallest_video` for KTH Play, called only on a miss for either.
 
+    Vocabulary terms work the same in both languages. Terms with `en`, or with
+    no `language` on a cached English Transcript, run English with the terms
+    boosted, and terms with no `language` and nothing cached run Swedish.
+
     Raises `LanguageError` when `language` is not `sv`, `en` or None. Raises
-    `EnglishVocabularyError` when a `vocabulary` with terms meets an English
-    lecture, whether from `en` or from a cached English Transcript with no
-    `language`, before any download or model load. Raises `SourceError` when
-    `source` is not an existing file, a YouTube video URL or a KTH Play video
-    URL, with the reason "not a file, a YouTube URL or a KTH Play video URL",
-    when ffmpeg cannot decode it, or when `download` cannot fetch the video. Raises `NoSpeechError` when no non-empty Segment
-    comes out. None of these writes anything to the cache, so a failed boosted
+    `SourceError` when `source` is not an existing file, a YouTube video URL or
+    a KTH Play video URL, with the reason "not a file, a YouTube URL or a KTH
+    Play video URL", when ffmpeg cannot decode it, or when `download` cannot
+    fetch the video. Raises `NoSpeechError` when no non-empty Segment comes
+    out. None of these writes anything to the cache, so a failed boosted
     run or a failed run in another language leaves the previously cached
     Transcript in place.
     """
@@ -159,11 +160,9 @@ def transcribe(
     entry_path = _entry_path(cache_dir, transcript_id)
     vocabulary = vocabulary if vocabulary and vocabulary.terms else None
     cached = _read_entry(entry_path) if entry_path.is_file() else None
-    run_language = _run_language(lecture_language, cached)
-    if run_language == "en" and vocabulary is not None:
-        raise EnglishVocabularyError()
     if cached is not None and vocabulary is None and lecture_language in (None, cached.language):
         return cached._result(transcript_id, cached=True)
+    run_language = _run_language(lecture_language, cached)
     if isinstance(resolved, Video):
         entry = _transcribe_video(resolved, entry_path.parent, download, recognize, vocabulary, run_language)
     else:

@@ -231,24 +231,17 @@ def test_mcp_transcribe_without_language_returns_cached_english(source: Path, ca
 
 
 def test_mcp_transcribe_english_without_terms_reports_no_vocabulary(source: Path, cache_dir: Path):
-    """The tool builds an empty Vocabulary on every call, and that does not trip the English check."""
+    """The tool builds an empty Vocabulary on every call, and an English call without terms reports none."""
     server = create_server(cache_dir=cache_dir, recognize=english_sentence)
     result = call(server, "transcribe", {"source": str(source), "language": "en"})
     assert result.structured_content["vocabulary"] is None
 
 
-def test_mcp_transcribe_english_with_terms_is_a_tool_error(source: Path, cache_dir: Path):
-    """The transcribe tool's `en` call with terms comes back as a tool error."""
+def test_mcp_transcribe_english_with_terms_reports_the_vocabulary(source: Path, cache_dir: Path):
+    """The transcribe tool's `en` call with terms reports the terms and alpha it used."""
     server = create_server(cache_dir=cache_dir, recognize=english_sentence)
-    result = call(server, "transcribe", {"source": str(source), "language": "en", "vocabulary": ["heap"]})
-    assert result.is_error
-
-
-def test_mcp_transcribe_english_with_terms_error_carries_core_message(source: Path, cache_dir: Path):
-    """The tool error for terms on an English lecture carries the core's message."""
-    server = create_server(cache_dir=cache_dir, recognize=english_sentence)
-    result = call(server, "transcribe", {"source": str(source), "language": "en", "vocabulary": ["heap"]})
-    assert "do not work on English lectures" in result.content[0].text
+    result = call(server, "transcribe", {"source": str(source), "language": "en", "vocabulary": ["PCB"], "alpha": 1.5})
+    assert result.structured_content["vocabulary"] == {"terms": ["PCB"], "alpha": 1.5}
 
 
 def test_mcp_transcribe_schema_lists_the_two_languages(cache_dir: Path):
@@ -277,9 +270,19 @@ def test_mcp_transcribe_description_says_a_miss_defaults_to_swedish(cache_dir: P
     assert "swedish" in tool_description(create_server(cache_dir=cache_dir), "transcribe").lower()
 
 
-def test_mcp_transcribe_description_says_english_has_no_vocabulary_yet(cache_dir: Path):
-    """The transcribe tool's description tells the LLM that Vocabulary terms do not work on English lectures yet."""
-    assert "english lectures" in tool_description(create_server(cache_dir=cache_dir), "transcribe").lower()
+def test_mcp_transcribe_description_says_vocabulary_works_in_both_languages(cache_dir: Path):
+    """The transcribe tool's description tells the LLM a Vocabulary works on Swedish and English lectures alike."""
+    assert "both languages" in tool_description(create_server(cache_dir=cache_dir), "transcribe").lower()
+
+
+def test_mcp_transcribe_description_says_boosting_fixes_what_the_model_heard(cache_dir: Path):
+    """The transcribe tool's description tells the LLM boosting fixes the spelling of a sound the model heard."""
+    assert "heard" in tool_description(create_server(cache_dir=cache_dir), "transcribe").lower()
+
+
+def test_mcp_transcribe_description_says_boosting_makes_no_identifiers(cache_dir: Path):
+    """The transcribe tool's description tells the LLM boosting does not turn two spoken words into one identifier."""
+    assert "identifier" in tool_description(create_server(cache_dir=cache_dir), "transcribe").lower()
 
 
 def test_mcp_transcribe_accepts_youtube_url(cache_dir: Path):

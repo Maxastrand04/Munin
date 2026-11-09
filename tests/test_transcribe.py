@@ -11,7 +11,6 @@ import onnx_asr
 import pytest
 
 from munin.core import (
-    EnglishVocabularyError,
     Fragment,
     KthPlaySource,
     LanguageError,
@@ -79,6 +78,11 @@ SWEDISH_LINE = "[0:01] Idag ska vi prata om matriser."
 ENGLISH_LINE = "[0:01] Today we talk about processes."
 PLAIN_GAUSS = Fragment(1.2, 3.0, "Idag ska vi prata om gauss elimination.")
 BOOSTED_GAUSS = Fragment(1.2, 3.0, "Idag ska vi prata om Gausselimination.")
+FORK = Vocabulary(["fork()", "PCB"], 1.5)
+PLAIN_FORK = Fragment(1.2, 3.0, "The parent calls fork and gets a PCB.")
+BOOSTED_FORK = Fragment(1.2, 3.0, "The parent calls fork() and gets a PCB.")
+PLAIN_FORK_LINE = "[0:01] The parent calls fork and gets a PCB."
+BOOSTED_FORK_LINE = "[0:01] The parent calls fork() and gets a PCB."
 
 
 def fake_download(calls: list | None = None, written: list | None = None):
@@ -998,52 +1002,12 @@ def test_bad_language_on_a_cached_source_still_raises(source: Path, cache_dir: P
         transcribe(source, language="de", cache_dir=cache_dir, recognize=never_called)
 
 
-def test_english_with_terms_raises(source: Path, cache_dir: Path):
-    """Terms with `en` raise EnglishVocabularyError."""
-    with pytest.raises(EnglishVocabularyError):
-        transcribe(source, language="en", vocabulary=GAUSS, cache_dir=cache_dir, recognize=never_called)
-
-
-def test_english_vocabulary_error_says_what_to_do(source: Path, cache_dir: Path):
-    """The error tells the caller to call again without terms."""
-    with pytest.raises(EnglishVocabularyError, match="Call again without them"):
-        transcribe(source, language="en", vocabulary=GAUSS, cache_dir=cache_dir, recognize=never_called)
-
-
-def test_english_with_terms_fails_before_download(cache_dir: Path):
-    """Terms with `en` on a video raise without calling the downloader."""
-    with pytest.raises(EnglishVocabularyError):
-        transcribe(WATCH_URL, language="en", vocabulary=GAUSS, cache_dir=cache_dir, download=never_download)
-
-
-def test_english_with_terms_writes_nothing(source: Path, cache_dir: Path):
-    """Terms with `en` cache nothing, so the next plain call transcribes fresh."""
-    with pytest.raises(EnglishVocabularyError):
-        transcribe(source, language="en", vocabulary=GAUSS, cache_dir=cache_dir, recognize=never_called)
-    assert transcribe(source, cache_dir=cache_dir, recognize=SWEDISH).cached is False
-
-
-def test_english_with_terms_leaves_a_swedish_transcript(source: Path, cache_dir: Path):
-    """Terms with `en` on a cached Swedish Transcript leave its text in place."""
-    result = transcribe(source, language="sv", cache_dir=cache_dir, recognize=SWEDISH)
-    with pytest.raises(EnglishVocabularyError):
-        transcribe(source, language="en", vocabulary=GAUSS, cache_dir=cache_dir, recognize=never_called)
-    assert get_transcript(result.transcript_id, cache_dir=cache_dir) == SWEDISH_LINE
-
-
-def test_terms_with_no_language_on_cached_english_raise(source: Path, cache_dir: Path):
-    """Terms with no language on a cached English Transcript raise EnglishVocabularyError."""
-    transcribe(source, language="en", cache_dir=cache_dir, recognize=ENGLISH)
-    with pytest.raises(EnglishVocabularyError):
-        transcribe(source, vocabulary=GAUSS, cache_dir=cache_dir, recognize=never_called)
-
-
-def test_terms_with_no_language_on_cached_english_leave_it(source: Path, cache_dir: Path):
-    """Terms with no language on a cached English Transcript leave its text in place."""
-    result = transcribe(source, language="en", cache_dir=cache_dir, recognize=ENGLISH)
-    with pytest.raises(EnglishVocabularyError):
-        transcribe(source, vocabulary=GAUSS, cache_dir=cache_dir, recognize=never_called)
-    assert get_transcript(result.transcript_id, cache_dir=cache_dir) == ENGLISH_LINE
+def test_english_terms_replace_a_cached_swedish_transcript(source: Path, cache_dir: Path):
+    """Terms with `en` on a cached Swedish Transcript run English with those terms."""
+    received = []
+    transcribe(source, language="sv", cache_dir=cache_dir, recognize=SWEDISH)
+    transcribe(source, language="en", vocabulary=GAUSS, cache_dir=cache_dir, recognize=fake(BOOSTED_GAUSS, received=received))
+    assert received == [GAUSS]
 
 
 def test_blank_vocabulary_on_english_reaches_recognizer_as_none(source: Path, cache_dir: Path):
@@ -1119,6 +1083,114 @@ def test_failed_first_english_run_is_not_cached(source: Path, cache_dir: Path):
     assert transcribe(source, cache_dir=cache_dir, recognize=SWEDISH).cached is False
 
 
+def test_english_terms_rerun_a_cached_english_transcript(source: Path, cache_dir: Path):
+    """Terms with `en` on a cached English Transcript run the recognizer with those terms."""
+    received = []
+    transcribe(source, language="en", cache_dir=cache_dir, recognize=fake(PLAIN_FORK))
+    transcribe(source, language="en", vocabulary=FORK, cache_dir=cache_dir, recognize=fake(BOOSTED_FORK, received=received))
+    assert received == [FORK]
+
+
+def test_english_terms_run_keeps_the_transcript_id(source: Path, cache_dir: Path):
+    """A boosted English rerun keeps the cached Transcript's ID."""
+    first = transcribe(source, language="en", cache_dir=cache_dir, recognize=fake(PLAIN_FORK))
+    second = transcribe(source, language="en", vocabulary=FORK, cache_dir=cache_dir, recognize=fake(BOOSTED_FORK))
+    assert second.transcript_id == first.transcript_id
+
+
+def test_english_terms_run_reports_not_cached(source: Path, cache_dir: Path):
+    """A boosted English rerun reports cached=False, since the model ran."""
+    transcribe(source, language="en", cache_dir=cache_dir, recognize=fake(PLAIN_FORK))
+    result = transcribe(source, language="en", vocabulary=FORK, cache_dir=cache_dir, recognize=fake(BOOSTED_FORK))
+    assert result.cached is False
+
+
+def test_english_terms_run_reports_english(source: Path, cache_dir: Path):
+    """A boosted English rerun reports `en` as its language."""
+    transcribe(source, language="en", cache_dir=cache_dir, recognize=fake(PLAIN_FORK))
+    result = transcribe(source, language="en", vocabulary=FORK, cache_dir=cache_dir, recognize=fake(BOOSTED_FORK))
+    assert result.language == "en"
+
+
+def test_english_terms_run_reports_the_vocabulary(source: Path, cache_dir: Path):
+    """A boosted English rerun reports the Vocabulary it used."""
+    transcribe(source, language="en", cache_dir=cache_dir, recognize=fake(PLAIN_FORK))
+    result = transcribe(source, language="en", vocabulary=FORK, cache_dir=cache_dir, recognize=fake(BOOSTED_FORK))
+    assert result.vocabulary == FORK
+
+
+def test_english_terms_run_replaces_the_cached_lines(source: Path, cache_dir: Path):
+    """After a boosted English rerun, the read-back returns the boosted lines under the old ID."""
+    first = transcribe(source, language="en", cache_dir=cache_dir, recognize=fake(PLAIN_FORK))
+    transcribe(source, language="en", vocabulary=FORK, cache_dir=cache_dir, recognize=fake(BOOSTED_FORK))
+    assert get_transcript(first.transcript_id, cache_dir=cache_dir) == BOOSTED_FORK_LINE
+
+
+def test_english_terms_run_stores_english(source: Path, cache_dir: Path):
+    """A boosted English rerun stores `en`, so a later call with no language reports English."""
+    transcribe(source, language="en", cache_dir=cache_dir, recognize=fake(PLAIN_FORK))
+    transcribe(source, language="en", vocabulary=FORK, cache_dir=cache_dir, recognize=fake(BOOSTED_FORK))
+    assert transcribe(source, cache_dir=cache_dir, recognize=never_called).language == "en"
+
+
+def test_english_terms_run_stores_the_vocabulary(source: Path, cache_dir: Path):
+    """A boosted English rerun stores its Vocabulary, so a later call with no terms reports it."""
+    transcribe(source, language="en", cache_dir=cache_dir, recognize=fake(PLAIN_FORK))
+    transcribe(source, language="en", vocabulary=FORK, cache_dir=cache_dir, recognize=fake(BOOSTED_FORK))
+    assert transcribe(source, cache_dir=cache_dir, recognize=never_called).vocabulary == FORK
+
+
+def test_call_without_terms_returns_boosted_english_without_running_model(source: Path, cache_dir: Path):
+    """After a boosted English run, an `en` call with no terms is a cache hit that never runs the recognizer."""
+    transcribe(source, language="en", cache_dir=cache_dir, recognize=fake(PLAIN_FORK))
+    transcribe(source, language="en", vocabulary=FORK, cache_dir=cache_dir, recognize=fake(BOOSTED_FORK))
+    assert transcribe(source, language="en", cache_dir=cache_dir, recognize=never_called).cached is True
+
+
+def test_english_terms_on_a_miss_reach_the_recognizer(source: Path, cache_dir: Path):
+    """Terms with `en` and nothing cached run the recognizer with those terms."""
+    received = []
+    transcribe(source, language="en", vocabulary=FORK, cache_dir=cache_dir, recognize=fake(BOOSTED_FORK, received=received))
+    assert received == [FORK]
+
+
+def test_english_terms_on_a_miss_report_english(source: Path, cache_dir: Path):
+    """Terms with `en` and nothing cached report `en`."""
+    result = transcribe(source, language="en", vocabulary=FORK, cache_dir=cache_dir, recognize=fake(BOOSTED_FORK))
+    assert result.language == "en"
+
+
+def test_english_terms_on_a_youtube_source_reach_the_recognizer(cache_dir: Path):
+    """Terms with `en` on a YouTube Source download it and run the recognizer with those terms."""
+    received = []
+    recognize = fake(BOOSTED_FORK, received=received)
+    transcribe(WATCH_URL, language="en", vocabulary=FORK, cache_dir=cache_dir, recognize=recognize, download=fake_download())
+    assert received == [FORK]
+
+
+def test_terms_with_no_language_on_cached_english_reach_the_recognizer(source: Path, cache_dir: Path):
+    """Terms with no language on a cached English Transcript rerun it with those terms."""
+    received = []
+    transcribe(source, language="en", cache_dir=cache_dir, recognize=fake(PLAIN_FORK))
+    transcribe(source, vocabulary=FORK, cache_dir=cache_dir, recognize=fake(BOOSTED_FORK, received=received))
+    assert received == [FORK]
+
+
+def test_terms_with_no_language_on_cached_english_stay_english(source: Path, cache_dir: Path):
+    """Terms with no language on a cached English Transcript rerun in English, not Swedish."""
+    transcribe(source, language="en", cache_dir=cache_dir, recognize=fake(PLAIN_FORK))
+    result = transcribe(source, vocabulary=FORK, cache_dir=cache_dir, recognize=fake(BOOSTED_FORK))
+    assert result.language == "en"
+
+
+def test_failed_english_terms_run_keeps_the_previous_lines(source: Path, cache_dir: Path):
+    """An `en` run with terms that finds no speech leaves the cached English Transcript's lines in place."""
+    first = transcribe(source, language="en", cache_dir=cache_dir, recognize=fake(PLAIN_FORK))
+    with pytest.raises(NoSpeechError):
+        transcribe(source, language="en", vocabulary=FORK, cache_dir=cache_dir, recognize=fake())
+    assert get_transcript(first.transcript_id, cache_dir=cache_dir) == PLAIN_FORK_LINE
+
+
 # Real model
 
 
@@ -1141,6 +1213,13 @@ def test_real_model_transcribes_english_speech(cache_dir: Path):
     """Parakeet transcribes the English clip, opening with "Today", a word Pianissimo drops from it."""
     result = transcribe(SPEECH_EN, language="en", cache_dir=cache_dir)
     assert "today we will talk" in get_transcript(result.transcript_id, cache_dir=cache_dir).lower()
+
+
+@pytest.mark.slow
+def test_real_model_transcribes_english_with_vocabulary(cache_dir: Path):
+    """Parakeet spells the English clip's "process" as "processor" when that term is boosted at full strength, which it never writes unboosted."""
+    result = transcribe(SPEECH_EN, language="en", vocabulary=Vocabulary(["processor"], 2.0), cache_dir=cache_dir)
+    assert "processor" in get_transcript(result.transcript_id, cache_dir=cache_dir)
 
 
 # Real downloader

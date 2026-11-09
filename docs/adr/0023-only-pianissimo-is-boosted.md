@@ -10,6 +10,6 @@
 
 **Scope:** `src/munin/core/model.py`, `load_recognizer`
 
-**Status:** found
+**Status:** retired
 
-**Date:** 2026-11-07
+**Date:** 2026-11-09

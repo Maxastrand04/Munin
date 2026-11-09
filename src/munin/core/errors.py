@@ -96,19 +96,6 @@ class LanguageError(MuninError):
         super().__init__(f"Language {language} is not sv or en")
 
 
-class EnglishVocabularyError(MuninError):
-    """A call gave Vocabulary terms for an English lecture, which has no Vocabulary yet.
-
-    The lecture is English when the call asks for `en`, or when it gives no
-    language and the cached Transcript is English. The message tells the caller
-    what to do: "Vocabulary terms do not work on English lectures yet. Call
-    again without them."
-    """
-
-    def __init__(self) -> None:
-        super().__init__("Vocabulary terms do not work on English lectures yet. Call again without them.")
-
-
 class OutlineError(MuninError):
     """Base for every error that rejects an Outline before anything is rendered.
 

@@ -25,7 +25,7 @@ One raw span of speech as VAD and the lecture language's model return it, before
 _Avoid_: chunk, piece
 
 **Vocabulary**:
-A list of terms, plus a boost strength (alpha) from 0 to 2, that steers Pianissimo toward spelling those terms correctly. Terms are case sensitive. A Vocabulary whose terms are all blank counts as none. Only Swedish lectures take a Vocabulary, so terms on an English lecture fail and write nothing.
+A list of terms, plus a boost strength (alpha) from 0 to 2, that steers the lecture's speech model toward spelling those terms correctly. Terms are case sensitive. A Vocabulary whose terms are all blank counts as none. Swedish and English lectures both take a Vocabulary, and the terms work the same in each.
 _Avoid_: glossary, keywords, hotwords
 
 **Deck**:
@@ -60,7 +60,7 @@ _Avoid_: jump link, deep link, seek link
 - A **Vocabulary** is optional and applies to one transcription of a **Source**
 - A cached **Transcript** records the **Vocabulary** it was made with, or none. Transcribing with a **Vocabulary** replaces the cached **Transcript** and keeps its ID
 - A cached **Transcript** records its **Lecture language**. A call with no language, or with the same one, returns it, and a call with a different one replaces it and keeps its ID
-- A **Vocabulary** applies only to a **Transcript** whose **Lecture language** is Swedish
+- A **Vocabulary** applies to a **Transcript** in either **Lecture language**
 - A **Transcript** has at most one **Deck**, which has one or more **Slides**
 - A node of an **Outline** lists any number of **Slides**, and a **Slide** can appear on any number of nodes
 - An **Outline** is written from exactly one **Transcript**, or from exactly one standalone **Deck**
