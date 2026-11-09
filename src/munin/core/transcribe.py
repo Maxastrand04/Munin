@@ -161,8 +161,6 @@ def transcribe(
     vocabulary = vocabulary if vocabulary and vocabulary.terms else None
     cached = _read_entry(entry_path) if entry_path.is_file() else None
     run_language = _run_language(lecture_language, cached)
-    if run_language == "en" and vocabulary is not None:
-        raise NotImplementedError("#61: an English run takes Vocabulary terms")
     if cached is not None and vocabulary is None and lecture_language in (None, cached.language):
         return cached._result(transcript_id, cached=True)
     if isinstance(resolved, Video):

@@ -54,8 +54,7 @@ def load_recognizer(language: Language = "sv") -> Recognize:
     pipeline = asr.with_vad(vad, min_silence_duration_ms=500)
 
     def recognize(wav: Path, vocabulary: Vocabulary | None) -> Iterable[Fragment]:
-        if language == "sv":
-            apply_vocabulary(asr, vocabulary)
+        apply_vocabulary(asr, vocabulary)
         for result in pipeline.recognize(str(wav)):
             yield Fragment(result.start, result.end, result.text)
 

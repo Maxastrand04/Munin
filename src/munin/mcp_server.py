@@ -177,7 +177,10 @@ def create_server(
         no `language` and nothing cached, the lecture runs as Swedish. A
         `language` other than the cached Transcript's replaces it under the same
         Transcript ID, and `language` in the result says which language it is.
-        Vocabulary terms do not work on English lectures yet, so give none with `en`.
+
+        A Vocabulary works the same in both languages, so give terms with `en`
+        too. Boosting fixes how the model spells a sound it heard. It does not
+        turn two spoken words into one identifier such as `task_struct`.
         """
         with _core_errors_as_tool_errors():
             boost = Vocabulary(vocabulary or [], alpha)
