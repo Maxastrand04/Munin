@@ -1,4 +1,4 @@
-"""The terms, and how hard to boost them, that steer Pianissimo's spelling."""
+"""The terms, and how hard to boost them, that steer the speech model's spelling."""
 
 from dataclasses import dataclass
 
@@ -10,7 +10,7 @@ _MAX_ALPHA = 2
 
 @dataclass(frozen=True)
 class Vocabulary:
-    """Terms Pianissimo should spell as given, and the boost strength `alpha`.
+    """Terms the speech model should spell as given, Pianissimo or Parakeet, and the boost strength `alpha`.
 
     `terms` may be given as any iterable of strings and is stored as a tuple.
     Each term is stripped of surrounding whitespace, blank terms are dropped,

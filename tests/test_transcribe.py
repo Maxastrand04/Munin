@@ -11,7 +11,6 @@ import onnx_asr
 import pytest
 
 from munin.core import (
-    EnglishVocabularyError,
     Fragment,
     KthPlaySource,
     LanguageError,

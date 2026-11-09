@@ -35,9 +35,11 @@ def load_recognizer(language: Language = "sv") -> Recognize:
     Forces ONNX Runtime's CPU provider for both models, per ADR-0003. VAD treats
     500 ms of silence as a break between fragments and keeps onnx-asr's other
     defaults. On first use, onnx-asr downloads the weights into the Hugging Face
-    cache. Later calls load them from there. Boosting goes through Klang's
-    vendored phrase boosting, per ADR-0008, and only the `sv` recognizer boosts.
-    The `en` recognizer ignores the Vocabulary it is given, per ADR-0023.
+    cache. Later calls load them from there. Both recognizers boost through
+    Klang's vendored phrase boosting and its one tokenizer, which Parakeet v3
+    shares with Pianissimo, per ADR-0008. Each applies only the Vocabulary of
+    the call it gets, so a call with None after a boosted call runs unboosted
+    in either language, per ADR-0009.
 
     Raises `LanguageError` when `language` is not `sv` or `en`, before anything
     loads.

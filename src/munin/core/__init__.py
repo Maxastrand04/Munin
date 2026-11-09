@@ -2,7 +2,6 @@
 
 from munin.core.errors import (
     DeckError,
-    EnglishVocabularyError,
     KlangError,
     LanguageError,
     MuninError,
@@ -32,7 +31,6 @@ __all__ = [
     "DeckError",
     "DeckResult",
     "Download",
-    "EnglishVocabularyError",
     "Fragment",
     "KlangError",
     "KthPlaySource",
