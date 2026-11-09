@@ -237,20 +237,6 @@ def test_mcp_transcribe_english_without_terms_reports_no_vocabulary(source: Path
     assert result.structured_content["vocabulary"] is None
 
 
-def test_mcp_transcribe_english_with_terms_is_a_tool_error(source: Path, cache_dir: Path):
-    """The transcribe tool's `en` call with terms comes back as a tool error."""
-    server = create_server(cache_dir=cache_dir, recognize=english_sentence)
-    result = call(server, "transcribe", {"source": str(source), "language": "en", "vocabulary": ["heap"]})
-    assert result.is_error
-
-
-def test_mcp_transcribe_english_with_terms_error_carries_core_message(source: Path, cache_dir: Path):
-    """The tool error for terms on an English lecture carries the core's message."""
-    server = create_server(cache_dir=cache_dir, recognize=english_sentence)
-    result = call(server, "transcribe", {"source": str(source), "language": "en", "vocabulary": ["heap"]})
-    assert "do not work on English lectures" in result.content[0].text
-
-
 def test_mcp_transcribe_schema_lists_the_two_languages(cache_dir: Path):
     """The transcribe tool's schema shows the LLM `sv` and `en` as the only language values."""
     transcribe_tool = next(tool for tool in list_tools(create_server(cache_dir=cache_dir)) if tool.name == "transcribe")
@@ -275,11 +261,6 @@ def test_mcp_transcribe_description_names_the_languages(phrase: str, cache_dir: 
 def test_mcp_transcribe_description_says_a_miss_defaults_to_swedish(cache_dir: Path):
     """The transcribe tool's description warns the LLM that a call with no language and nothing cached runs Swedish."""
     assert "swedish" in tool_description(create_server(cache_dir=cache_dir), "transcribe").lower()
-
-
-def test_mcp_transcribe_description_says_english_has_no_vocabulary_yet(cache_dir: Path):
-    """The transcribe tool's description tells the LLM that Vocabulary terms do not work on English lectures yet."""
-    assert "english lectures" in tool_description(create_server(cache_dir=cache_dir), "transcribe").lower()
 
 
 def test_mcp_transcribe_accepts_youtube_url(cache_dir: Path):

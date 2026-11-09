@@ -997,52 +997,12 @@ def test_bad_language_on_a_cached_source_still_raises(source: Path, cache_dir: P
         transcribe(source, language="de", cache_dir=cache_dir, recognize=never_called)
 
 
-def test_english_with_terms_raises(source: Path, cache_dir: Path):
-    """Terms with `en` raise EnglishVocabularyError."""
-    with pytest.raises(EnglishVocabularyError):
-        transcribe(source, language="en", vocabulary=GAUSS, cache_dir=cache_dir, recognize=never_called)
-
-
-def test_english_vocabulary_error_says_what_to_do(source: Path, cache_dir: Path):
-    """The error tells the caller to call again without terms."""
-    with pytest.raises(EnglishVocabularyError, match="Call again without them"):
-        transcribe(source, language="en", vocabulary=GAUSS, cache_dir=cache_dir, recognize=never_called)
-
-
-def test_english_with_terms_fails_before_download(cache_dir: Path):
-    """Terms with `en` on a video raise without calling the downloader."""
-    with pytest.raises(EnglishVocabularyError):
-        transcribe(WATCH_URL, language="en", vocabulary=GAUSS, cache_dir=cache_dir, download=never_download)
-
-
-def test_english_with_terms_writes_nothing(source: Path, cache_dir: Path):
-    """Terms with `en` cache nothing, so the next plain call transcribes fresh."""
-    with pytest.raises(EnglishVocabularyError):
-        transcribe(source, language="en", vocabulary=GAUSS, cache_dir=cache_dir, recognize=never_called)
-    assert transcribe(source, cache_dir=cache_dir, recognize=SWEDISH).cached is False
-
-
-def test_english_with_terms_leaves_a_swedish_transcript(source: Path, cache_dir: Path):
-    """Terms with `en` on a cached Swedish Transcript leave its text in place."""
-    result = transcribe(source, language="sv", cache_dir=cache_dir, recognize=SWEDISH)
-    with pytest.raises(EnglishVocabularyError):
-        transcribe(source, language="en", vocabulary=GAUSS, cache_dir=cache_dir, recognize=never_called)
-    assert get_transcript(result.transcript_id, cache_dir=cache_dir) == SWEDISH_LINE
-
-
-def test_terms_with_no_language_on_cached_english_raise(source: Path, cache_dir: Path):
-    """Terms with no language on a cached English Transcript raise EnglishVocabularyError."""
-    transcribe(source, language="en", cache_dir=cache_dir, recognize=ENGLISH)
-    with pytest.raises(EnglishVocabularyError):
-        transcribe(source, vocabulary=GAUSS, cache_dir=cache_dir, recognize=never_called)
-
-
-def test_terms_with_no_language_on_cached_english_leave_it(source: Path, cache_dir: Path):
-    """Terms with no language on a cached English Transcript leave its text in place."""
-    result = transcribe(source, language="en", cache_dir=cache_dir, recognize=ENGLISH)
-    with pytest.raises(EnglishVocabularyError):
-        transcribe(source, vocabulary=GAUSS, cache_dir=cache_dir, recognize=never_called)
-    assert get_transcript(result.transcript_id, cache_dir=cache_dir) == ENGLISH_LINE
+def test_english_terms_replace_a_cached_swedish_transcript(source: Path, cache_dir: Path):
+    """Terms with `en` on a cached Swedish Transcript run English with those terms."""
+    received = []
+    transcribe(source, language="sv", cache_dir=cache_dir, recognize=SWEDISH)
+    transcribe(source, language="en", vocabulary=GAUSS, cache_dir=cache_dir, recognize=fake(BOOSTED_GAUSS, received=received))
+    assert received == [GAUSS]
 
 
 def test_blank_vocabulary_on_english_reaches_recognizer_as_none(source: Path, cache_dir: Path):
