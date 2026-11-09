@@ -13,6 +13,7 @@ from munin.core import (
 )
 
 SPEECH = Path(__file__).parent / "fixtures" / "sv_short.m4a"
+SPEECH_EN = Path(__file__).parent / "fixtures" / "en_short.m4a"
 PARAKEET = "istupakov/parakeet-tdt-0.6b-v3-onnx"
 
 
@@ -99,3 +100,13 @@ def test_recognizer_call_without_vocabulary_drops_the_previous_boost(tmp_path: P
     transcribe(SPEECH, vocabulary=Vocabulary(["matrix"], 2.0), cache_dir=tmp_path / "boosted", recognize=recognize)
     plain = transcribe(SPEECH, cache_dir=tmp_path / "plain", recognize=recognize)
     assert "matrix" not in get_transcript(plain.transcript_id, cache_dir=tmp_path / "plain")
+
+
+@pytest.mark.slow
+def test_english_recognizer_call_without_vocabulary_drops_the_previous_boost(tmp_path: Path):
+    """An English recognizer called with None after a boosted call runs unboosted, so "processor" turns back into "process"."""
+    recognize = load_recognizer("en")
+    boosted_dir, plain_dir = tmp_path / "boosted", tmp_path / "plain"
+    transcribe(SPEECH_EN, language="en", vocabulary=Vocabulary(["processor"], 2.0), cache_dir=boosted_dir, recognize=recognize)
+    plain = transcribe(SPEECH_EN, language="en", cache_dir=plain_dir, recognize=recognize)
+    assert "processor" not in get_transcript(plain.transcript_id, cache_dir=plain_dir)

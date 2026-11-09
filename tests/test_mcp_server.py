@@ -237,6 +237,13 @@ def test_mcp_transcribe_english_without_terms_reports_no_vocabulary(source: Path
     assert result.structured_content["vocabulary"] is None
 
 
+def test_mcp_transcribe_english_with_terms_reports_the_vocabulary(source: Path, cache_dir: Path):
+    """The transcribe tool's `en` call with terms reports the terms and alpha it used."""
+    server = create_server(cache_dir=cache_dir, recognize=english_sentence)
+    result = call(server, "transcribe", {"source": str(source), "language": "en", "vocabulary": ["PCB"], "alpha": 1.5})
+    assert result.structured_content["vocabulary"] == {"terms": ["PCB"], "alpha": 1.5}
+
+
 def test_mcp_transcribe_schema_lists_the_two_languages(cache_dir: Path):
     """The transcribe tool's schema shows the LLM `sv` and `en` as the only language values."""
     transcribe_tool = next(tool for tool in list_tools(create_server(cache_dir=cache_dir)) if tool.name == "transcribe")
@@ -261,6 +268,21 @@ def test_mcp_transcribe_description_names_the_languages(phrase: str, cache_dir: 
 def test_mcp_transcribe_description_says_a_miss_defaults_to_swedish(cache_dir: Path):
     """The transcribe tool's description warns the LLM that a call with no language and nothing cached runs Swedish."""
     assert "swedish" in tool_description(create_server(cache_dir=cache_dir), "transcribe").lower()
+
+
+def test_mcp_transcribe_description_says_vocabulary_works_in_both_languages(cache_dir: Path):
+    """The transcribe tool's description tells the LLM a Vocabulary works on Swedish and English lectures alike."""
+    assert "both languages" in tool_description(create_server(cache_dir=cache_dir), "transcribe").lower()
+
+
+def test_mcp_transcribe_description_says_boosting_fixes_what_the_model_heard(cache_dir: Path):
+    """The transcribe tool's description tells the LLM boosting fixes the spelling of a sound the model heard."""
+    assert "heard" in tool_description(create_server(cache_dir=cache_dir), "transcribe").lower()
+
+
+def test_mcp_transcribe_description_says_boosting_makes_no_identifiers(cache_dir: Path):
+    """The transcribe tool's description tells the LLM boosting does not turn two spoken words into one identifier."""
+    assert "identifier" in tool_description(create_server(cache_dir=cache_dir), "transcribe").lower()
 
 
 def test_mcp_transcribe_accepts_youtube_url(cache_dir: Path):
