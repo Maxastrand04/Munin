@@ -160,9 +160,9 @@ def transcribe(
     entry_path = _entry_path(cache_dir, transcript_id)
     vocabulary = vocabulary if vocabulary and vocabulary.terms else None
     cached = _read_entry(entry_path) if entry_path.is_file() else None
-    run_language = _run_language(lecture_language, cached)
     if cached is not None and vocabulary is None and lecture_language in (None, cached.language):
         return cached._result(transcript_id, cached=True)
+    run_language = _run_language(lecture_language, cached)
     if isinstance(resolved, Video):
         entry = _transcribe_video(resolved, entry_path.parent, download, recognize, vocabulary, run_language)
     else:
