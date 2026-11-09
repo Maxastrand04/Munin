@@ -314,7 +314,8 @@ def _schema() -> dict:
             "without brackets, and Slide numbers count from 1. Math is LaTeX, so escape every "
             "backslash as \\\\ in JSON. Task, answer, explanation and a step's reason are prose with math "
             "between $...$, never $$, and a literal dollar sign is \\\\$. A step's calculation is LaTeX "
-            "alone, with no $. Each step is one calculation, and its reason one short sentence. "
+            "alone, with no $. Each step is one calculation about one object, such as one matrix, and its reason one short sentence. "
+            "Write the steps in the order the source gives them, and write no fact twice in one exercise. "
             "Write the whole Outline, every step's reason included, in the lecture's language."
         ),
         "$ref": "#/$defs/main-topic",

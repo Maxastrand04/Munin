@@ -86,7 +86,8 @@ def create_server(
     It asks for LaTeX for every math expression,
     between `$...$` in explanations, tasks, answers and step reasons, never
     `$$`, and with no `$` in a step's calculation, and for each step to be
-    one calculation with at most one short sentence on why. When a
+    one calculation about one object with at most one short sentence on why,
+    in the order the source gives them, with no fact twice. When a
     render fails, it says to fix every problem listed, broken LaTeX
     included, and render again.
     `read_slides(transcript_id: str, deck: str)` attaches the Deck through the
@@ -238,8 +239,10 @@ def create_server(
           In an explanation, a task, an answer and a step's reason, put each
           piece of math between `$...$` and write the rest as plain prose, with
           `\\$` for a literal dollar sign. Write a step's calculation as LaTeX
-          alone, with no `$`. Make each step one calculation, with at most one
-          short sentence on why in its reason.
+          alone, with no `$`. Make each step one calculation about one object,
+          such as one matrix, with at most one short sentence on why in its
+          reason. Write the steps in the order the source gives them, and write
+          no fact twice in one exercise.
         - Write the whole Outline, every node's text and every step's reason
           included, in the lecture's language, the `language` `transcribe` returned.
 
@@ -310,8 +313,10 @@ def create_server(
           In an explanation, a task, an answer and a step's reason, put each
           piece of math between `$...$` and write the rest as plain prose, with
           `\\$` for a literal dollar sign. Write a step's calculation as LaTeX
-          alone, with no `$`. Make each step one calculation, with at most one
-          short sentence on why in its reason.
+          alone, with no `$`. Make each step one calculation about one object,
+          such as one matrix, with at most one short sentence on why in its
+          reason. Write the steps in the order the source gives them, and write
+          no fact twice in one exercise.
         - Write the whole Outline, every node's text and every step's reason
           included, in the Deck's language, judged from its Slides. Pass that
           language as `language`, `sv` or `en`. A render with no `language` is
