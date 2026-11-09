@@ -1,28 +1,28 @@
 # Munin
 
-Munin is a local MCP server that turns a recorded Swedish lecture into a mindmap, and every node links back to the second in the lecture it came from. It is also the engine a planned hosted app will build on.
+Munin is a local MCP server that turns a recorded Swedish or English lecture into a mindmap, and every node links back to the second in the lecture it came from. It is also the engine a planned hosted app will build on.
 
-Klang's [Pianissimo](https://huggingface.co/KlangAI/pianissimo-sv) model does the transcription. It's speech-to-text only, Swedish only, with word timestamps and phrase boosting. An LLM in your MCP client (Claude Code or Claude Desktop) reads the transcript and writes the outline. The tools handle everything with one right answer: downloading, cleaning segments, caching, and building links.
+Klang's [Pianissimo](https://huggingface.co/KlangAI/pianissimo-sv) model transcribes Swedish lectures. It's speech-to-text only, Swedish only, with word timestamps and phrase boosting. English lectures run on NVIDIA's [Parakeet TDT 0.6B v3](https://huggingface.co/nvidia/parakeet-tdt-0.6b-v3), loaded from the ONNX conversion at [`istupakov/parakeet-tdt-0.6b-v3-onnx`](https://huggingface.co/istupakov/parakeet-tdt-0.6b-v3-onnx) and used under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/). Its phrase boosting runs through the same vendored code as Pianissimo, so English lectures take a Vocabulary too. See [ADR-0022](docs/adr/0022-english-lectures-use-parakeet-v3.md). An LLM in your MCP client (Claude Code or Claude Desktop) reads the transcript and writes the outline. The tools handle everything with one right answer: downloading, cleaning segments, caching, and building links.
 
 ## Status
 
-`transcribe`, `get_transcript`, `read_slides` and `render_mindmap` work on local files, YouTube URLs and KTH Play video URLs, and `transcribe` takes an optional Vocabulary of course terms to spell correctly. `read_deck` and `render_deck_mindmap` make a Mindmap from a slide PDF alone, for courses with no recording. The MVP target is the 7:11 clip [SF1624, Föreläsning 4: Matriser](https://www.youtube.com/watch?v=sZipb-R1hfg).
+`transcribe`, `get_transcript`, `read_slides` and `render_mindmap` work on local files, YouTube URLs and KTH Play video URLs, and `transcribe` takes an optional lecture language, `sv` or `en`, and an optional Vocabulary of course terms to spell correctly. `read_deck` and `render_deck_mindmap` make a Mindmap from a slide PDF alone, for courses with no recording. The MVP target is the 7:11 clip [SF1624, Föreläsning 4: Matriser](https://www.youtube.com/watch?v=sZipb-R1hfg).
 
 ## Tools
 
 | Tool | Does |
 |---|---|
-| `transcribe(source, vocabulary?, alpha?)` | Takes a YouTube URL, a KTH Play video URL or a local file, runs Pianissimo with VAD, caches the Transcript, returns its ID and stats. Vocabulary terms are case sensitive and boosted at `alpha`, 0 to 2, default 1.0. A call with terms reruns the Source and replaces its cached Transcript under the same ID |
+| `transcribe(source, vocabulary?, alpha?, language?)` | Takes a YouTube URL, a KTH Play video URL or a local file, runs Pianissimo for `sv` or Parakeet for `en` with VAD, caches the Transcript with its language, returns its ID, stats and language. With no `language` it returns the cached Transcript, or runs Swedish when nothing is cached. A different `language` reruns the Source and replaces the cached Transcript under the same ID. Vocabulary terms are case sensitive and boosted at `alpha`, 0 to 2, default 1.0. A call with terms reruns the Source and replaces its cached Transcript under the same ID. Terms work the same in English |
 | `get_transcript(id)` | Returns `[m:ss] text` lines for the LLM |
 | `read_slides(id, deck)` | Attaches a PDF of lecture slides (a Deck) to a Transcript, replacing any earlier Deck, and returns each Slide's number, text and image for the LLM to match against the Transcript |
-| `get_outline_schema()` | Returns the JSON Schema an Outline must follow, plus a sample exempel node and övning node with LaTeX in the task, steps and answer. The render tools tell the LLM to call it before writing an Outline |
+| `get_outline_schema()` | Returns the JSON Schema an Outline must follow, plus a sample example node and exercise node with LaTeX in the task, steps and answer. The render tools tell the LLM to call it before writing an Outline |
 | `render_mindmap(id, outline)` | Writes an interactive HTML Mindmap with Topic circles and Radial rings from a JSON Outline, turning every stamp into a link to the Source and showing the Slides a node lists in its panel. Returns the page path. An Outline that breaks the schema, or has a malformed stamp, a stamp past the Source's end, or a Slide number it cannot link, writes nothing and fails with every problem listed by its path of labels |
 | `read_deck(deck)` | Reads a PDF of lecture slides on its own, with no recording, keeps a copy in the cache, and returns its Deck ID and each Slide's number, text and image |
-| `render_deck_mindmap(deck_id, outline)` | Writes the same Mindmap from a JSON Outline written from the Slides alone, showing the Slides a node lists. The page has no Source links. Returns the page path. Any stamp, a Slide number past the Deck's last Slide, or a break from the schema writes nothing and fails with every problem listed |
+| `render_deck_mindmap(deck_id, outline, language?)` | Writes the same Mindmap from a JSON Outline written from the Slides alone, showing the Slides a node lists. The page has no Source links and is in `language`, `sv` or `en`, Swedish when none is given. Munin never detects or stores a Deck's language, so the LLM judges it from the Slides and passes it. Returns the page path. Any stamp, a Slide number past the Deck's last Slide, or a break from the schema writes nothing and fails with every problem listed |
 
-The `lecture_to_mindmap` prompt takes a Source, a Deck path, or both. With both, it adds a `read_slides` step before the Outline is written. With only a Deck path, it runs `read_deck` and `render_deck_mindmap` instead of transcribing. With neither, it is an error.
+The `lecture_to_mindmap` prompt takes a Source, a Deck path, or both, and an optional language, `sv` or `en`. With a Source it passes the language to `transcribe`, and with only a Deck path it passes it to `render_deck_mindmap`. With both, it adds a `read_slides` step before the Outline is written. With only a Deck path, it runs `read_deck` and `render_deck_mindmap` instead of transcribing. With neither, it is an error.
 
-The `slides_to_mindmap` prompt takes only a Deck path and runs the same `read_deck` and `render_deck_mindmap` steps. Use it from a slash command, since Claude Code fills prompt arguments by position and the first one always becomes `lecture_to_mindmap`'s Source.
+The `slides_to_mindmap` prompt takes a Deck path and an optional language, in that order, and runs the same `read_deck` and `render_deck_mindmap` steps. With no language, it asks the LLM to write the Outline in the Deck's language and render with it. Use it from a slash command, since Claude Code fills prompt arguments by position and the first one always becomes `lecture_to_mindmap`'s Source.
 
 ## Measured on an M1 Pro (ONNX int8, CPU only)
 
@@ -54,7 +54,7 @@ uv run munin
 
 Earlier versions ran as `klang-notes-mcp` and cached Transcripts in a `klang-notes` cache folder. Munin ignores that folder, so you can delete it.
 
-The first transcription downloads the Pianissimo weights, and the loaded model takes about 2.4 GB of RAM. Transcripts are cached in the per-user cache folder. Mindmap pages land in `mindmaps/` at the repo root, which git ignores. Open one straight from disk in Chrome or Safari. Timestamp links work for mp4 and m4a in both.
+The first transcription in each language downloads that language's model weights. Pianissimo takes about 2.4 GB of RAM once loaded, and Parakeet peaked at 2.47 GB on a 6:32 clip. Transcripts are cached in the per-user cache folder. Mindmap pages land in `mindmaps/` at the repo root, which git ignores. Open one straight from disk in Chrome or Safari. Timestamp links work for mp4 and m4a in both.
 
 Generated Mindmaps use the approved Linen theme, ellipse nodes, an explanation panel,
 and a small settings control for Radial rings (the default) or Topic circles. The opening
@@ -64,8 +64,8 @@ zoom. Timestamp links open the Source separately. The page embeds
 its styles and scripts, so the Mindmap itself works offline.
 
 An Outline is a JSON tree of typed nodes. One main-topic sits at the root, then topic, slide and term
-nodes, with exempel and övning nodes under any of them. `get_outline_schema` returns
-the full schema. A node's `explanation` appears in its panel, and an exempel or övning
+nodes, with example and exercise nodes under any of them. `get_outline_schema` returns
+the full schema. A node's `explanation` appears in its panel, and an example or exercise
 shows its task, steps and answer there. The renderer does not generate explanations;
 it uses the supplied Outline.
 

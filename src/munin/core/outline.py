@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from typing import NamedTuple
 
 from munin.core.errors import OutlineProblem
+from munin.core.language import Language
 from munin.core.latex import BrokenLatex, calculation_problems, prose_problems
 from munin.core.stamps import display_stamp, stamp_seconds
 
@@ -49,8 +50,8 @@ _PARTS: dict[str, dict[str, _Part]] = {
     "topic": _TREE_PARTS,
     "slide": _TREE_PARTS,
     "term": _TREE_PARTS,
-    "exempel": _WORKED_PARTS,
-    "övning": _WORKED_PARTS,
+    "example": _WORKED_PARTS,
+    "exercise": _WORKED_PARTS,
 }
 _TREE_TYPES = ("main-topic", "topic", "slide", "term")
 # Which parent types each type may sit under. The main-topic sits only at the root.
@@ -59,13 +60,21 @@ _PARENTS: dict[str, tuple[str, ...]] = {
     "topic": ("main-topic",),
     "slide": ("topic",),
     "term": ("slide",),
-    "exempel": _TREE_TYPES,
-    "övning": _TREE_TYPES,
+    "example": _TREE_TYPES,
+    "exercise": _TREE_TYPES,
+}
+
+# The word the page names each worked type with, per page language. The page adds it to the label as a prefix, so no label may start with one of its language's.
+WORKED_TITLES: dict[Language, dict[str, str]] = {
+    "sv": {"example": "Exempel", "exercise": "Övning"},
+    "en": {"example": "Example", "exercise": "Exercise"},
 }
 
 _CONTROL = re.compile(r"[\x00-\x1f\x7f-\x9f]")
-# The page adds these prefixes to exempel and övning labels, so no label may start with one.
-_WORKED_PREFIX = re.compile(r"\s*(exempel|övning)\s*:", re.IGNORECASE)
+_WORKED_PREFIX: dict[Language, re.Pattern[str]] = {
+    language: re.compile(rf"\s*({'|'.join(titles.values())})\s*:", re.IGNORECASE)
+    for language, titles in WORKED_TITLES.items()
+}
 _NO_CONTROL = "^[^\\u0000-\\u001f\\u007f-\\u009f]*$"
 _NON_BLANK = "\\S"
 _STAMP = "^(\\d+:[0-5]\\d|\\d+:[0-5]\\d:[0-5]\\d)$"
@@ -78,9 +87,10 @@ class OutlineSchema:
     """What `get_outline_schema` hands the LLM before it writes an Outline.
 
     `schema` is a JSON Schema, draft 2020-12, as a dict that `json.dumps`
-    accepts. `samples` is two bare nodes the LLM can copy: an exempel first,
-    then an övning, each with LaTeX between `$...$` in its task and its
-    answer, and LaTeX with no `$` in at least one step's calculation.
+    accepts. `samples` is two bare nodes the LLM can copy: an example written
+    in Swedish first, then an exercise written in English, each with LaTeX
+    between `$...$` in its task and its answer, and LaTeX with no `$` in at
+    least one step's calculation.
     """
 
     schema: dict
@@ -88,7 +98,7 @@ class OutlineSchema:
 
 
 def get_outline_schema() -> OutlineSchema:
-    """Return the Outline's JSON Schema and a sample exempel node and övning node.
+    """Return the Outline's JSON Schema and a sample example node and exercise node.
 
     An Outline is one JSON object, the main-topic node. Every node is an
     object with a `type` and, for that type, exactly these parts, every one
@@ -98,7 +108,7 @@ def get_outline_schema() -> OutlineSchema:
       `explanation` (a string), `stamps` (a list of strings such as `"4:34"`
       or `"1:10:05"`, no brackets), `slides` (a list of integers, Slide
       numbers counted from 1) and `children` (a list of nodes).
-    - `exempel` and `övning`: `type`, `label`, `stamps`, `slides`, `task`
+    - `example` and `exercise`: `type`, `label`, `stamps`, `slides`, `task`
       (a string), `steps` (a list of objects with exactly `calculation`, a
       string, and `reason`, a string) and `answer` (a string). They have no
       `explanation` and no `children`.
@@ -108,16 +118,18 @@ def get_outline_schema() -> OutlineSchema:
     inline, never `$$`. A task, an answer, an explanation and a step's
     reason are prose with math between `$...$`, and a literal dollar sign is
     `\\$`. A step's calculation is LaTeX alone, with no `$`. Each step is one
-    calculation, and its reason at most one short Swedish sentence on why.
-    The schema's description says all of this. One table in this module
+    calculation, and its reason at most one short sentence on why. The whole
+    Outline, every step's reason included, is written in the lecture's
+    language, and the description names no language. The schema's
+    description says all of this. One table in this module
     says which parts each type has and which must be non-blank, and both the
     schema and the check are built from it, so making a part required is a
     one-line change.
 
     Nesting: the root is the one main-topic. A topic sits under the
-    main-topic, a slide under a topic, and a term under a slide. An exempel or
-    övning sits under any node of the other four types, never under an
-    exempel or övning.
+    main-topic, a slide under a topic, and a term under a slide. An example or
+    exercise sits under any node of the other four types, never under an
+    example or exercise.
 
     The schema states all of the above, so an Outline that passes the schema
     passes the check's shape and nesting rules. The samples each pass the
@@ -128,15 +140,16 @@ def get_outline_schema() -> OutlineSchema:
 
 
 def check_outline(
-    outline: object, *, duration_s: float | None, deck_pages: int | None
+    outline: object, *, duration_s: float | None, deck_pages: int | None, language: Language
 ) -> tuple[OutlineProblem, ...]:
     """Return every problem with a parsed Outline, in Outline order, as `render_mindmap` describes them.
 
     `duration_s` is the Source's length in seconds, or None when there is no
     Source, so any stamp is a problem. `deck_pages` is the Deck's Slide count,
-    or None when there is no Deck, so any Slide number is a problem.
+    or None when there is no Deck, so any Slide number is a problem. `language`
+    is the page's language, whose example and exercise prefixes no label may start with.
     """
-    check = _Check(duration_s, deck_pages)
+    check = _Check(duration_s, deck_pages, language)
     if not isinstance(outline, dict):
         check.add((), "the Outline must be one main-topic node, not a list or a value")
         return tuple(check.problems)
@@ -159,9 +172,10 @@ def _node_path_label(node: object, position: int) -> str:
 class _Check:
     """Collects problems while walking an Outline, parents before children."""
 
-    def __init__(self, duration_s: float | None, deck_pages: int | None) -> None:
+    def __init__(self, duration_s: float | None, deck_pages: int | None, language: Language) -> None:
         self.duration_s = duration_s
         self.deck_pages = deck_pages
+        self.language = language
         self.problems: list[OutlineProblem] = []
 
     def add(self, path: tuple[str, ...], message: str) -> None:
@@ -216,12 +230,12 @@ class _Check:
                 self.add(path, _latex_message(key, piece))
 
     def label_prefix(self, path: tuple[str, ...], label: object) -> None:
-        prefix = _WORKED_PREFIX.match(label) if isinstance(label, str) else None
+        prefix = _WORKED_PREFIX[self.language].match(label) if isinstance(label, str) else None
         if prefix:
             self.add(
                 path,
-                f"label starts with {_quoted(prefix.group(1).capitalize() + ':')}; write an example or exercise "
-                "as an exempel or övning node and leave the prefix out, since the page adds it",
+                f"label starts with {_quoted(prefix.group(1).capitalize() + ':')}; use an example or exercise "
+                "node and leave the prefix out, since the page adds it",
             )
 
     def step(self, path: tuple[str, ...], number: int, step: dict) -> None:
@@ -300,7 +314,8 @@ def _schema() -> dict:
             "without brackets, and Slide numbers count from 1. Math is LaTeX, so escape every "
             "backslash as \\\\ in JSON. Task, answer, explanation and a step's reason are prose with math "
             "between $...$, never $$, and a literal dollar sign is \\\\$. A step's calculation is LaTeX "
-            "alone, with no $. Each step is one calculation, and its reason one short Swedish sentence."
+            "alone, with no $. Each step is one calculation, and its reason one short sentence. "
+            "Write the whole Outline, every step's reason included, in the lecture's language."
         ),
         "$ref": "#/$defs/main-topic",
         "$defs": defs,
@@ -341,8 +356,8 @@ def _part_schema(kind: str, required: bool, nodes: dict | None) -> dict:
 
 
 def _samples() -> tuple[dict, dict]:
-    exempel = {
-        "type": "exempel",
+    example = {
+        "type": "example",
         "label": "Förenkla ett bråk",
         "stamps": [],
         "slides": [],
@@ -353,13 +368,13 @@ def _samples() -> tuple[dict, dict]:
         ],
         "answer": "$\\frac{3}{4}$",
     }
-    ovning = {
-        "type": "övning",
-        "label": "Matrisprodukt",
+    exercise = {
+        "type": "exercise",
+        "label": "Matrix product",
         "stamps": [],
         "slides": [],
-        "task": "Beräkna $\\begin{pmatrix} 1 & 2 \\end{pmatrix} \\begin{pmatrix} 3 \\\\ 4 \\end{pmatrix}$",
-        "steps": [{"calculation": "1 \\cdot 3 + 2 \\cdot 4", "reason": "rad gånger kolonn"}],
+        "task": "Compute $\\begin{pmatrix} 1 & 2 \\end{pmatrix} \\begin{pmatrix} 3 \\\\ 4 \\end{pmatrix}$",
+        "steps": [{"calculation": "1 \\cdot 3 + 2 \\cdot 4", "reason": "row times column"}],
         "answer": "$\\begin{pmatrix} 11 \\end{pmatrix}$",
     }
-    return exempel, ovning
+    return example, exercise

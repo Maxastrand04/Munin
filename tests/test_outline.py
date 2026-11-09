@@ -12,7 +12,9 @@ from munin.core import (
     transcribe,
 )
 
-NODE_TYPES = ["main-topic", "topic", "slide", "term", "exempel", "övning"]
+TREE_TYPES = ["main-topic", "topic", "slide", "term"]
+WORKED_TYPES = ["example", "exercise"]
+SWEDISH_LETTERS = re.compile("[åäöÅÄÖ]")
 
 
 def one_sentence(wav: Path, vocabulary: Vocabulary | None):
@@ -50,42 +52,85 @@ def test_schema_description_forbids_double_dollars():
     assert "$$" in get_outline_schema().schema["description"]
 
 
-@pytest.mark.parametrize("kind", NODE_TYPES)
-def test_schema_names_every_node_type(kind: str):
-    """The schema names each of the six node types."""
-    assert f'"{kind}"' in json.dumps(get_outline_schema().schema, ensure_ascii=False)
+def test_schema_description_asks_for_the_lectures_language():
+    """The schema's description asks for the Outline in the lecture's language."""
+    assert "the lecture's language" in get_outline_schema().schema["description"]
 
 
-def test_samples_are_an_exempel_then_an_ovning():
-    """The samples are an exempel node first and an övning node second."""
-    assert [sample["type"] for sample in get_outline_schema().samples] == ["exempel", "övning"]
+def test_schema_description_names_no_swedish():
+    """The schema's description does not ask for Swedish."""
+    assert "Swedish" not in get_outline_schema().schema["description"]
 
 
-@pytest.mark.parametrize("index", [0, 1], ids=["exempel", "övning"])
+@pytest.mark.parametrize("kind", [*TREE_TYPES, *WORKED_TYPES])
+def test_schema_defines_every_node_type(kind: str):
+    """The schema defines each of the six node types."""
+    assert kind in get_outline_schema().schema["$defs"]
+
+
+@pytest.mark.parametrize("kind", ["exempel", "övning"])
+def test_schema_defines_no_swedish_node_type(kind: str):
+    """The schema defines no node type under a Swedish name."""
+    assert kind not in get_outline_schema().schema["$defs"]
+
+
+@pytest.mark.parametrize("kind", WORKED_TYPES)
+def test_schema_gives_an_example_or_exercise_its_parts(kind: str):
+    """The schema gives an example or exercise its task, steps and answer, and no explanation or children."""
+    required = get_outline_schema().schema["$defs"][kind]["required"]
+    assert set(required) == {"type", "label", "stamps", "slides", "task", "steps", "answer"}
+
+
+@pytest.mark.parametrize("kind", WORKED_TYPES)
+@pytest.mark.parametrize("parent", TREE_TYPES)
+def test_schema_lets_an_example_or_exercise_sit_under_every_other_type(kind: str, parent: str):
+    """The schema offers an example or exercise among the children of each of the four other types."""
+    children = get_outline_schema().schema["$defs"][parent]["properties"]["children"]["items"]["oneOf"]
+    assert {"$ref": f"#/$defs/{kind}"} in children
+
+
+def test_samples_are_an_example_then_an_exercise():
+    """The samples are an example node first and an exercise node second."""
+    assert [sample["type"] for sample in get_outline_schema().samples] == WORKED_TYPES
+
+
+def test_example_sample_is_written_in_swedish():
+    """The example sample is written in Swedish, so its text holds a Swedish letter."""
+    example, _ = get_outline_schema().samples
+    assert SWEDISH_LETTERS.search(json.dumps(example, ensure_ascii=False))
+
+
+def test_exercise_sample_is_written_in_english():
+    """The exercise sample is written in English, so its text holds no Swedish letter."""
+    _, exercise = get_outline_schema().samples
+    assert not SWEDISH_LETTERS.search(json.dumps(exercise, ensure_ascii=False))
+
+
+@pytest.mark.parametrize("index", [0, 1], ids=["example", "exercise"])
 def test_sample_task_carries_latex_between_dollars(index: int):
     """Each sample's task is prose with LaTeX between `$...$`."""
     assert re.search(r"\$[^$]*\\[^$]*\$", get_outline_schema().samples[index]["task"])
 
 
-@pytest.mark.parametrize("index", [0, 1], ids=["exempel", "övning"])
+@pytest.mark.parametrize("index", [0, 1], ids=["example", "exercise"])
 def test_sample_steps_carry_latex(index: int):
     """At least one of each sample's steps carries LaTeX in its calculation."""
     assert any("\\" in step["calculation"] for step in get_outline_schema().samples[index]["steps"])
 
 
-@pytest.mark.parametrize("index", [0, 1], ids=["exempel", "övning"])
+@pytest.mark.parametrize("index", [0, 1], ids=["example", "exercise"])
 def test_sample_calculations_carry_no_dollars(index: int):
     """A step's calculation is LaTeX alone, so no sample calculation holds a `$`."""
     assert not any("$" in step["calculation"] for step in get_outline_schema().samples[index]["steps"])
 
 
-@pytest.mark.parametrize("index", [0, 1], ids=["exempel", "övning"])
+@pytest.mark.parametrize("index", [0, 1], ids=["example", "exercise"])
 def test_sample_answer_carries_latex_between_dollars(index: int):
     """Each sample's answer holds LaTeX between `$...$`."""
     assert re.search(r"\$[^$]*\\[^$]*\$", get_outline_schema().samples[index]["answer"])
 
 
-@pytest.mark.parametrize("index", [0, 1], ids=["exempel", "övning"])
+@pytest.mark.parametrize("index", [0, 1], ids=["example", "exercise"])
 def test_sample_renders_under_a_slide_node(transcript_id: str, cache_dir: Path, tmp_path: Path, index: int):
     """Each sample, placed under a slide node, passes the check and renders."""
     outline = under_a_slide_node(get_outline_schema().samples[index])

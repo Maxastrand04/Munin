@@ -3,6 +3,7 @@
 import base64
 import json
 import re
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
@@ -104,7 +105,13 @@ def _reason(expression: str) -> str | None:
 
 @lru_cache(maxsize=1)
 def _engine() -> MiniRacer:
-    engine = MiniRacer()
+    """Return the one V8 engine with KaTeX and the check loaded, built on first use.
+
+    It is built on a thread with no event loop, so it runs on a loop of its
+    own and outlives any loop running where it was first asked for.
+    """
+    with ThreadPoolExecutor(max_workers=1) as builder:
+        engine = builder.submit(MiniRacer).result()
     engine.eval(katex_js())
     engine.eval(_CHECK)
     return engine

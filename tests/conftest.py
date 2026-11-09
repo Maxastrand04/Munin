@@ -1,8 +1,13 @@
+import json
 import shutil
 import wave
 from pathlib import Path
+from types import SimpleNamespace
 
+import onnx_asr
 import pytest
+
+from munin.core import Fragment, transcribe
 
 SPEECH = Path(__file__).parent / "fixtures" / "sv_short.m4a"
 SAMPLE_RATE = 16_000
@@ -75,3 +80,49 @@ def five_second_source(tmp_path: Path) -> Path:
         audio.setframerate(SAMPLE_RATE)
         audio.writeframes(bytes(2 * 5 * SAMPLE_RATE))
     return path
+
+
+@pytest.fixture
+def speech_library(monkeypatch: pytest.MonkeyPatch) -> SimpleNamespace:
+    """Fakes onnx-asr, the outside library, and records what each load asked for."""
+    library = SimpleNamespace(repos=[], model_arguments=[], vad_arguments=[], silence_breaks=[])
+
+    class FakeAsr:
+        asr = SimpleNamespace()
+
+        def with_vad(self, vad, **kwargs):
+            library.silence_breaks.append(kwargs.get("min_silence_duration_ms"))
+            return self
+
+        def recognize(self, path):
+            return [SimpleNamespace(start=1.2, end=3.0, text="Hello there.")]
+
+    def load_model(repo, *args, **kwargs):
+        library.repos.append(repo)
+        library.model_arguments.append(kwargs)
+        return FakeAsr()
+
+    def load_vad(name, *args, **kwargs):
+        library.vad_arguments.append(kwargs)
+        return object()
+
+    monkeypatch.setattr(onnx_asr, "load_model", load_model)
+    monkeypatch.setattr(onnx_asr, "load_vad", load_vad)
+    return library
+
+
+@pytest.fixture
+def legacy_transcript_id(source: Path, cache_dir: Path) -> str:
+    """A Swedish Transcript whose cache entry is rewritten without its `language`, as before lecture languages existed."""
+    transcript_id = transcribe(
+        source,
+        language="sv",
+        cache_dir=cache_dir,
+        recognize=lambda wav, vocabulary: [Fragment(1.2, 3.0, "Idag ska vi prata om matriser.")],
+    ).transcript_id
+    for entry in cache_dir.rglob("*.json"):
+        stored = json.loads(entry.read_text(encoding="utf-8"))
+        if isinstance(stored, dict) and "language" in stored:
+            del stored["language"]
+            entry.write_text(json.dumps(stored, ensure_ascii=False), encoding="utf-8")
+    return transcript_id

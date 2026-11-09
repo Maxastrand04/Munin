@@ -31,7 +31,7 @@ DEMO_OUTLINE = json.loads(
 TEN_MINUTES_S = 600
 SAMPLE_RATE = 8_000
 TYPES_BY_DEPTH = ["main-topic", "topic", "slide", "term"]
-WORKED_PREFIXES = {"Exempel: ": "exempel", "Övning: ": "övning"}
+WORKED_PREFIXES = {"Exempel: ": "example", "Övning: ": "exercise"}
 
 
 def node(kind: str, label: str, *children: dict, stamps=(), slides=(), explanation: str = "") -> dict:
@@ -47,7 +47,7 @@ def node(kind: str, label: str, *children: dict, stamps=(), slides=(), explanati
 
 
 def worked(kind: str, label: str) -> dict:
-    """An exempel or övning node with a task and nothing else."""
+    """An example or exercise node with a task and nothing else."""
     return {"type": kind, "label": label, "stamps": [], "slides": [], "task": "Lös uppgiften", "steps": [], "answer": ""}
 
 
@@ -113,25 +113,45 @@ def ten_minute_source(tmp_path: Path) -> Path:
     return path
 
 
+LECTURE_SENTENCES = {"sv": "En föreläsning.", "en": "A lecture."}
+
+
 @pytest.fixture
-def render_outline(ten_minute_source: Path, cache_dir: Path, tmp_path: Path):
-    """Render an Outline against a 10-minute Source into a folder of its own and return the page's URL."""
-    transcript = transcribe(
-        ten_minute_source,
-        cache_dir=cache_dir,
-        recognize=lambda wav, vocabulary: [Fragment(0, 1, "En föreläsning.")],
-    )
+def render_outline_in(ten_minute_source: Path, cache_dir: Path, tmp_path: Path):
+    """Return a function that, given a language, returns a function rendering an Outline against a 10-minute Source in that language."""
 
-    def render(outline: str | dict, name: str = "mindmap") -> str:
-        """Render an Outline given as a dict, or as headings `outline_from_headings` reads."""
-        return render_mindmap(
-            transcript.transcript_id,
-            outline_from_headings(outline) if isinstance(outline, str) else outline,
-            cache_dir=cache_dir,
-            output_dir=tmp_path / name,
-        ).page.as_uri()
+    def renderer(language: str):
+        transcript = transcribe(
+            ten_minute_source,
+            language=language,
+            cache_dir=cache_dir / language,
+            recognize=lambda wav, vocabulary: [Fragment(0, 1, LECTURE_SENTENCES[language])],
+        )
 
-    return render
+        def render(outline: str | dict, name: str = "mindmap") -> str:
+            """Render an Outline given as a dict, or as headings `outline_from_headings` reads, and return the page's URL."""
+            return render_mindmap(
+                transcript.transcript_id,
+                outline_from_headings(outline) if isinstance(outline, str) else outline,
+                cache_dir=cache_dir / language,
+                output_dir=tmp_path / name,
+            ).page.as_uri()
+
+        return render
+
+    return renderer
+
+
+@pytest.fixture
+def render_outline(render_outline_in):
+    """Render an Outline against a Swedish 10-minute Source into a folder of its own and return the page's URL."""
+    return render_outline_in("sv")
+
+
+@pytest.fixture
+def render_english_outline(render_outline_in):
+    """Render an Outline against an English 10-minute Source into a folder of its own and return the page's URL."""
+    return render_outline_in("en")
 
 
 @pytest.fixture
@@ -307,8 +327,8 @@ def edge_colours(page) -> list[str]:
     ],
     ids=["main-topic", "topic", "slide", "term"],
 )
-def test_exempel_or_ovning_is_orange_under_any_parent(page, render_outline, prefix, outline):
-    """An exempel or övning node is orange under a main-topic, topic, slide or term node."""
+def test_example_or_exercise_is_orange_under_any_parent(page, render_outline, prefix, outline):
+    """An example or exercise node is orange under a main-topic, topic, slide or term node."""
     show_every_node(page, render_outline(outline.format(label=f"{prefix}Rad gånger kolonn")))
     assert is_orange(group_colours(page)[f"{prefix}Rad gånger kolonn"])
 
@@ -330,7 +350,7 @@ def test_main_topic_stays_neutral_with_example_label(page, render_outline):
 
 
 def test_sibling_of_example_keeps_topic_colour(page, render_outline):
-    """A node next to an exempel node keeps its topic's colour."""
+    """A node next to an example node keeps its topic's colour."""
     show_every_node(page, render_outline(EXAMPLE_OUTLINE))
     colours = group_colours(page)
     assert colours["Begrepp"] == colours["A"]
@@ -342,24 +362,24 @@ def test_topic_labelled_exempel_is_not_orange(page, render_outline):
     assert not is_orange(group_colours(page)["Exempel på rader"])
 
 
-def test_edge_into_an_exempel_keeps_its_topic_colour(page, render_outline):
-    """The edge from a slide node into an exempel is drawn in the topic's colour, not orange."""
-    outline = node("main-topic", "Matriser", node("topic", "A", node("slide", "Slide", worked("exempel", "Rad"))))
+def test_edge_into_an_example_keeps_its_topic_colour(page, render_outline):
+    """The edge from a slide node into an example is drawn in the topic's colour, not orange."""
+    outline = node("main-topic", "Matriser", node("topic", "A", node("slide", "Slide", worked("example", "Rad"))))
     show_every_node(page, render_outline(outline))
     assert not any(is_orange(colour) for colour in edge_colours(page))
 
 
-def test_edge_from_the_main_topic_into_an_exempel_is_orange(page, render_outline):
-    """An exempel directly under the main topic has an orange edge."""
-    show_every_node(page, render_outline(node("main-topic", "Matriser", worked("exempel", "Rad"))))
+def test_edge_from_the_main_topic_into_an_example_is_orange(page, render_outline):
+    """An example directly under the main topic has an orange edge."""
+    show_every_node(page, render_outline(node("main-topic", "Matriser", worked("example", "Rad"))))
     assert all(is_orange(colour) for colour in edge_colours(page))
 
 
-def test_exempel_under_the_main_topic_takes_no_topic_colour(page, render_outline):
-    """A topic after an exempel directly under the main topic gets the colour it would have had without it."""
+def test_example_under_the_main_topic_takes_no_topic_colour(page, render_outline):
+    """A topic after an example directly under the main topic gets the colour it would have had without it."""
     show_every_node(page, render_outline(node("main-topic", "Matriser", node("topic", "A")), "alone"))
     alone = group_colours(page)["A"]
-    after = node("main-topic", "Matriser", worked("exempel", "Rad"), node("topic", "A"))
+    after = node("main-topic", "Matriser", worked("example", "Rad"), node("topic", "A"))
     show_every_node(page, render_outline(after, "after"))
     assert group_colours(page)["A"] == alone
 
@@ -1033,8 +1053,8 @@ def under_a_slide(*children: dict) -> dict:
     return node("main-topic", "Matriser", node("topic", "A", node("slide", "Slide", *children)))
 
 
-def worked_under_a_slide(kind: str = "exempel", **parts) -> dict:
-    """The main topic Matriser, topic A, slide node Slide, and under it one exempel or övning labelled Rad gånger kolonn."""
+def worked_under_a_slide(kind: str = "example", **parts) -> dict:
+    """The main topic Matriser, topic A, slide node Slide, and under it one example or exercise labelled Rad gånger kolonn."""
     return under_a_slide({**worked(kind, "Rad gånger kolonn"), **parts})
 
 
@@ -1047,7 +1067,7 @@ def click_card(page, text: str) -> None:
     page.locator(".node-label").filter(has_text=re.compile(f"{re.escape(text)}$")).dispatch_event("click")
 
 
-@pytest.mark.parametrize("kind, prefix", [("exempel", "Exempel: "), ("övning", "Övning: ")])
+@pytest.mark.parametrize("kind, prefix", [("example", "Exempel: "), ("exercise", "Övning: ")])
 def test_map_card_shows_the_type_prefix(page, render_outline, kind: str, prefix: str):
     """The map card shows `Exempel: ` or `Övning: ` before the label."""
     show_every_node(page, render_outline(worked_under_a_slide(kind)))
@@ -1060,7 +1080,7 @@ def test_card_aria_label_shows_the_type_prefix(page, render_outline):
     assert page.get_by_role("button", name="Explore Exempel: Rad gånger kolonn", exact=True).count() == 1
 
 
-@pytest.mark.parametrize("kind, prefix", [("exempel", "Exempel: "), ("övning", "Övning: ")])
+@pytest.mark.parametrize("kind, prefix", [("example", "Exempel: "), ("exercise", "Övning: ")])
 def test_panel_title_shows_the_type_prefix(page, render_outline, kind: str, prefix: str):
     """The panel title shows `Exempel: ` or `Övning: ` before the label."""
     show_every_node(page, render_outline(worked_under_a_slide(kind)))
@@ -1069,20 +1089,20 @@ def test_panel_title_shows_the_type_prefix(page, render_outline, kind: str, pref
 
 
 def test_explore_next_button_shows_the_type_prefix(page, render_outline):
-    """The Explore next button for an exempel, in its parent's panel, shows the prefix."""
+    """The Explore next button for an example, in its parent's panel, shows the prefix."""
     show_every_node(page, render_outline(worked_under_a_slide()))
     click_card(page, "Slide")
     assert "Exempel: Rad gånger kolonn" in page.locator("#related button").all_text_contents()
 
 
-# Math and the exempel box in the panel
+# Math and the example box in the panel
 
 BOX_ORANGE = "rgb(217, 112, 28)"
 TRY_YOURSELF = "Ingen lösning i föreläsningen. Försök själv."
 
 
 def solved(
-    kind: str = "exempel",
+    kind: str = "example",
     label: str = "Rad gånger kolonn",
     *,
     task: str = "Lös $x + 1 = 2$",
@@ -1090,7 +1110,7 @@ def solved(
     answer: str = "$x = 1$",
     slides=(),
 ) -> dict:
-    """An exempel or övning with a task, steps given as (calculation, reason) pairs, and an answer."""
+    """An example or exercise with a task, steps given as (calculation, reason) pairs, and an answer."""
     return {
         **worked(kind, label),
         "slides": list(slides),
@@ -1120,6 +1140,16 @@ def section(page, summary: str):
 
 def open_solution(page) -> None:
     section(page, "Visa lösning").locator("summary").click()
+
+
+def toggle_summaries(page) -> list[str]:
+    """Each toggle's summary text in the open box, whitespace collapsed."""
+    return [" ".join(text.split()) for text in box(page).locator("summary").all_text_contents()]
+
+
+def content_langs(page) -> set[str]:
+    """The `lang` of every element under `<body>` that carries one."""
+    return set(page.locator("body [lang]").evaluate_all("elements => elements.map(element => element.lang)"))
 
 
 def top(locator) -> float:
@@ -1176,15 +1206,15 @@ def test_label_latex_stays_raw_while_explanation_typesets(page, render_outline):
     assert (katex_count(page, "#panel-title"), katex_count(page, "#explanation")) == (0, 1)
 
 
-@pytest.mark.parametrize("kind, label", [("exempel", "Exempel"), ("övning", "Övning")])
+@pytest.mark.parametrize("kind, label", [("example", "Exempel"), ("exercise", "Övning")])
 def test_worked_panel_label_names_its_type(page, render_outline, kind: str, label: str):
-    """The label above an exempel's or övning's text reads `Exempel` or `Övning`."""
+    """The label above an example's or exercise's text reads `Exempel` or `Övning`."""
     open_card_panel(page, render_outline(under_a_slide(solved(kind))), "Rad gånger kolonn")
     assert page.locator(".explanation-label").text_content() == label
 
 
 def test_box_takes_the_explanations_place(page, render_outline):
-    """An exempel's panel hides the explanation and shows the box in its place."""
+    """An example's panel hides the explanation and shows the box in its place."""
     open_card_panel(page, render_outline(under_a_slide(term("Gauss", explanation="Arean är stor."), solved())), "Gauss")
     click_card(page, "Rad gånger kolonn")
     assert (page.locator("#explanation").is_visible(), box(page).is_visible()) == (False, True)
@@ -1231,11 +1261,13 @@ def test_step_reason_is_muted_italic(page, render_outline):
 
 
 @pytest.mark.parametrize(
-    "label, heading", [("Andra", "Exempel 2"), ("Tredje", "Övning 1")], ids=["second-exempel", "first-ovning"]
+    "label, heading",
+    [("Första", "Exempel 1"), ("Andra", "Exempel 2"), ("Tredje", "Övning 1")],
+    ids=["first-example", "second-example", "first-exercise"],
 )
-def test_box_heading_counts_exempel_and_ovning_separately(page, render_outline, label: str, heading: str):
-    """The box heading counts exempel and övning separately, in Outline order."""
-    outline = under_a_slide(solved("exempel", "Första"), solved("exempel", "Andra"), solved("övning", "Tredje"))
+def test_box_heading_counts_example_and_exercise_separately(page, render_outline, label: str, heading: str):
+    """The box heading counts example and exercise separately, in Outline order."""
+    outline = under_a_slide(solved("example", "Första"), solved("example", "Andra"), solved("exercise", "Tredje"))
     open_card_panel(page, render_outline(outline), label)
     assert box(page).get_by_role("heading").text_content() == heading
 
@@ -1353,12 +1385,12 @@ def test_section_toggles_use_the_app_sans(page, render_outline):
     """The Visa lösning and Visa svar toggles use the app's sans, Inter."""
     open_card_panel(page, render_outline(under_a_slide(solved())), "Rad gånger kolonn")
     families = box(page).locator("summary").evaluate_all("found => found.map(s => getComputedStyle(s).fontFamily)")
-    assert families and all(family.startswith("Inter") for family in families)
+    assert [family.split(",")[0] for family in families] == ["Inter", "Inter"]
 
 
-@pytest.mark.parametrize("slides_outline", [under_a_slide(solved(slides=[1]))], ids=["exempel-with-a-slide"])
+@pytest.mark.parametrize("slides_outline", [under_a_slide(solved(slides=[1]))], ids=["example-with-a-slide"])
 def test_slides_sit_below_the_box(page, slides_url):
-    """An exempel's Slides sit below its box."""
+    """An example's Slides sit below its box."""
     open_card_panel(page, slides_url, "Rad gånger kolonn")
     assert top(page.locator("#slides")) >= bottom(box(page))
 
@@ -1503,13 +1535,13 @@ def test_clicking_a_copy_entry_opens_the_source_at_its_moment(page, render_outli
     "more_topics",
     [
         [node("topic", "Matrisprodukt")],
-        [node("topic", "C", node("slide", "Övningar", worked("exempel", "Matrisprodukt")))],
+        [node("topic", "C", node("slide", "Övningar", worked("example", "Matrisprodukt")))],
         [node("topic", "C", node("slide", "Matrisprodukt"))],
     ],
-    ids=["topic", "exempel", "slide"],
+    ids=["topic", "example", "slide"],
 )
 def test_only_term_nodes_count_as_copies(page, render_outline, more_topics):
-    """A topic, exempel or slide node labelled like the term is not listed among its copies."""
+    """A topic, example or slide node labelled like the term is not listed among its copies."""
     open_copy(page, render_outline(shared_outline(None, *more_topics)))
     assert copy_entries(page) == ["A › Definition", "B › Räkning"]
 
@@ -1704,7 +1736,7 @@ def test_explanation_rewraps_to_the_wider_panel(page, render_outline):
 
 
 def test_box_rewraps_to_the_wider_panel(page, render_outline):
-    """Widening the panel widens the exempel box by as much, and its long step takes fewer lines."""
+    """Widening the panel widens the example box by as much, and its long step takes fewer lines."""
     open_resize_panel(page, render_outline, "Rad gånger kolonn")
     open_solution(page)
     step = box(page).locator(".step-calculation")
@@ -1722,8 +1754,8 @@ def test_slides_scale_to_the_wider_panel(page, slides_url):
     assert width_of(panel_images(page).first) == before + 200
 
 
-def test_selected_node_stays_inside_the_map_while_widening(page, render_outline):
-    """While the panel widens, the selected node's card stays inside the map."""
+def card_and_canvas_while_widening(page, render_outline) -> tuple[dict, dict]:
+    """Drag the panel 400px wider and return the selected node's card and the canvas, as boxes, before letting go."""
     open_resize_panel(page, render_outline)
     x, y = edge_centre(page)
     page.mouse.move(x, y)
@@ -1732,7 +1764,19 @@ def test_selected_node_stays_inside_the_map_while_widening(page, render_outline)
     card = page.locator(".node", has=page.get_by_role("button", name="Explore Gauss", exact=True)).bounding_box()
     canvas = page.locator("#canvas").bounding_box()
     page.mouse.up()
-    assert canvas["x"] <= card["x"] and card["x"] + card["width"] <= canvas["x"] + canvas["width"]
+    return card, canvas
+
+
+def test_selected_node_stays_inside_the_maps_left_edge_while_widening(page, render_outline):
+    """While the panel widens, the selected node's card stays right of the map's left edge."""
+    card, canvas = card_and_canvas_while_widening(page, render_outline)
+    assert canvas["x"] <= card["x"]
+
+
+def test_selected_node_stays_inside_the_maps_right_edge_while_widening(page, render_outline):
+    """While the panel widens, the selected node's card stays left of the map's right edge."""
+    card, canvas = card_and_canvas_while_widening(page, render_outline)
+    assert card["x"] + card["width"] <= canvas["x"] + canvas["width"]
 
 
 def test_panel_keeps_its_width_after_letting_go(page, render_outline):
@@ -1861,3 +1905,145 @@ def test_reload_opens_the_panel_at_326px(page, render_outline):
     page.reload()
     click_card(page, "Gauss")
     assert panel_width(page) == PANEL_MIN_WIDTH
+
+
+# English pages
+
+ENGLISH_TRY_YOURSELF = "No solution in the lecture. Try it yourself."
+
+
+def english_solved(kind: str = "example", label: str = "Row times column", **parts) -> dict:
+    """An example or exercise whose label is English, with a task, two steps and an answer."""
+    return solved(kind, label, **parts)
+
+
+@pytest.mark.parametrize("kind, prefix", [("example", "Example: "), ("exercise", "Exercise: ")])
+def test_english_map_card_shows_the_type_prefix(page, render_english_outline, kind: str, prefix: str):
+    """On an English page, the map card shows `Example: ` or `Exercise: ` before the label."""
+    show_every_node(page, render_english_outline(under_a_slide(english_solved(kind))))
+    assert f"{prefix}Row times column" in card_labels(page)
+
+
+@pytest.mark.parametrize("kind, prefix", [("example", "Example: "), ("exercise", "Exercise: ")])
+def test_english_panel_title_shows_the_type_prefix(page, render_english_outline, kind: str, prefix: str):
+    """On an English page, the panel title shows `Example: ` or `Exercise: ` before the label."""
+    open_card_panel(page, render_english_outline(under_a_slide(english_solved(kind))), "Row times column")
+    assert page.locator("#panel-title").text_content() == f"{prefix}Row times column"
+
+
+@pytest.mark.parametrize("kind, heading", [("example", "Example 2"), ("exercise", "Exercise 2")])
+def test_english_box_heading_counts_its_type(page, render_english_outline, kind: str, heading: str):
+    """On an English page, the second example's box is headed `Example 2`, and the second exercise's `Exercise 2`."""
+    outline = under_a_slide(english_solved(kind, "First"), english_solved(kind))
+    open_card_panel(page, render_english_outline(outline), "Row times column")
+    assert box(page).get_by_role("heading").text_content() == heading
+
+
+@pytest.mark.parametrize("kind, label", [("example", "Example"), ("exercise", "Exercise")])
+def test_english_worked_panel_label_names_its_type(page, render_english_outline, kind: str, label: str):
+    """On an English page, the label above an example's or exercise's box reads `Example` or `Exercise`."""
+    open_card_panel(page, render_english_outline(under_a_slide(english_solved(kind))), "Row times column")
+    assert page.locator(".explanation-label").text_content() == label
+
+
+def test_english_box_shows_the_solution_toggle_with_its_step_count(page, render_english_outline):
+    """On an English page, a box with two steps shows the toggle `Show solution` with `2 steps` beside it."""
+    open_card_panel(page, render_english_outline(under_a_slide(english_solved())), "Row times column")
+    assert "Show solution 2 steps" in toggle_summaries(page)
+
+
+def test_english_box_with_one_step_says_one_step(page, render_english_outline):
+    """On an English page, a box with one step shows `1 step`, not `1 steps`."""
+    outline = under_a_slide(english_solved(steps=(("x = 1", "subtract 1"),)))
+    open_card_panel(page, render_english_outline(outline), "Row times column")
+    assert "Show solution 1 step" in toggle_summaries(page)
+
+
+def test_english_box_shows_the_answer_toggle(page, render_english_outline):
+    """On an English page, a box with an answer shows the toggle `Show answer`."""
+    open_card_panel(page, render_english_outline(under_a_slide(english_solved())), "Row times column")
+    assert "Show answer" in toggle_summaries(page)
+
+
+def test_english_box_with_neither_says_to_try_yourself(page, render_english_outline):
+    """On an English page, a box with no steps and no answer shows the try-it-yourself line in English."""
+    outline = under_a_slide(english_solved(steps=(), answer=""))
+    open_card_panel(page, render_english_outline(outline), "Row times column")
+    assert box(page).locator(".no-solution").text_content() == ENGLISH_TRY_YOURSELF
+
+
+@pytest.mark.parametrize("language, expected", [("en", {"en"}), ("sv", {"sv"})])
+def test_page_marks_its_lecture_content_with_the_transcripts_language(page, render_outline_in, language: str, expected: set):
+    """Every element under the body that carries a `lang` carries the Transcript's language."""
+    outline = under_a_slide(english_solved(), term("Row"))
+    open_card_panel(page, render_outline_in(language)(outline), "Row times column")
+    assert content_langs(page) == expected
+
+
+@pytest.mark.parametrize("expected", ["Visa lösning 2 steg", "Visa svar"])
+def test_swedish_box_shows_swedish_toggles(page, render_outline, expected: str):
+    """On a Swedish page, the box's toggles read `Visa lösning` with `N steg`, and `Visa svar`."""
+    open_card_panel(page, render_outline(under_a_slide(solved())), "Rad gånger kolonn")
+    assert expected in toggle_summaries(page)
+
+
+def test_transcript_cached_without_a_language_shows_the_swedish_prefix(
+    page, legacy_transcript_id: str, cache_dir: Path, tmp_path: Path
+):
+    """A Transcript cached with no language renders its example card as `Exempel: `."""
+    url = render_mindmap(
+        legacy_transcript_id, under_a_slide(solved()), cache_dir=cache_dir, output_dir=tmp_path / "legacy"
+    ).page.as_uri()
+    show_every_node(page, url)
+    assert "Exempel: Rad gånger kolonn" in card_labels(page)
+
+
+@pytest.mark.parametrize("selector, text", [(".panel-top .eyebrow", "SELECTED IDEA"), (".related h3", "Explore next")])
+@pytest.mark.parametrize("language", ["en", "sv"])
+def test_fixed_page_text_reads_the_same_in_both_languages(
+    selector: str, text: str, language: str, page, render_outline_in
+):
+    """`SELECTED IDEA` and `Explore next` read the same on an English page and a Swedish one."""
+    open_card_panel(page, render_outline_in(language)(under_a_slide(solved())), "Rad gånger kolonn")
+    assert page.locator(selector).text_content() == text
+
+
+@pytest.fixture
+def render_english_deck_outline(deck: Path, cache_dir: Path, tmp_path: Path):
+    """Return a function that renders an Outline against the three-page Deck read on its own, with `en`, and returns the page's URL."""
+    deck_id = read_deck(deck, cache_dir=cache_dir).deck_id
+
+    def render(outline: dict) -> str:
+        return render_deck_mindmap(
+            deck_id, outline, language="en", cache_dir=cache_dir, output_dir=tmp_path / "english-deck"
+        ).page.as_uri()
+
+    return render
+
+
+@pytest.mark.parametrize("kind, prefix", [("example", "Example: "), ("exercise", "Exercise: ")])
+def test_english_deck_card_shows_the_type_prefix(page, render_english_deck_outline, kind: str, prefix: str):
+    """On a Deck page rendered with `en`, the map card shows `Example: ` or `Exercise: ` before the label."""
+    show_every_node(page, render_english_deck_outline(under_a_slide(english_solved(kind))))
+    assert f"{prefix}Row times column" in card_labels(page)
+
+
+@pytest.mark.parametrize("kind, heading", [("example", "Example 1"), ("exercise", "Exercise 1")])
+def test_english_deck_box_heading_names_its_type(page, render_english_deck_outline, kind: str, heading: str):
+    """On a Deck page rendered with `en`, the box is headed `Example 1` or `Exercise 1`."""
+    open_card_panel(page, render_english_deck_outline(under_a_slide(english_solved(kind))), "Row times column")
+    assert box(page).get_by_role("heading").text_content() == heading
+
+
+@pytest.mark.parametrize("expected", ["Show solution 2 steps", "Show answer"])
+def test_english_deck_box_shows_english_toggles(page, render_english_deck_outline, expected: str):
+    """On a Deck page rendered with `en`, the box's toggles read `Show solution` with `N steps`, and `Show answer`."""
+    open_card_panel(page, render_english_deck_outline(under_a_slide(english_solved())), "Row times column")
+    assert expected in toggle_summaries(page)
+
+
+def test_english_deck_page_marks_its_content_english(page, render_english_deck_outline):
+    """On a Deck page rendered with `en`, every element under the body that carries a `lang` carries `en`."""
+    outline = under_a_slide(english_solved(), term("Row"))
+    open_card_panel(page, render_english_deck_outline(outline), "Row times column")
+    assert content_langs(page) == {"en"}

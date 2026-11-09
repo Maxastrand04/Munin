@@ -15,8 +15,9 @@ from munin.core.errors import (
     OutlineSyntaxError,
     UnknownDeckError,
 )
+from munin.core.language import Language, parse_language
 from munin.core.latex import KATEX_OPTIONS, katex_css, katex_js
-from munin.core.outline import check_outline
+from munin.core.outline import WORKED_TITLES, check_outline
 from munin.core.slides import deck_path, standalone_deck_path
 from munin.core.sources import Source, Video
 from munin.core.stamps import display_stamp, stamp_seconds
@@ -26,6 +27,46 @@ _REPO_ROOT = Path(__file__).resolve().parents[3]
 _DEFAULT_OUTPUT_DIR = _REPO_ROOT / "mindmaps"
 
 _ASSETS = Path(__file__).with_name("mindmap_assets")
+
+_NO_LANGUAGE_DECK_LANGUAGE: Language = "sv"
+"""The page language of a standalone Deck render given no language, Swedish as before languages existed."""
+
+
+@dataclass(frozen=True)
+class _BoxWording:
+    """The fixed wording of an example's or exercise's box in one page language.
+
+    `one_step` and `many_steps` are the words after the count beside the
+    solution toggle, for one step and for any other count.
+    """
+
+    solution_toggle: str
+    answer_toggle: str
+    no_solution: str
+    one_step: str
+    many_steps: str
+
+    def step_count(self, count: int) -> str:
+        """Return the step count beside the solution toggle, such as `2 steg` or `1 step`."""
+        return f"{count} {self.one_step if count == 1 else self.many_steps}"
+
+
+_BOX_WORDING: dict[Language, _BoxWording] = {
+    "sv": _BoxWording(
+        solution_toggle="Visa lösning",
+        answer_toggle="Visa svar",
+        no_solution="Ingen lösning i föreläsningen. Försök själv.",
+        one_step="steg",
+        many_steps="steg",
+    ),
+    "en": _BoxWording(
+        solution_toggle="Show solution",
+        answer_toggle="Show answer",
+        no_solution="No solution in the lecture. Try it yourself.",
+        one_step="step",
+        many_steps="steps",
+    ),
+}
 
 
 @dataclass(frozen=True)
@@ -61,14 +102,17 @@ def render_mindmap(
       another type,
     - an unknown `type`,
     - a missing part, or a part the node's type does not have, such as an
-      `explanation` on an exempel, a misspelled key, or `children` on an
-      exempel or övning, even an empty list,
+      `explanation` on an example, a misspelled key, or `children` on an
+      example or exercise, even an empty list,
     - a part of the wrong kind, such as a `stamps` that is not a list of
       strings, or a Slide number that is not an integer, `true` included,
     - a blank `label`, `task` or step `calculation`,
-    - a `label` on any node that starts with `Exempel:` or `Övning:`, in any
-      case and with any spaces before the colon, since the page adds that
-      prefix to exempel and övning labels,
+    - a `label` on any node that starts with the page language's prefix, in
+      any case and with any spaces before the colon, since the page adds that
+      prefix to example and exercise labels. The prefixes are `Exempel:` and
+      `Övning:` on a Swedish page and `Example:` and `Exercise:` on an English
+      one, and the other language's prefixes pass. The problem's message names
+      the prefix, capitalized, such as `Example:`,
     - a node under the wrong parent type, by the nesting rules
       `get_outline_schema` gives,
     - a control character in any string part but `explanation`, which is what
@@ -97,7 +141,7 @@ def render_mindmap(
 
     A node of an unknown type is one problem, and nothing else about it is
     checked. A part of the wrong kind is one problem, and what it holds is
-    not checked. A `children` part on an exempel or övning is one problem,
+    not checked. A `children` part on an example or exercise is one problem,
     whatever the list holds, and the nodes in it are not checked. Every other
     fault is a problem of its own, so a misspelled key gives one problem for
     the unknown key and one for the missing part. Stamps and Slide numbers
@@ -121,29 +165,48 @@ def render_mindmap(
     still cannot draw shows as written, dollars included, and the rest
     typesets. Labels show as plain text everywhere, LaTeX included.
 
-    An exempel or övning panel labels its text `Exempel` or `Övning` in place
+    The page's language is the Transcript's Lecture language, and a
+    Transcript cached before lecture languages existed renders as Swedish.
+    The language picks the example and exercise wording below, and every
+    element holding Outline text (map card labels, the panel title, the
+    explanation, the box, the buttons under Explore next and the term copies
+    list) carries `lang="sv"` or `lang="en"` to match. The fixed page text,
+    such as `SELECTED IDEA`, `A simple explanation` and `Explore next`, is
+    English in both languages.
+
+    Wording, Swedish then English:
+
+    - type name: `Exempel` / `Example`, `Övning` / `Exercise`
+    - label prefix: the type name and `: `, such as `Exempel: ` / `Example: `
+    - solution toggle: `Visa lösning` / `Show solution`
+    - step count: `N steg` / `N steps`, and `1 step` for one step in English
+    - answer toggle: `Visa svar` / `Show answer`
+    - no-solution line: `Ingen lösning i föreläsningen. Försök själv.` /
+      `No solution in the lecture. Try it yourself.`
+
+    An example or exercise panel labels its text with its type name in place
     of "A simple explanation", and shows a box where the explanation would
-    be. The box's heading is `Exempel N` or `Övning N`, where N counts
-    exempel and övning nodes separately in Outline order, from 1. Under it
-    come the task, then a closed "Visa lösning" section with the step count
-    beside it, holding the steps numbered from 1, each with its calculation
-    as inline math and its reason under it, then a closed "Visa svar"
-    section holding the answer. A task, reason or answer typesets as an
-    explanation does. A box with no steps leaves out "Visa lösning", one with
-    an empty answer leaves out "Visa svar", and one with neither shows the
-    muted line "Ingen lösning i föreläsningen. Försök själv." Box text is set
+    be. The box's heading is the type name and N, such as `Exempel N` or
+    `Exercise N`, where N counts example and exercise nodes separately in
+    Outline order, from 1. Under it come the task, then the closed solution
+    toggle with the step count beside it, holding the steps numbered from 1,
+    each with its calculation as inline math and its reason under it, then
+    the closed answer toggle holding the answer. A task, reason or answer
+    typesets as an explanation does. A box with no steps leaves out the
+    solution toggle, one with an empty answer leaves out the answer toggle,
+    and one with neither shows the muted no-solution line. Box text is set
     in KaTeX_Main, and the section toggles in the app's sans.
 
-    Each topic gives its branch one colour. Exempel and övning nodes are
+    Each topic gives its branch one colour. Example and exercise nodes are
     orange because of their type, whatever their label says: an orange of hue
     25 to 45 degrees that no topic gets. An orange node's border, background,
     selected fill, stamps, and panel path and rule are orange. The edge into
-    an exempel or övning keeps its topic's colour, and the edge into one
-    directly under the main-topic is orange. An exempel or övning directly
+    an example or exercise keeps its topic's colour, and the edge into one
+    directly under the main-topic is orange. An example or exercise directly
     under the main-topic takes no topic colour, so the topics after it get the
     colours they would have had without it. A topic whose label starts with
-    `Exempel:` is not orange. The page puts `Exempel: ` or `Övning: ` before
-    an exempel's or övning's label on its map card, its card's aria-label,
+    `Exempel` is not orange. The page puts the label prefix before an
+    example's or exercise's label on its map card, its card's aria-label,
     its panel title, and its button under Explore next.
 
     Term nodes whose labels match ignoring case and runs of whitespace are
@@ -168,21 +231,30 @@ def render_mindmap(
     """
     entry = cached_entry(transcript_id, cache_dir=cache_dir)
     deck = deck_path(transcript_id, cache_dir or default_cache_dir())
-    return _write_page(transcript_id, outline, entry, deck, output_dir)
+    return _write_page(transcript_id, outline, entry, deck, output_dir, entry.language)
 
 
 def render_deck_mindmap(
     deck_id: str,
     outline: dict | str,
     *,
+    language: Language | None = None,
     cache_dir: Path | None = None,
     output_dir: Path | None = None,
 ) -> RenderResult:
     """Check a JSON Outline written from a Deck read on its own, write its Mindmap page, and return what `render_mindmap` returns.
 
     Checks and renders as `render_mindmap` does, with these differences.
-    Slide numbers resolve against the copy `read_deck` stored under
-    `deck_id`, so a Slide number below 1 or past its last Slide is a problem.
+    The page's language is `language`, `sv` or `en`, since a Deck read on its
+    own has no Lecture language and Munin never detects one. With no
+    `language` the page is Swedish, with the same wording and label prefix
+    ban as before languages existed. The language picks the label prefixes
+    the check bans, the example and exercise wording, and the `lang` on every
+    element holding Outline text, exactly as a Transcript's Lecture language
+    does for `render_mindmap`. Nothing about the language is stored, so each
+    render takes the language it is given. Slide numbers resolve against the
+    copy `read_deck` stored under `deck_id`, so a Slide number below 1 or
+    past its last Slide is a problem.
     There is no Source, so any stamp on any node is a problem. The page has no
     link to a Source: no lecture link in its header and no Source link in any
     node's panel.
@@ -191,33 +263,44 @@ def render_deck_mindmap(
     for the same Deck. `cache_dir` and `output_dir` default as for
     `render_mindmap`.
 
-    Raises `UnknownDeckError` when no Deck read on its own has this ID, before
+    Raises `LanguageError` naming `language` when it is anything but `sv`,
+    `en` or None, checked first, before the Deck ID and the Outline. Then
+    raises `UnknownDeckError` when no Deck read on its own has this ID, before
     the Outline is read, then `OutlineSyntaxError` or `OutlineStructureError`
     as `render_mindmap` does. Any of them means nothing is written.
     """
+    page_language = parse_language(language) or _NO_LANGUAGE_DECK_LANGUAGE
     cache_dir = cache_dir or default_cache_dir()
     deck = standalone_deck_path(deck_id, cache_dir)
     if not is_cache_id(deck_id) or not deck.is_file():
         raise UnknownDeckError(deck_id)
-    return _write_page(deck_id, outline, None, deck, output_dir)
+    return _write_page(deck_id, outline, None, deck, output_dir, page_language)
 
 
 def _write_page(
-    page_id: str, outline: dict | str, entry: CacheEntry | None, deck: Path, output_dir: Path | None
+    page_id: str,
+    outline: dict | str,
+    entry: CacheEntry | None,
+    deck: Path,
+    output_dir: Path | None,
+    language: Language,
 ) -> RenderResult:
     """Check the Outline, then write `<page_id>.html`, linking stamps to the entry's Source and Slide numbers to the Deck at `deck`.
 
-    `entry` is None when there is no Source, and `deck` need not exist.
+    `entry` is None when there is no Source, and `deck` need not exist. The
+    page is in `language`, which the caller has already checked.
     """
     parsed = _parsed(outline)
     deck_pages = pdf.page_count(deck) if deck.is_file() else None
-    problems = check_outline(parsed, duration_s=entry.duration_s if entry else None, deck_pages=deck_pages)
+    problems = check_outline(
+        parsed, duration_s=entry.duration_s if entry else None, deck_pages=deck_pages, language=language
+    )
     if problems:
         raise OutlineStructureError(problems)
     source = entry.source if entry else None
-    nodes = _flat_nodes(parsed, source)
+    nodes = _flat_nodes(parsed, source, language)
     linked = sorted({number for node in nodes for number in node["slides"]})
-    content = _page_html(page_id, nodes, source, _slide_images(deck, linked))
+    content = _page_html(page_id, nodes, source, _slide_images(deck, linked), language)
     page = (output_dir or _DEFAULT_OUTPUT_DIR).resolve() / f"{page_id}.html"
     page.parent.mkdir(parents=True, exist_ok=True)
     page.write_text(content, encoding="utf-8")
@@ -234,10 +317,10 @@ def _parsed(outline: dict | str) -> object:
         raise OutlineSyntaxError(error.lineno, error.colno, error.msg) from error
 
 
-def _flat_nodes(outline: dict, source: Source | None) -> list[dict]:
+def _flat_nodes(outline: dict, source: Source | None, language: Language) -> list[dict]:
     """Return the checked Outline's nodes in Outline order, each pointing at its parent by index."""
     nodes: list[dict] = []
-    counts = {"exempel": 0, "övning": 0}
+    counts = dict.fromkeys(WORKED_TITLES[language], 0)
 
     def add(node: dict, parent: int | None) -> None:
         index = len(nodes)
@@ -248,7 +331,7 @@ def _flat_nodes(outline: dict, source: Source | None) -> list[dict]:
         worked = None
         if node["type"] in counts:
             counts[node["type"]] += 1
-            worked = _worked_box(node, counts[node["type"]])
+            worked = _worked_box(node, counts[node["type"]], language)
         nodes.append(
             {
                 "id": index,
@@ -269,15 +352,20 @@ def _flat_nodes(outline: dict, source: Source | None) -> list[dict]:
     return nodes
 
 
-def _worked_box(node: dict, number: int) -> dict:
-    """Return what an exempel's or övning's box shows, `number` counting its type in Outline order."""
-    title = node["type"].capitalize()
+def _worked_box(node: dict, number: int, language: Language) -> dict:
+    """Return what an example's or exercise's box shows, `number` counting its type in Outline order."""
+    title = WORKED_TITLES[language][node["type"]]
+    wording = _BOX_WORDING[language]
     return {
         "title": title,
         "heading": f"{title} {number}",
         "task": node["task"],
         "steps": node["steps"],
+        "step_count": wording.step_count(len(node["steps"])),
         "answer": node["answer"],
+        "solution_toggle": wording.solution_toggle,
+        "answer_toggle": wording.answer_toggle,
+        "no_solution": wording.no_solution,
     }
 
 
@@ -295,7 +383,9 @@ def _timestamp_url(source: Source, offset_s: int) -> str:
     return f"{source.as_uri()}#t={offset_s}"
 
 
-def _page_html(page_id: str, nodes: list[dict], source: Source | None, slide_images: dict[str, str]) -> str:
+def _page_html(
+    page_id: str, nodes: list[dict], source: Source | None, slide_images: dict[str, str], language: Language
+) -> str:
     title = nodes[0]["label"] or "Mindmap"
     source_url = _source_url(source)
     source_link = (
@@ -314,16 +404,18 @@ def _page_html(page_id: str, nodes: list[dict], source: Source | None, slide_ima
                 "title": title,
                 "source_url": source_url,
                 "page_id": page_id,
+                "lang": language,
                 "slides": slide_images,
                 "katex_options": KATEX_OPTIONS,
             }
         ),
         "__TITLE__": escape(title),
         "__SOURCE_LINK__": source_link,
+        "__LANG__": language,
     }
     template = (_ASSETS / "mindmap.html").read_text(encoding="utf-8")
     return re.sub(
-        r"__(?:CSS|JS|KATEX_CSS|KATEX_JS|DATA|PAGE|TITLE|SOURCE_LINK)__",
+        r"__(?:CSS|JS|KATEX_CSS|KATEX_JS|DATA|PAGE|TITLE|SOURCE_LINK|LANG)__",
         lambda match: replacements[match[0]],
         template,
     )

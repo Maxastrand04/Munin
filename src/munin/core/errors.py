@@ -84,6 +84,18 @@ class VocabularyError(MuninError):
         super().__init__(f"Boost strength {alpha} is outside 0 to 2")
 
 
+class LanguageError(MuninError):
+    """A lecture language is anything but `sv` or `en`.
+
+    `language` is the value the caller gave, and the message names it, as in
+    "Language de is not sv or en".
+    """
+
+    def __init__(self, language: str) -> None:
+        self.language = language
+        super().__init__(f"Language {language} is not sv or en")
+
+
 class OutlineError(MuninError):
     """Base for every error that rejects an Outline before anything is rendered.
 

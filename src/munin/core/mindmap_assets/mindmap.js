@@ -20,10 +20,9 @@ const orangeColors = ['#c27418','#fbebd6','#a8570f'],ORANGE_HUE=32.5,ORANGE_CLEA
 const GOLDEN_ANGLE=137.508;
 // The main topic stays in the Linen neutrals so no group shares its colour.
 const mainTopicColors = ['#756a59','#f8f4ec','#433b31'];
-// An exempel or övning is orange because of its type, and the page names it with its type's prefix.
-const prefixes = {'exempel':'Exempel: ','övning':'Övning: '};
-const nodes = DATA.map(n => ({...n,label:(prefixes[n.type]||'')+n.label,children:[],depth:0,group:-1,orange:n.type in prefixes,x:0,y:0,w:220,h:96}));
-// An exempel or övning directly under the main topic takes no topic colour, so it takes no palette slot either.
+// Only an example or exercise has a worked box, because of its type, so it is orange and the page names it with the box's title.
+const nodes = DATA.map(n => ({...n,label:(n.worked?`${n.worked.title}: `:'')+n.label,children:[],depth:0,group:-1,orange:!!n.worked,x:0,y:0,w:220,h:96}));
+// An example or exercise directly under the main topic takes no topic colour, so it takes no palette slot either.
 let topics = 0;
 nodes.forEach(n=>{if(n.parent!==null){const p=nodes[n.parent];p.children.push(n.id);n.depth=p.depth+1;n.group=n.depth===1?(n.orange?-1:topics++):p.group;}});
 // Term nodes share a term when their labels match ignoring case and runs of whitespace.
@@ -55,7 +54,7 @@ function generatedHue(group) {
 }
 function nearOrange(hue) {const gap = Math.abs(hue - ORANGE_HUE);return Math.min(gap, 360 - gap) < ORANGE_CLEARANCE;}
 function nodeColors(n) {return n.orange ? orangeColors : groupColors(n.group);}
-// The edge into an exempel or övning keeps its topic's colour, unless it hangs from the main topic.
+// The edge into an example or exercise keeps its topic's colour, unless it hangs from the main topic.
 function edgeColor(p,n) {return (n.orange&&p.parent===null?orangeColors:groupColors(n.group))[0];}
 function showSelectedColor() {document.body.style.setProperty('--selected-color',(selected===null?mainTopicColors:nodeColors(nodes[selected]))[0]);}
 function visible(n){if(n.parent===null)return true;return !collapsed.has(n.parent)&&visible(nodes[n.parent]);}
@@ -166,7 +165,7 @@ function render(){
     const shell=document.createElement('div');shell.setAttribute('xmlns','http://www.w3.org/1999/xhtml');shell.className='node-shell';
     const [color,tint,fill]=nodeColors(n);shell.style.setProperty('--group',color);shell.style.setProperty('--tint',tint);shell.style.setProperty('--fill',fill);
     const card=document.createElement('div');card.className='node-card'+(n.id===selected?' selected':'');
-    const label=document.createElement('button');label.className='node-label';label.textContent=n.label;label.lang='sv';label.setAttribute('aria-label',`Explore ${n.label}`);label.setAttribute('aria-pressed',String(n.id===selected));label.onclick=()=>select(n.id);
+    const label=document.createElement('button');label.className='node-label';label.textContent=n.label;label.lang=PAGE.lang;label.setAttribute('aria-label',`Explore ${n.label}`);label.setAttribute('aria-pressed',String(n.id===selected));label.onclick=()=>select(n.id);
     const footer=document.createElement('div');footer.className='node-footer';
     const stamps=document.createElement('span');stamps.className='node-stamps';
     n.links.forEach(timestamp=>{const link=sourceLink(timestamp,timestamp.text);link.className='stamp';stamps.append(link);});
@@ -225,7 +224,7 @@ function showWorked(box,w){
   const task=div('task');typeset(task,w.task);
   box.replaceChildren(heading,task);
   if(w.steps.length){
-    const solution=toggle('Visa lösning',`${w.steps.length} steg`);solution.className='solution';
+    const solution=toggle(w.solution_toggle,w.step_count);solution.className='solution';
     w.steps.forEach((step,k)=>{
       const row=div('step'),body=div('step-body'),calculation=div('step-calculation');
       calculation.append(mathNode(step.calculation,step.calculation));body.append(calculation);
@@ -234,8 +233,8 @@ function showWorked(box,w){
     });
     box.append(solution);
   }
-  if(w.answer){const answer=toggle('Visa svar');answer.className='answer';const body=div('answer-body');typeset(body,w.answer);answer.append(body);box.append(answer);}
-  if(!w.steps.length&&!w.answer)box.append(div('no-solution','Ingen lösning i föreläsningen. Försök själv.'));
+  if(w.answer){const answer=toggle(w.answer_toggle);answer.className='answer';const body=div('answer-body');typeset(body,w.answer);answer.append(body);box.append(answer);}
+  if(!w.steps.length&&!w.answer)box.append(div('no-solution',w.no_solution));
 }
 function showText(n){
   const worked=n.worked;
@@ -263,7 +262,7 @@ function select(id){
   showCopies(n);
   $('related').replaceChildren();
   const related=n.children.length?n.children:(n.parent===null?[]:nodes[n.parent].children.filter(c=>c!==id));
-  related.slice(0,4).forEach(cid=>{const b=document.createElement('button');b.textContent=nodes[cid].label;b.lang='sv';b.onclick=()=>{let p=nodes[cid].parent;while(p!==null){collapsed.delete(p);p=nodes[p].parent;}select(cid);};$('related').append(b);});
+  related.slice(0,4).forEach(cid=>{const b=document.createElement('button');b.textContent=nodes[cid].label;b.lang=PAGE.lang;b.onclick=()=>{let p=nodes[cid].parent;while(p!==null){collapsed.delete(p);p=nodes[p].parent;}select(cid);};$('related').append(b);});
   document.querySelector('.related').hidden=!related.length;
   $('panel').scrollTop=0;render();centre(n);
 }
@@ -272,7 +271,7 @@ function showCopies(n){
   $('copies-list').replaceChildren();
   if(copies.length>1)copies.forEach(cid=>{
     const copy=nodes[cid],slide=nodes[copy.parent],item=document.createElement('li'),text=`${nodes[slide.parent].label} › ${slide.label}`;
-    item.style.color=groupColors(copy.group)[0];item.lang='sv';
+    item.style.color=groupColors(copy.group)[0];item.lang=PAGE.lang;
     const timestamp=copy.links[0];
     if(timestamp)item.append(sourceLink(timestamp,text,`Open Source at ${timestamp.text}, ${text}`));
     else item.textContent=text;
