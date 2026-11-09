@@ -231,7 +231,7 @@ def test_mcp_transcribe_without_language_returns_cached_english(source: Path, ca
 
 
 def test_mcp_transcribe_english_without_terms_reports_no_vocabulary(source: Path, cache_dir: Path):
-    """The tool builds an empty Vocabulary on every call, and that does not trip the English check."""
+    """The tool builds an empty Vocabulary on every call, and an English call without terms reports none."""
     server = create_server(cache_dir=cache_dir, recognize=english_sentence)
     result = call(server, "transcribe", {"source": str(source), "language": "en"})
     assert result.structured_content["vocabulary"] is None
