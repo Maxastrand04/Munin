@@ -1,4 +1,4 @@
-"""Rendering a JSON Outline into a Mindmap page with Timestamp links."""
+"""Rendering a JSON Outline into a Mindmap page, or into a Drawn Outline, with Timestamp links."""
 
 import base64
 import json
@@ -216,9 +216,7 @@ def render_drawn_outline(
     """
     cache_dir = cache_dir or default_cache_dir()
     entry = cached_entry(transcript_id, cache_dir=cache_dir)
-    parsed = _parsed(outline)
-    _check(parsed, entry, deck_path(transcript_id, cache_dir), entry.language)
-    nodes = _flat_nodes(parsed, entry.source, entry.language)
+    nodes = _checked_nodes(outline, entry, deck_path(transcript_id, cache_dir), entry.language)
     return DrawnOutline(
         title=nodes[0]["label"],
         source_url=_source_url(entry.source),
@@ -493,10 +491,8 @@ def _write_page(
     `entry` is None when there is no Source, and `deck` need not exist. The
     page is in `language`, which the caller has already checked.
     """
-    parsed = _parsed(outline)
-    _check(parsed, entry, deck, language)
     source = entry.source if entry else None
-    nodes = _flat_nodes(parsed, source, language)
+    nodes = _checked_nodes(outline, entry, deck, language)
     linked = sorted({number for node in nodes for number in node["slides"]})
     content = _page_html(page_id, nodes, source, _slide_images(deck, linked), language)
     page = (output_dir or _DEFAULT_OUTPUT_DIR).resolve() / f"{page_id}.html"
@@ -505,14 +501,21 @@ def _write_page(
     return RenderResult(page)
 
 
-def _check(parsed: object, entry: CacheEntry | None, deck: Path, language: Language) -> None:
-    """Raise `OutlineStructureError` listing every problem in the Outline, checked against the entry's Source and the Deck at `deck`."""
+def _checked_nodes(outline: dict | str, entry: CacheEntry | None, deck: Path, language: Language) -> list[dict]:
+    """Parse and check the Outline against the entry's Source and the Deck at `deck`, and return its nodes as `_flat_nodes` gives them.
+
+    `entry` is None when there is no Source, and `deck` need not exist.
+    Raises `OutlineSyntaxError` for text that is not JSON, then
+    `OutlineStructureError` listing every problem in the Outline.
+    """
+    parsed = _parsed(outline)
     deck_pages = pdf.page_count(deck) if deck.is_file() else None
     problems = check_outline(
         parsed, duration_s=entry.duration_s if entry else None, deck_pages=deck_pages, language=language
     )
     if problems:
         raise OutlineStructureError(problems)
+    return _flat_nodes(parsed, entry.source if entry else None, language)
 
 
 def _parsed(outline: dict | str) -> object:
