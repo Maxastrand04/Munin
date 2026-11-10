@@ -7,6 +7,7 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
+from typing import Literal
 
 from py_mini_racer import MiniRacer
 
@@ -44,6 +45,7 @@ def katex_js() -> str:
 
 def katex_css() -> str:
     """Return the vendored KaTeX stylesheet with every font embedded as a base64 woff2 data URI, so it needs no network."""
+
     def embed(match: re.Match) -> str:
         data = base64.b64encode((_KATEX / "fonts" / f"{match[1]}.woff2").read_bytes()).decode()
         return f'url(data:font/woff2;base64,{data}) format("woff2")'
@@ -73,14 +75,30 @@ def calculation_problems(calculation: str) -> list[BrokenLatex]:
     return [] if reason is None else [BrokenLatex(calculation, reason)]
 
 
-def prose_problems(prose: str) -> list[BrokenLatex]:
-    """Return every broken `$...$` piece of prose in order.
+@dataclass(frozen=True)
+class ProsePiece:
+    """One stretch of prose, cut by `prose_pieces`.
+
+    `kind` is `"text"` for plain text, `"math"` for a closed `$...$` piece,
+    `"display"` for a `$$`, and `"open"` for a `$` with no closing `$`.
+    `text` is the stretch exactly as written, `$` and backslashes included.
+    """
+
+    kind: Literal["text", "math", "display", "open"]
+    text: str
+
+
+def prose_pieces(prose: str) -> list[ProsePiece]:
+    """Cut prose into pieces in order, so that joining every `text` gives `prose` back.
 
     A backslash escapes the next character, so `\\$` never opens or closes
-    math. A `$` with no closing `$` is broken from there to the end, and `$$`
-    is broken since math is never display mode.
+    math and stays in the text. A `$` with no closing `$` is one open piece
+    from there to the end, and `$$` is one display piece. This is the one
+    place that decides where math starts and ends, for the check and for
+    the Drawn Outline alike.
     """
-    found: list[BrokenLatex] = []
+    pieces: list[ProsePiece] = []
+    text_start = 0
     index = 0
     while index < len(prose):
         char = prose[index]
@@ -88,19 +106,38 @@ def prose_problems(prose: str) -> list[BrokenLatex]:
             index += 2
         elif char != "$":
             index += 1
-        elif prose.startswith("$$", index):
-            found.append(BrokenLatex("$$", "$$ is display math, and math is always inline"))
-            index += 2
         else:
-            end = _closing_dollar(prose, index + 1)
-            if end is None:
-                piece, index = prose[index:], len(prose)
-                reason = _reason(piece[1:]) or "no closing $"
+            if prose.startswith("$$", index):
+                kind, end = "display", index + 2
+            elif (closing := _closing_dollar(prose, index + 1)) is None:
+                kind, end = "open", len(prose)
             else:
-                piece, index = prose[index : end + 1], end + 1
-                reason = _reason(piece[1:-1])
+                kind, end = "math", closing + 1
+            if index > text_start:
+                pieces.append(ProsePiece("text", prose[text_start:index]))
+            pieces.append(ProsePiece(kind, prose[index:end]))
+            text_start = index = end
+    if text_start < len(prose):
+        pieces.append(ProsePiece("text", prose[text_start:]))
+    return pieces
+
+
+def prose_problems(prose: str) -> list[BrokenLatex]:
+    """Return every broken `$...$` piece of prose in order.
+
+    `$$` is broken since math is never display mode, and a `$` with no
+    closing `$` is broken from there to the end.
+    """
+    found: list[BrokenLatex] = []
+    for piece in prose_pieces(prose):
+        if piece.kind == "display":
+            found.append(BrokenLatex("$$", "$$ is display math, and math is always inline"))
+        elif piece.kind == "open":
+            found.append(BrokenLatex(piece.text, _reason(piece.text[1:]) or "no closing $"))
+        elif piece.kind == "math":
+            reason = _reason(piece.text[1:-1])
             if reason is not None:
-                found.append(BrokenLatex(piece, reason))
+                found.append(BrokenLatex(piece.text, reason))
     return found
 
 

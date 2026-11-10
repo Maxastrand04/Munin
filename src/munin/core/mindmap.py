@@ -17,7 +17,7 @@ from munin.core.errors import (
     UnknownDeckError,
 )
 from munin.core.language import Language, parse_language
-from munin.core.latex import KATEX_OPTIONS, katex_css, katex_js, math_html
+from munin.core.latex import KATEX_OPTIONS, katex_css, katex_js, math_html, prose_pieces
 from munin.core.outline import WORKED_TITLES, check_outline
 from munin.core.slides import deck_path, standalone_deck_path
 from munin.core.sources import Source, Video
@@ -225,25 +225,19 @@ def render_drawn_outline(
     )
 
 
-_MATH_PIECE = re.compile(r"\\.|\$((?:\\.|[^\\$])*)\$", re.DOTALL)
-"""One escape pair, which is text, or one `$...$` piece, whose group 1 is the math between the dollars."""
-
-
 def _prose_runs(prose: str) -> tuple[ProseRun, ...]:
     """Split a prose part into text runs and math runs in order, with no empty text run.
 
-    Each `$...$` piece is math, drawn by `math_html`. Everything else is text,
-    with `\\$` turned into `$`. The check has already passed every piece.
+    Each closed `$...$` piece is math, drawn by `math_html`. Everything else is
+    text, with `\\$` turned into `$`. The check has already passed every piece,
+    so no display or open piece is left.
     """
     runs: list[ProseRun] = []
-    start = 0
-    for match in _MATH_PIECE.finditer(prose):
-        if match.group(1) is None:
-            continue
-        _add_text_run(runs, prose[start : match.start()])
-        runs.append(ProseRun("math", math_html(match.group(1))))
-        start = match.end()
-    _add_text_run(runs, prose[start:])
+    for piece in prose_pieces(prose):
+        if piece.kind == "math":
+            runs.append(ProseRun("math", math_html(piece.text[1:-1])))
+        else:
+            _add_text_run(runs, piece.text)
     return tuple(runs)
 
 
