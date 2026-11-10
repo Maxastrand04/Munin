@@ -17,7 +17,7 @@ from munin.core.errors import (
     UnknownDeckError,
 )
 from munin.core.language import Language, parse_language
-from munin.core.latex import KATEX_OPTIONS, katex_css, katex_js
+from munin.core.latex import KATEX_OPTIONS, katex_css, katex_js, math_html
 from munin.core.outline import WORKED_TITLES, check_outline
 from munin.core.slides import deck_path, standalone_deck_path
 from munin.core.sources import Source, Video
@@ -214,7 +214,74 @@ def render_drawn_outline(
     not JSON, then `OutlineStructureError` listing every problem the check
     finds.
     """
-    raise NotImplementedError
+    cache_dir = cache_dir or default_cache_dir()
+    entry = cached_entry(transcript_id, cache_dir=cache_dir)
+    parsed = _parsed(outline)
+    _check(parsed, entry, deck_path(transcript_id, cache_dir), entry.language)
+    nodes = _flat_nodes(parsed, entry.source, entry.language)
+    return DrawnOutline(
+        title=nodes[0]["label"],
+        source_url=_source_url(entry.source),
+        language=entry.language,
+        nodes=tuple(_drawn_node(node) for node in nodes),
+    )
+
+
+_MATH_PIECE = re.compile(r"\\.|\$((?:\\.|[^\\$])*)\$", re.DOTALL)
+"""One escape pair, which is text, or one `$...$` piece, whose group 1 is the math between the dollars."""
+
+
+def _prose_runs(prose: str) -> tuple[ProseRun, ...]:
+    """Split a prose part into text runs and math runs in order, with no empty text run.
+
+    Each `$...$` piece is math, drawn by `math_html`. Everything else is text,
+    with `\\$` turned into `$`. The check has already passed every piece.
+    """
+    runs: list[ProseRun] = []
+    start = 0
+    for match in _MATH_PIECE.finditer(prose):
+        if match.group(1) is None:
+            continue
+        _add_text_run(runs, prose[start : match.start()])
+        runs.append(ProseRun("math", math_html(match.group(1))))
+        start = match.end()
+    _add_text_run(runs, prose[start:])
+    return tuple(runs)
+
+
+def _add_text_run(runs: list[ProseRun], text: str) -> None:
+    if text:
+        runs.append(ProseRun("text", text.replace("\\$", "$")))
+
+
+def _drawn_node(node: dict) -> DrawnNode:
+    return DrawnNode(
+        id=node["id"],
+        parent=node["parent"],
+        type=node["type"],
+        label=node["label"],
+        links=tuple(TimestampLink(link["text"], link["url"]) for link in node["links"]),
+        slides=tuple(node["slides"]),
+        term=node["term"],
+        explanation=_prose_runs(node["explanation"]),
+        worked=None if node["worked"] is None else _drawn_box(node["worked"]),
+    )
+
+
+def _drawn_box(box: dict) -> WorkedBox:
+    return WorkedBox(
+        title=box["title"],
+        heading=box["heading"],
+        task=_prose_runs(box["task"]),
+        steps=tuple(
+            WorkedStep(math_html(step["calculation"]), _prose_runs(step["reason"])) for step in box["steps"]
+        ),
+        step_count=box["step_count"],
+        answer=_prose_runs(box["answer"]),
+        solution_toggle=box["solution_toggle"],
+        answer_toggle=box["answer_toggle"],
+        no_solution=box["no_solution"],
+    )
 
 
 def render_mindmap(
@@ -427,12 +494,7 @@ def _write_page(
     page is in `language`, which the caller has already checked.
     """
     parsed = _parsed(outline)
-    deck_pages = pdf.page_count(deck) if deck.is_file() else None
-    problems = check_outline(
-        parsed, duration_s=entry.duration_s if entry else None, deck_pages=deck_pages, language=language
-    )
-    if problems:
-        raise OutlineStructureError(problems)
+    _check(parsed, entry, deck, language)
     source = entry.source if entry else None
     nodes = _flat_nodes(parsed, source, language)
     linked = sorted({number for node in nodes for number in node["slides"]})
@@ -441,6 +503,16 @@ def _write_page(
     page.parent.mkdir(parents=True, exist_ok=True)
     page.write_text(content, encoding="utf-8")
     return RenderResult(page)
+
+
+def _check(parsed: object, entry: CacheEntry | None, deck: Path, language: Language) -> None:
+    """Raise `OutlineStructureError` listing every problem in the Outline, checked against the entry's Source and the Deck at `deck`."""
+    deck_pages = pdf.page_count(deck) if deck.is_file() else None
+    problems = check_outline(
+        parsed, duration_s=entry.duration_s if entry else None, deck_pages=deck_pages, language=language
+    )
+    if problems:
+        raise OutlineStructureError(problems)
 
 
 def _parsed(outline: dict | str) -> object:

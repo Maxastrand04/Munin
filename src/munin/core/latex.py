@@ -21,6 +21,7 @@ _CHECK = (
     " if (error.position === undefined) return reason;"
     " return reason + (error.position >= expression.length ? ' at end of input' : ' at position ' + (error.position + 1)); } }"
 )
+_DRAW = f"function draw(expression) {{ return katex.renderToString(expression, {json.dumps(KATEX_OPTIONS)}); }}"
 _FONT_URLS = re.compile(r'url\(fonts/([^)]+?)\.woff2\) format\("woff2"\)(?:,url\([^)]*\) format\("[^"]*"\))*')
 
 
@@ -60,7 +61,10 @@ def math_html(expression: str) -> str:
     Raises `ValueError` with KaTeX's reason, worded as `calculation_problems`
     words it, when KaTeX cannot draw `expression`.
     """
-    raise NotImplementedError
+    reason = _reason(expression)
+    if reason is not None:
+        raise ValueError(reason)
+    return _engine().call("draw", expression)
 
 
 def calculation_problems(calculation: str) -> list[BrokenLatex]:
@@ -127,4 +131,5 @@ def _engine() -> MiniRacer:
         engine = builder.submit(MiniRacer).result()
     engine.eval(katex_js())
     engine.eval(_CHECK)
+    engine.eval(_DRAW)
     return engine

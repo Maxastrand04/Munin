@@ -28,8 +28,79 @@ from munin.core import (
     read_deck,
     read_slides,
     render_deck_mindmap,
+    render_drawn_outline,
     render_mindmap,
     transcribe,
+)
+
+_OUTLINE_GUIDANCE = """Call `get_outline_schema` before writing an Outline. It gives the
+node types, the parts every node carries and a sample example and
+exercise. Pass the Outline as a JSON object.
+
+Write the Outline like this:
+
+- The lecture title as the one main-topic node, with three levels
+  under it: topic nodes, then slide nodes, then term nodes for terms,
+  methods and formulas.
+- Group the lecture by meaning, not by time. A topic gathers every part of
+  the lecture about it, even parts far apart in time. Aim for 1 to 5 topics.
+- Under each topic, one slide node per Slide. With no Deck, split the
+  Transcript into Slide-sized parts and write one slide node per part.
+  A Slide that is only one example or exercise gets an example or exercise
+  node under its topic in place of a slide node.
+- Under each slide node, one term node per term, method or formula. Word
+  a term the same under every slide node it appears on.
+- Skip content that neither helps the student grasp an idea nor gives
+  concrete material. A Slide such as a title page or a schedule gets no node.
+- Write every example and exercise in the lecture as an example or exercise
+  node under the node it belongs to, at any level. Give it the task, its
+  solution steps and the answer, so the panel reads on its own without
+  the video or the Slide. Leave `Exempel:`, `Övning:`, `Example:` and
+  `Exercise:` out of every label, a slide node's too, since the page adds
+  its prefix.
+- Put one stamp in each node's `stamps`, copied from the `get_transcript`
+  line where that part starts, such as `"4:34"`. A topic gets one stamp
+  for each separate stretch of the lecture it gathers. Never invent or
+  round a stamp.
+- Optionally, a short `explanation` on any node that has one. It appears
+  in that node's panel.
+- Write every math expression as LaTeX, always inline and never `$$`.
+  In an explanation, a task, an answer and a step's reason, put each
+  piece of math between `$...$` and write the rest as plain prose, with
+  `\\$` for a literal dollar sign. Write a step's calculation as LaTeX
+  alone, with no `$`. Make each step one calculation about one object,
+  such as one matrix, with at most one short sentence on why in its
+  reason. Write the steps in the order the source gives them, and write
+  no fact twice in one exercise.
+- Write the whole Outline, every node's text and every step's reason
+  included, in the lecture's language, the `language` `transcribe` returned.
+
+When the lecture has a Deck read with `read_slides`, base the topics on its
+Slides, and list in a node's `slides` each Slide that covers it, counted
+from 1. Clicking the node then shows those Slides in its panel. With no
+Deck, leave every `slides` empty.
+"""
+
+_RENDER_MINDMAP = (
+    "Render a JSON Outline of a lecture into a Mindmap page.\n\n"
+    + _OUTLINE_GUIDANCE
+    + "\n\n"
+    + """Returns `page`, the absolute path of the written HTML page. Each stamp
+becomes a link that opens the Transcript's Source at that second. When
+the Outline breaks the schema, a stamp or Slide number cannot be
+linked, or a piece of LaTeX cannot be drawn, nothing is written and the error lists every problem by its
+path of labels, broken LaTeX included. Fix every problem listed and render again; the new page
+replaces the old one. The page defaults to Radial rings, with Topic
+circles available in settings.
+"""
+)
+
+_RENDER_DRAWN_OUTLINE = (
+    "Check a JSON Outline of a lecture and return it as a Drawn Outline, writing no page.\n\n"
+    + _OUTLINE_GUIDANCE
+    + "\n\n"
+    + """Returns the Drawn Outline as an object instead of writing a page. It holds every node in Outline order, with its parent, type, label, Timestamp links, Slide numbers, explanation and box, plus the title, Source link and language. Each explanation, task, answer and step reason comes back as a list of runs, each with `kind`, which is `text` or `math`, and `content`. Text content is plain text, and math content is KaTeX HTML. An Outline with problems gets the same problem list as `render_mindmap`, and nothing is returned. Fix every problem listed and render again.
+"""
 )
 
 _REPLY_STEP = (
@@ -209,72 +280,17 @@ def create_server(
         """Return the JSON Schema an Outline must follow, plus a sample example node and exercise node. Call this before writing an Outline."""
         return get_outline_schema()
 
-    @server.tool(name="render_mindmap")
+    @server.tool(name="render_mindmap", description=_RENDER_MINDMAP)
     def render_mindmap_tool(transcript_id: str, outline: dict | str) -> RenderResult:
-        """Render a JSON Outline of a lecture into a Mindmap page.
-
-        Call `get_outline_schema` before writing an Outline. It gives the
-        node types, the parts every node carries and a sample example and
-        exercise. Pass the Outline as a JSON object.
-
-        Write the Outline like this:
-
-        - The lecture title as the one main-topic node, with three levels
-          under it: topic nodes, then slide nodes, then term nodes for terms,
-          methods and formulas.
-        - Group the lecture by meaning, not by time. A topic gathers every part of
-          the lecture about it, even parts far apart in time. Aim for 1 to 5 topics.
-        - Under each topic, one slide node per Slide. With no Deck, split the
-          Transcript into Slide-sized parts and write one slide node per part.
-          A Slide that is only one example or exercise gets an example or exercise
-          node under its topic in place of a slide node.
-        - Under each slide node, one term node per term, method or formula. Word
-          a term the same under every slide node it appears on.
-        - Skip content that neither helps the student grasp an idea nor gives
-          concrete material. A Slide such as a title page or a schedule gets no node.
-        - Write every example and exercise in the lecture as an example or exercise
-          node under the node it belongs to, at any level. Give it the task, its
-          solution steps and the answer, so the panel reads on its own without
-          the video or the Slide. Leave `Exempel:`, `Övning:`, `Example:` and
-          `Exercise:` out of every label, a slide node's too, since the page adds
-          its prefix.
-        - Put one stamp in each node's `stamps`, copied from the `get_transcript`
-          line where that part starts, such as `"4:34"`. A topic gets one stamp
-          for each separate stretch of the lecture it gathers. Never invent or
-          round a stamp.
-        - Optionally, a short `explanation` on any node that has one. It appears
-          in that node's panel.
-        - Write every math expression as LaTeX, always inline and never `$$`.
-          In an explanation, a task, an answer and a step's reason, put each
-          piece of math between `$...$` and write the rest as plain prose, with
-          `\\$` for a literal dollar sign. Write a step's calculation as LaTeX
-          alone, with no `$`. Make each step one calculation about one object,
-          such as one matrix, with at most one short sentence on why in its
-          reason. Write the steps in the order the source gives them, and write
-          no fact twice in one exercise.
-        - Write the whole Outline, every node's text and every step's reason
-          included, in the lecture's language, the `language` `transcribe` returned.
-
-        When the lecture has a Deck read with `read_slides`, base the topics on its
-        Slides, and list in a node's `slides` each Slide that covers it, counted
-        from 1. Clicking the node then shows those Slides in its panel. With no
-        Deck, leave every `slides` empty.
-
-        Returns `page`, the absolute path of the written HTML page. Each stamp
-        becomes a link that opens the Transcript's Source at that second. When
-        the Outline breaks the schema, a stamp or Slide number cannot be
-        linked, or a piece of LaTeX cannot be drawn, nothing is written and the error lists every problem by its
-        path of labels, broken LaTeX included. Fix every problem listed and render again; the new page
-        replaces the old one. The page defaults to Radial rings, with Topic
-        circles available in settings.
-        """
+        """Render a JSON Outline of a lecture into a Mindmap page."""
         with _core_errors_as_tool_errors():
             return render_mindmap(transcript_id, outline, cache_dir=cache_dir, output_dir=output_dir)
 
-    @server.tool(name="render_drawn_outline")
+    @server.tool(name="render_drawn_outline", description=_RENDER_DRAWN_OUTLINE)
     def render_drawn_outline_tool(transcript_id: str, outline: dict | str) -> DrawnOutline:
         """Check a JSON Outline of a lecture and return it as a Drawn Outline, writing no page."""
-        raise NotImplementedError
+        with _core_errors_as_tool_errors():
+            return render_drawn_outline(transcript_id, outline, cache_dir=cache_dir)
 
     @server.tool(name="read_slides")
     def read_slides_tool(transcript_id: str, deck: str) -> list[TextContent | Image]:
