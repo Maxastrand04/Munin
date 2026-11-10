@@ -50,6 +50,19 @@ def katex_css() -> str:
     return _FONT_URLS.sub(embed, (_KATEX / "katex.min.css").read_text(encoding="utf-8"))
 
 
+def math_html(expression: str) -> str:
+    """Return KaTeX's HTML for one piece of LaTeX, drawn inline with `KATEX_OPTIONS`.
+
+    `expression` is LaTeX alone, with no `$` around it. The HTML is what the
+    page's KaTeX draws for the same piece, from the same vendored build and
+    the same options, so it is inline math and never display math.
+
+    Raises `ValueError` with KaTeX's reason, worded as `calculation_problems`
+    words it, when KaTeX cannot draw `expression`.
+    """
+    raise NotImplementedError
+
+
 def calculation_problems(calculation: str) -> list[BrokenLatex]:
     """Return the calculation as one broken piece when KaTeX cannot draw it whole, else nothing."""
     reason = _reason(calculation)

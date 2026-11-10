@@ -116,7 +116,7 @@ def deck_id_of(result) -> str:
 
 
 def test_mcp_lists_all_tools(cache_dir: Path):
-    """The server exposes `transcribe`, `get_transcript`, `get_outline_schema`, `render_mindmap`, `read_slides`, `read_deck` and `render_deck_mindmap`."""
+    """The server exposes `transcribe`, `get_transcript`, `get_outline_schema`, `render_mindmap`, `render_drawn_outline`, `read_slides`, `read_deck` and `render_deck_mindmap`."""
 
     async def run():
         async with Client(create_server(cache_dir=cache_dir, recognize=two_sentences)) as client:
@@ -128,6 +128,7 @@ def test_mcp_lists_all_tools(cache_dir: Path):
         "get_transcript",
         "get_outline_schema",
         "render_mindmap",
+        "render_drawn_outline",
         "read_slides",
         "read_deck",
         "render_deck_mindmap",

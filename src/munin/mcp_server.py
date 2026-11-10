@@ -12,6 +12,7 @@ from mcp.types import INVALID_PARAMS, TextContent
 
 from munin.core import (
     Download,
+    DrawnOutline,
     Language,
     LanguageError,
     MuninError,
@@ -45,7 +46,7 @@ def create_server(
     output_dir: Path | None = None,
     download: Download | None = None,
 ) -> MCPServer:
-    """Build the MCP server with seven tools and two prompts, passing its arguments to the core.
+    """Build the MCP server with eight tools and two prompts, passing its arguments to the core.
 
     `transcribe(source: str, vocabulary: list[str] | None = None, alpha: float = 1.0, language: Language | None = None)`
     takes a local file path, a YouTube URL or a KTH Play video URL, plus
@@ -90,6 +91,14 @@ def create_server(
     in the order the source gives them, with no fact twice. When a
     render fails, it says to fix every problem listed, broken LaTeX
     included, and render again.
+    `render_drawn_outline(transcript_id: str, outline: dict | str)` takes the
+    Outline as `render_mindmap` does, writes no file, and returns the core's
+    `DrawnOutline` as an object, every run as `kind` and `content`. Its
+    description carries `render_mindmap`'s Outline guidance word for word,
+    from one string the two descriptions share, so they never drift apart,
+    then says it returns the Drawn Outline instead of writing a page, and
+    that an Outline with problems gets the same problem list as
+    `render_mindmap`, to fix and render again.
     `read_slides(transcript_id: str, deck: str)` attaches the Deck through the
     core's `read_slides` and returns two content blocks per Slide in Slide
     order: a text block `Slide N:` followed by the Slide's text on the next
@@ -261,6 +270,11 @@ def create_server(
         """
         with _core_errors_as_tool_errors():
             return render_mindmap(transcript_id, outline, cache_dir=cache_dir, output_dir=output_dir)
+
+    @server.tool(name="render_drawn_outline")
+    def render_drawn_outline_tool(transcript_id: str, outline: dict | str) -> DrawnOutline:
+        """Check a JSON Outline of a lecture and return it as a Drawn Outline, writing no page."""
+        raise NotImplementedError
 
     @server.tool(name="read_slides")
     def read_slides_tool(transcript_id: str, deck: str) -> list[TextContent | Image]:
