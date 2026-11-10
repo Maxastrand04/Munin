@@ -47,12 +47,19 @@ def test_schema_description_puts_reason_math_between_dollars():
     assert re.search(r"reason[^.]*\$\.\.\.\$", get_outline_schema().schema["description"], re.IGNORECASE)
 
 
-def test_schema_description_keeps_a_step_to_one_object_and_never_repeats_a_fact():
-    """The schema's description asks for a step about one object, in source order, with no fact written twice (#67)."""
-    description = get_outline_schema().schema["description"]
-    assert "one object" in description
-    assert "no fact twice" in description
-    assert "in the order the source gives them" in description
+def test_schema_description_keeps_a_step_to_one_object():
+    """The schema's description asks for a step about one object (#67)."""
+    assert "one object" in get_outline_schema().schema["description"]
+
+
+def test_schema_description_never_repeats_a_fact():
+    """The schema's description asks for no fact written twice (#67)."""
+    assert "no fact twice" in get_outline_schema().schema["description"]
+
+
+def test_schema_description_keeps_steps_in_source_order():
+    """The schema's description asks for steps in the order the source gives them (#67)."""
+    assert "in the order the source gives them" in get_outline_schema().schema["description"]
 
 
 def test_schema_description_forbids_double_dollars():

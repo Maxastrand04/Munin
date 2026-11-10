@@ -44,6 +44,10 @@ _Avoid_: notes, summary, mindmap (for the JSON)
 The rendered HTML page built from an Outline, with every stamp turned into a Timestamp link and every node's panel showing the Slides it lists. A render that finds any problem writes nothing and lists every problem by its path of labels. A problem is a break from the schema or the nesting rules, a malformed stamp, a stamp past the Source's end, a Slide number below 1 or past the Deck's last Slide, a Slide number listed twice on one node, a label that starts with the page language's example or exercise prefix, a piece of LaTeX the page's KaTeX cannot draw, or any Slide number on a Transcript with no Deck. A Mindmap rendered against a standalone Deck has no Source, so any stamp in its Outline is a problem too. A term that appears under several Slide nodes, worded the same, lists every place it appears in each copy's panel.
 _Avoid_: map, graph, diagram
 
+**Drawn Outline**:
+A checked Outline returned as the data another app draws a Mindmap from, instead of a written page. It holds every node in Outline order with its parent, type, label, Timestamp links, Slide numbers, explanation and example or exercise box, plus the page's title, Source link and Lecture language. Every piece of math in it is already HTML from Munin's KaTeX, prose comes back as runs of plain text and math, and labels come back as written. It carries Slide numbers but no Slide images, and it is built only from an Outline written from a Transcript.
+_Avoid_: outline data, render data, page data
+
 **Example or exercise**:
 An Outline node of type `example` or `exercise`. It sits under any node but another example or exercise, has no children, and carries a `task`, a list of `steps` and an `answer` instead of an explanation. Each step has a `calculation` and a `reason`. The Mindmap paints it in a reserved orange that no topic gets, and adds its prefix before its label, `Exempel: ` or `Övning: ` on a Swedish page and `Example: ` or `Exercise: ` on an English one. Its panel shows it as a box headed `Exempel N` or `Övning N`, or `Example N` or `Exercise N`, where N counts each type separately in Outline order, with the task, then the steps and the answer each behind a closed toggle. A Slide that is only one example or exercise is one of these, under its topic, and gets no slide node. No node's label may start with its page language's prefix, so the render fails on a slide, topic or term labelled that way, while the other language's prefix passes.
 _Avoid_: task, problem, worked example
@@ -66,6 +70,7 @@ _Avoid_: jump link, deep link, seek link
 - An **Outline** is written from exactly one **Transcript**, or from exactly one standalone **Deck**
 - A node under an **Example or exercise** is part of it, so a topic that is one takes no topic colour
 - A **Mindmap** takes its page language from its **Transcript**'s **Lecture language**, and one rendered from a standalone **Deck** takes the language its render asks for, Swedish when none
+- A **Drawn Outline** is built from exactly one **Outline** and holds what the **Mindmap** page draws from it, with the math already typeset
 - A **Mindmap** renders exactly one **Outline** and resolves its stamps against that **Transcript**'s **Source** and the Source's duration, and its Slide numbers against that **Transcript**'s **Deck**
 
 ## Example dialogue

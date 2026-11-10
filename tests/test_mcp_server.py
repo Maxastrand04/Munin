@@ -116,7 +116,7 @@ def deck_id_of(result) -> str:
 
 
 def test_mcp_lists_all_tools(cache_dir: Path):
-    """The server exposes `transcribe`, `get_transcript`, `get_outline_schema`, `render_mindmap`, `read_slides`, `read_deck` and `render_deck_mindmap`."""
+    """The server exposes `transcribe`, `get_transcript`, `get_outline_schema`, `render_mindmap`, `render_drawn_outline`, `read_slides`, `read_deck` and `render_deck_mindmap`."""
 
     async def run():
         async with Client(create_server(cache_dir=cache_dir, recognize=two_sentences)) as client:
@@ -128,6 +128,7 @@ def test_mcp_lists_all_tools(cache_dir: Path):
         "get_transcript",
         "get_outline_schema",
         "render_mindmap",
+        "render_drawn_outline",
         "read_slides",
         "read_deck",
         "render_deck_mindmap",
@@ -395,6 +396,50 @@ def test_mcp_render_mindmap_unknown_id_error_names_it(cache_dir: Path, tmp_path:
     server = create_server(cache_dir=cache_dir, recognize=two_sentences, output_dir=tmp_path / "out")
     result = call(server, "render_mindmap", {"transcript_id": "deadbeef0000", "outline": "# Matriser"})
     assert "deadbeef0000" in result.content[0].text
+
+
+def lecture_with_term(**parts) -> dict:
+    """The main topic Matriser, one topic Rader, one slide node Slide 1, and one term node Gauss under it."""
+    term = {"type": "term", "label": "Gauss", "explanation": "", "stamps": [], "slides": [], "children": [], **parts}
+    slide = {"type": "slide", "label": "Slide 1", "explanation": "", "stamps": [], "slides": [], "children": [term]}
+    topic = {"type": "topic", "label": "Rader", "explanation": "", "stamps": [], "slides": [], "children": [slide]}
+    return {**OUTLINE, "children": [topic]}
+
+
+def test_mcp_render_drawn_outline_returns_nodes(transcript_id: str, cache_dir: Path):
+    """The `render_drawn_outline` tool returns the Drawn Outline's nodes as JSON."""
+    server = create_server(cache_dir=cache_dir)
+    result = call(server, "render_drawn_outline", {"transcript_id": transcript_id, "outline": lecture_with_term()})
+    assert [n["label"] for n in result.structured_content["nodes"]] == ["Matriser", "Rader", "Slide 1", "Gauss"]
+
+
+def test_mcp_render_drawn_outline_returns_runs_as_kind_and_content(transcript_id: str, cache_dir: Path):
+    """The `render_drawn_outline` tool returns each run as an object with `kind` and `content`."""
+    server = create_server(cache_dir=cache_dir)
+    outline = lecture_with_term(explanation="Stor")
+    result = call(server, "render_drawn_outline", {"transcript_id": transcript_id, "outline": outline})
+    assert result.structured_content["nodes"][-1]["explanation"] == [{"kind": "text", "content": "Stor"}]
+
+
+def test_mcp_render_drawn_outline_bad_outline_is_tool_error(transcript_id: str, cache_dir: Path):
+    """An Outline with problems given to `render_drawn_outline` comes back as a tool error naming the problem by its path."""
+    server = create_server(cache_dir=cache_dir)
+    outline = lecture_with_term(stamps=["1:75"])
+    result = call(server, "render_drawn_outline", {"transcript_id": transcript_id, "outline": outline})
+    assert "Matriser › Rader › Slide 1 › Gauss" in result.content[0].text
+
+
+def test_mcp_render_drawn_outline_description_asks_for_schema_first(cache_dir: Path):
+    """The `render_drawn_outline` description tells the LLM to call `get_outline_schema` before writing an Outline."""
+    description = tool_description(create_server(cache_dir=cache_dir), "render_drawn_outline")
+    assert "Call `get_outline_schema` before writing an Outline" in description
+
+
+def test_mcp_render_drawn_outline_description_carries_render_mindmap_guidance(cache_dir: Path):
+    """The `render_drawn_outline` description carries `render_mindmap`'s Outline guidance word for word."""
+    server = create_server(cache_dir=cache_dir)
+    guidance = tool_description(server, "render_mindmap").split("Write the Outline like this:")[1].split("Returns")[0]
+    assert guidance in tool_description(server, "render_drawn_outline")
 
 
 def test_mcp_read_slides_returns_a_text_then_an_image_block_per_slide(source: Path, deck: Path, cache_dir: Path):
@@ -681,12 +726,21 @@ def test_mcp_render_description_asks_for_one_calculation_per_step(cache_dir: Pat
 
 
 @pytest.mark.parametrize("tool", ["render_mindmap", "render_deck_mindmap"])
-def test_mcp_render_description_keeps_a_step_to_one_object_and_never_repeats_a_fact(cache_dir: Path, tool: str):
-    """Both render tool descriptions ask for a step about one object, in source order, with no fact written twice (#67)."""
-    description = tool_description(create_server(cache_dir=cache_dir), tool)
-    assert "one object" in description
-    assert "no fact twice" in description
-    assert "in the order the source gives them" in description
+def test_mcp_render_description_keeps_a_step_to_one_object(cache_dir: Path, tool: str):
+    """Both render tool descriptions ask for a step about one object (#67)."""
+    assert "one object" in tool_description(create_server(cache_dir=cache_dir), tool)
+
+
+@pytest.mark.parametrize("tool", ["render_mindmap", "render_deck_mindmap"])
+def test_mcp_render_description_never_repeats_a_fact(cache_dir: Path, tool: str):
+    """Both render tool descriptions ask for no fact written twice (#67)."""
+    assert "no fact twice" in tool_description(create_server(cache_dir=cache_dir), tool)
+
+
+@pytest.mark.parametrize("tool", ["render_mindmap", "render_deck_mindmap"])
+def test_mcp_render_description_keeps_steps_in_source_order(cache_dir: Path, tool: str):
+    """Both render tool descriptions ask for steps in the order the source gives them (#67)."""
+    assert "in the order the source gives them" in tool_description(create_server(cache_dir=cache_dir), tool)
 
 
 @pytest.mark.parametrize("tool", ["render_mindmap", "render_deck_mindmap"])
