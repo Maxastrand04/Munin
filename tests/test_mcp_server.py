@@ -773,6 +773,26 @@ def test_mcp_read_deck_text_block_names_the_slide_then_its_text(deck: Path, cach
     assert result.content[3].text.startswith("Slide 2:\nGausselimination")
 
 
+def test_mcp_read_deck_over_the_size_limit_is_tool_error(deck: Path, cache_dir: Path):
+    """A Deck whose Slides come to more than the size limit comes back as a tool error, not a reply too big to send."""
+    result = call(create_server(cache_dir=cache_dir, slide_bytes_limit=100), "read_deck", {"deck": str(deck)})
+    assert result.is_error is True
+
+
+def test_mcp_read_deck_size_error_names_the_slide_count_and_size(deck: Path, cache_dir: Path):
+    """The size error names how many Slides the Deck has and how many MB they come to."""
+    result = call(create_server(cache_dir=cache_dir, slide_bytes_limit=100), "read_deck", {"deck": str(deck)})
+    assert re.search(r"3 Slides come to \d+\.\d MB", result.content[0].text)
+
+
+def test_mcp_read_slides_over_the_size_limit_is_tool_error(source: Path, deck: Path, cache_dir: Path):
+    """read_slides has the same size limit as read_deck."""
+    server = create_server(cache_dir=cache_dir, recognize=two_sentences, slide_bytes_limit=100)
+    transcript_id = call(server, "transcribe", {"source": str(source)}).structured_content["transcript_id"]
+    result = call(server, "read_slides", {"transcript_id": transcript_id, "deck": str(deck)})
+    assert result.is_error is True
+
+
 def test_mcp_read_deck_bad_deck_is_tool_error(cache_dir: Path, tmp_path: Path):
     """A bad Deck given to read_deck comes back as an MCP tool error."""
     result = call(create_server(cache_dir=cache_dir), "read_deck", {"deck": str(tmp_path / "missing.pdf")})

@@ -7,7 +7,8 @@ from pathlib import Path
 
 import pypdfium2
 
-_SCALE = 2.0
+_SLIDE_SCALE = 1.0
+_PAGE_SCALE = 2.0
 _PNG_COLOR_TYPE_BY_CHANNELS = {3: 2, 4: 6}
 _PNG_BIT_DEPTH = 8
 _EMPTY_PAGE_TREE = re.compile(rb"<<(?:(?!>>).)*?/Type\s*/Pages\b(?:(?!>>).)*?/Count\s+0\b", re.DOTALL)
@@ -15,6 +16,10 @@ _EMPTY_PAGE_TREE = re.compile(rb"<<(?:(?!>>).)*?/Type\s*/Pages\b(?:(?!>>).)*?/Co
 
 def read_pages(path: Path) -> list[tuple[str, bytes]]:
     """Return each page's extracted text and its drawing as PNG bytes, in page order.
+
+    Pages are drawn at one pixel per point, 960 pixels wide for a 16:9
+    slide. This is the image the LLM reads, so it is kept small enough for a
+    Deck of over 100 pages to fit in one MCP reply. See ADR-0028.
 
     Returns an empty list for a PDF whose page tree declares no pages. PDFium
     refuses to open such a file, with the same error as for a file that is not
@@ -28,7 +33,7 @@ def read_pages(path: Path) -> list[tuple[str, bytes]]:
             return []
         raise
     try:
-        return [_read_page(document[index]) for index in range(len(document))]
+        return [_read_page(document[index], _SLIDE_SCALE) for index in range(len(document))]
     finally:
         document.close()
 
@@ -43,10 +48,15 @@ def page_count(path: Path) -> int:
 
 
 def page_png(path: Path, number: int) -> bytes:
-    """Return page `number`, counted from 1, drawn as PNG bytes. Raises `ValueError` when the PDF cannot be opened."""
+    """Return page `number`, counted from 1, drawn as PNG bytes at two pixels per point.
+
+    This is the image the Mindmap page shows in a panel, so it is drawn at
+    twice the size of `read_pages` to stay sharp. Raises `ValueError` when
+    the PDF cannot be opened.
+    """
     document = _open(path)
     try:
-        return _read_page(document[number - 1])[1]
+        return _read_page(document[number - 1], _PAGE_SCALE)[1]
     finally:
         document.close()
 
@@ -63,10 +73,10 @@ def _open(path: Path) -> pypdfium2.PdfDocument:
         raise ValueError(str(error)) from error
 
 
-def _read_page(page: pypdfium2.PdfPage) -> tuple[str, bytes]:
+def _read_page(page: pypdfium2.PdfPage, scale: float) -> tuple[str, bytes]:
     try:
         text = page.get_textpage().get_text_range()
-        bitmap = page.render(scale=_SCALE, rev_byteorder=True)
+        bitmap = page.render(scale=scale, rev_byteorder=True)
         return text, _png(bitmap)
     finally:
         page.close()

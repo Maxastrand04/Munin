@@ -1,5 +1,7 @@
 import base64
 import hashlib
+import re
+import struct
 from pathlib import Path
 
 import pytest
@@ -8,10 +10,10 @@ from munin.core import (
     DeckError,
     Fragment,
     OutlineStructureError,
-    Slide,
     UnknownDeckError,
     UnknownTranscriptError,
     Vocabulary,
+    pdf,
     read_deck,
     read_slides,
     render_deck_mindmap,
@@ -20,6 +22,7 @@ from munin.core import (
 )
 
 PNG_SIGNATURE = b"\x89PNG\r\n\x1a\n"
+PAGE_IMAGE = re.compile(r"data:image/png;base64,([A-Za-z0-9+/=]+)")
 
 
 def one_sentence(wav: Path, vocabulary: Vocabulary | None):
@@ -59,8 +62,14 @@ def deck_id_of(path: Path) -> str:
     return hashlib.sha256(str(path.resolve()).encode()).hexdigest()[:12]
 
 
-def encoded(slide: Slide) -> str:
-    return base64.b64encode(slide.image).decode()
+def page_image(deck: Path, number: int) -> str:
+    """Slide `number` of the PDF at `deck` as the Mindmap page embeds it, in base64."""
+    return base64.b64encode(pdf.page_png(deck, number)).decode()
+
+
+def png_width(image: bytes) -> int:
+    """The width in pixels from a PNG's header."""
+    return struct.unpack(">I", image[16:20])[0]
 
 
 # Reading a Deck
@@ -156,10 +165,10 @@ def test_failed_read_attaches_nothing(transcript_id: str, cache_dir: Path, tmp_p
 
 def test_failed_read_keeps_the_earlier_deck(transcript_id: str, deck: Path, cache_dir: Path, tmp_path: Path):
     """A failed read leaves the Deck attached before, so its Slides still reach the page."""
-    slides = read_slides(transcript_id, deck, cache_dir=cache_dir)
+    read_slides(transcript_id, deck, cache_dir=cache_dir)
     with pytest.raises(DeckError):
         read_slides(transcript_id, tmp_path / "missing.pdf", cache_dir=cache_dir)
-    assert encoded(slides[1]) in page_text(transcript_id, outline(2), cache_dir, tmp_path)
+    assert page_image(deck, 2) in page_text(transcript_id, outline(2), cache_dir, tmp_path)
 
 
 def test_reading_a_new_deck_replaces_the_old_one(
@@ -174,9 +183,10 @@ def test_reading_a_new_deck_replaces_the_old_one(
 
 def test_attached_deck_survives_deleting_the_pdf(transcript_id: str, deck: Path, cache_dir: Path, tmp_path: Path):
     """The page shows a Slide even after the PDF it was read from is deleted."""
-    slides = read_slides(transcript_id, deck, cache_dir=cache_dir)
+    read_slides(transcript_id, deck, cache_dir=cache_dir)
+    expected = page_image(deck, 2)
     deck.unlink()
-    assert encoded(slides[1]) in page_text(transcript_id, outline(2), cache_dir, tmp_path)
+    assert expected in page_text(transcript_id, outline(2), cache_dir, tmp_path)
 
 
 # Reading a Deck on its own
@@ -197,6 +207,19 @@ def test_read_deck_slide_images_are_png(deck: Path, cache_dir: Path):
     """Each Slide of a Deck read on its own carries its page as PNG bytes."""
     slides = read_deck(deck, cache_dir=cache_dir).slides
     assert [slide.image[:8] for slide in slides] == [PNG_SIGNATURE] * 3
+
+
+def test_read_deck_draws_one_pixel_per_point(deck: Path, cache_dir: Path):
+    """Each Slide image is as many pixels wide as the 640 point wide page, small enough for a big Deck in one reply."""
+    slides = read_deck(deck, cache_dir=cache_dir).slides
+    assert [png_width(slide.image) for slide in slides] == [640] * 3
+
+
+def test_page_draws_slides_at_twice_the_read_size(deck: Path, cache_dir: Path, tmp_path: Path):
+    """The Mindmap page embeds a Slide at 1280 pixels wide, twice the size `read_deck` returns, so its panel stays sharp."""
+    deck_id = read_deck(deck, cache_dir=cache_dir).deck_id
+    embedded = PAGE_IMAGE.search(deck_page_text(deck_id, outline(2), cache_dir, tmp_path)).group(1)
+    assert png_width(base64.b64decode(embedded)) == 1280
 
 
 def test_read_deck_image_only_page_still_has_an_image(cache_dir: Path, tmp_path: Path, write_deck):
@@ -264,11 +287,12 @@ def test_read_deck_failure_stores_nothing(cache_dir: Path, tmp_path: Path):
 def test_read_deck_failure_keeps_the_earlier_copy(deck: Path, cache_dir: Path, tmp_path: Path):
     """A failed re-read of a path leaves the copy stored before, so its Slides still reach the page."""
     first = read_deck(deck, cache_dir=cache_dir)
+    expected = page_image(deck, 2)
     deck.write_bytes(b"not a pdf at all")
     with pytest.raises(DeckError):
         read_deck(deck, cache_dir=cache_dir)
     page = deck_page_text(first.deck_id, outline(2), cache_dir, tmp_path)
-    assert encoded(first.slides[1]) in page
+    assert expected in page
 
 
 def test_read_deck_again_replaces_the_copy(deck: Path, cache_dir: Path, tmp_path: Path, write_deck):
@@ -277,17 +301,18 @@ def test_read_deck_again_replaces_the_copy(deck: Path, cache_dir: Path, tmp_path
     write_deck(deck, ["Vektorer", "Baser"])
     second = read_deck(deck, cache_dir=cache_dir)
     page = deck_page_text(second.deck_id, outline(2, title="Vektorer"), cache_dir, tmp_path)
-    assert encoded(second.slides[1]) in page
+    assert page_image(deck, 2) in page
 
 
 def test_read_deck_leaves_an_attached_copy_alone(
     transcript_id: str, deck: Path, cache_dir: Path, tmp_path: Path, write_deck
 ):
     """Reading a PDF on its own after changing it leaves the copy attached to a Transcript as it was."""
-    attached = read_slides(transcript_id, deck, cache_dir=cache_dir)
+    read_slides(transcript_id, deck, cache_dir=cache_dir)
+    expected = page_image(deck, 2)
     write_deck(deck, ["Vektorer", "Baser"])
     read_deck(deck, cache_dir=cache_dir)
-    assert encoded(attached[1]) in page_text(transcript_id, outline(2), cache_dir, tmp_path)
+    assert expected in page_text(transcript_id, outline(2), cache_dir, tmp_path)
 
 
 def test_read_slides_leaves_a_standalone_copy_alone(
@@ -295,7 +320,8 @@ def test_read_slides_leaves_a_standalone_copy_alone(
 ):
     """Attaching a PDF to a Transcript after changing it leaves the copy read on its own as it was."""
     standalone = read_deck(deck, cache_dir=cache_dir)
+    expected = page_image(deck, 2)
     write_deck(deck, ["Vektorer", "Baser"])
     read_slides(transcript_id, deck, cache_dir=cache_dir)
     page = deck_page_text(standalone.deck_id, outline(2), cache_dir, tmp_path)
-    assert encoded(standalone.slides[1]) in page
+    assert expected in page
