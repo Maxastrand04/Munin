@@ -110,6 +110,8 @@ Claude Code drops an MCP server that writes a message over 16 MB, so this
 leaves room for the JSON around the Slides. See ADR-0028.
 """
 
+_BYTES_PER_MB = 1_000_000
+
 _REPLY_STEP = (
     "Reply with only the page as a `file://` link, such as `file:///path/to/page.html`. "
     "Write nothing else: no Outline, no summary, no list of steps. "
@@ -442,17 +444,22 @@ def _slide_blocks(slides: tuple[Slide, ...], limit: int) -> list[TextContent | I
 
     Raises `ToolError` when the Slides' text and base64 images come to more than `limit` bytes.
     """
-    size = sum(len(slide.text.encode()) + _base64_length(slide.image) for slide in slides)
-    if size > limit:
-        raise ToolError(
-            f"Deck too big for one reply: its {len(slides)} Slides come to {size / 1e6:.1f} MB,"
-            f" over the {limit / 1e6:.1f} MB limit. Split the PDF into smaller Decks and read each."
-        )
+    _check_reply_size(slides, limit)
     blocks: list[TextContent | Image] = []
     for slide in slides:
         blocks.append(TextContent(type="text", text=f"Slide {slide.number}:\n{slide.text}"))
         blocks.append(Image(data=slide.image, format="png"))
     return blocks
+
+
+def _check_reply_size(slides: tuple[Slide, ...], limit: int) -> None:
+    """Raise `ToolError`, naming the Slide count and size in MB, when the Slides' text and base64 images come to more than `limit` bytes."""
+    size = sum(len(slide.text.encode()) + _base64_length(slide.image) for slide in slides)
+    if size > limit:
+        raise ToolError(
+            f"Deck too big for one reply: its {len(slides)} Slides come to {size / _BYTES_PER_MB:.1f} MB,"
+            f" over the {limit / _BYTES_PER_MB:.1f} MB limit. Split the PDF into smaller Decks and read each."
+        )
 
 
 def _base64_length(data: bytes) -> int:
