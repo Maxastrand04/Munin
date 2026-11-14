@@ -94,8 +94,7 @@ def prose_pieces(prose: str) -> list[ProsePiece]:
     A backslash escapes the next character, so `\\$` never opens or closes
     math and stays in the text. A `$` with no closing `$` is one open piece
     from there to the end, and `$$` is one display piece. This is the one
-    place that decides where math starts and ends, for the check and for
-    the Drawn Outline alike.
+    place that decides where math starts and ends.
     """
     pieces: list[ProsePiece] = []
     text_start = 0
