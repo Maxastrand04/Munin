@@ -418,7 +418,8 @@ def render_mindmap(
 
     `cache_dir` defaults to the per-user cache folder for Munin.
     `output_dir` defaults to `mindmaps/` at the repo root, found from this
-    file's location, so the server's working directory does not matter.
+    file's location. The MCP server passes `mindmaps/` in the folder it
+    starts in, so its pages land in the client's working folder.
 
     Raises `UnknownTranscriptError` when no cached Transcript has this ID,
     before the Outline is read, then `OutlineSyntaxError` or
