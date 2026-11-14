@@ -12,7 +12,6 @@ from mcp.types import INVALID_PARAMS, TextContent
 
 from munin.core import (
     Download,
-    DrawnOutline,
     Language,
     LanguageError,
     MuninError,
@@ -28,12 +27,13 @@ from munin.core import (
     read_deck,
     read_slides,
     render_deck_mindmap,
-    render_drawn_outline,
     render_mindmap,
     transcribe,
 )
 
-_OUTLINE_GUIDANCE = """Call `get_outline_schema` before writing an Outline. It gives the
+_RENDER_MINDMAP = """Render a JSON Outline of a lecture into a Mindmap page.
+
+Call `get_outline_schema` before writing an Outline. It gives the
 node types, the parts every node carries and a sample example and
 exercise. Pass the Outline as a JSON object.
 
@@ -79,13 +79,9 @@ When the lecture has a Deck read with `read_slides`, base the topics on its
 Slides, and list in a node's `slides` each Slide that covers it, counted
 from 1. Clicking the node then shows those Slides in its panel. With no
 Deck, leave every `slides` empty.
-"""
 
-_RENDER_MINDMAP = (
-    "Render a JSON Outline of a lecture into a Mindmap page.\n\n"
-    + _OUTLINE_GUIDANCE
-    + "\n\n"
-    + """Returns `page`, the absolute path of the written HTML page. Each stamp
+
+Returns `page`, the absolute path of the written HTML page. Each stamp
 becomes a link that opens the Transcript's Source at that second. When
 the Outline breaks the schema, a stamp or Slide number cannot be
 linked, or a piece of LaTeX cannot be drawn, nothing is written and the error lists every problem by its
@@ -93,15 +89,6 @@ path of labels, broken LaTeX included. Fix every problem listed and render again
 replaces the old one. The page defaults to Radial rings, with Topic
 circles available in settings.
 """
-)
-
-_RENDER_DRAWN_OUTLINE = (
-    "Check a JSON Outline of a lecture and return it as a Drawn Outline, writing no page.\n\n"
-    + _OUTLINE_GUIDANCE
-    + "\n\n"
-    + """Returns the Drawn Outline as an object instead of writing a page. It holds every node in Outline order, with its parent, type, label, Timestamp links, Slide numbers, explanation and box, plus the title, Source link and language. Each explanation, task, answer and step reason comes back as a list of runs, each with `kind`, which is `text` or `math`, and `content`. Text content is plain text, and math content is KaTeX HTML. An Outline with problems gets the same problem list as `render_mindmap`, and nothing is returned. Fix every problem listed and render again.
-"""
-)
 
 _REPLY_STEP = (
     "Reply with only the page as a `file://` link, such as `file:///path/to/page.html`. "
@@ -117,7 +104,7 @@ def create_server(
     output_dir: Path | None = None,
     download: Download | None = None,
 ) -> MCPServer:
-    """Build the MCP server with eight tools and two prompts, passing its arguments to the core.
+    """Build the MCP server with seven tools and two prompts, passing its arguments to the core.
 
     `transcribe(source: str, vocabulary: list[str] | None = None, alpha: float = 1.0, language: Language | None = None)`
     takes a local file path, a YouTube URL or a KTH Play video URL, plus
@@ -162,14 +149,6 @@ def create_server(
     in the order the source gives them, with no fact twice. When a
     render fails, it says to fix every problem listed, broken LaTeX
     included, and render again.
-    `render_drawn_outline(transcript_id: str, outline: dict | str)` takes the
-    Outline as `render_mindmap` does, writes no file, and returns the core's
-    `DrawnOutline` as an object, every run as `kind` and `content`. Its
-    description carries `render_mindmap`'s Outline guidance word for word,
-    from one string the two descriptions share, so they never drift apart,
-    then says it returns the Drawn Outline instead of writing a page, and
-    that an Outline with problems gets the same problem list as
-    `render_mindmap`, to fix and render again.
     `read_slides(transcript_id: str, deck: str)` attaches the Deck through the
     core's `read_slides` and returns two content blocks per Slide in Slide
     order: a text block `Slide N:` followed by the Slide's text on the next
@@ -285,12 +264,6 @@ def create_server(
         """Render a JSON Outline of a lecture into a Mindmap page."""
         with _core_errors_as_tool_errors():
             return render_mindmap(transcript_id, outline, cache_dir=cache_dir, output_dir=output_dir)
-
-    @server.tool(name="render_drawn_outline", description=_RENDER_DRAWN_OUTLINE)
-    def render_drawn_outline_tool(transcript_id: str, outline: dict | str) -> DrawnOutline:
-        """Check a JSON Outline of a lecture and return it as a Drawn Outline, writing no page."""
-        with _core_errors_as_tool_errors():
-            return render_drawn_outline(transcript_id, outline, cache_dir=cache_dir)
 
     @server.tool(name="read_slides")
     def read_slides_tool(transcript_id: str, deck: str) -> list[TextContent | Image]:
