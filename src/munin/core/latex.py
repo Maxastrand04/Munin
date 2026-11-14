@@ -13,11 +13,10 @@ from py_mini_racer import MiniRacer
 
 _KATEX = Path(__file__).parent / "_vendor" / "katex"
 KATEX_OPTIONS = {"throwOnError": True, "displayMode": False, "strict": "ignore"}
-"""The options the LaTeX check, `math_html` and the page all pass to KaTeX."""
-_DRAW = f"function draw(expression) {{ return katex.renderToString(expression, {json.dumps(KATEX_OPTIONS)}); }}"
+"""The options both the LaTeX check and the page pass to KaTeX."""
 _CHECK = (
     "function check(expression) {"
-    " try { draw(expression); return null; }"
+    f" try {{ katex.renderToString(expression, {json.dumps(KATEX_OPTIONS)}); return null; }}"
     " catch (error) {"
     " var reason = error.rawMessage || String(error.message);"
     " if (error.position === undefined) return reason;"
@@ -51,22 +50,6 @@ def katex_css() -> str:
         return f'url(data:font/woff2;base64,{data}) format("woff2")'
 
     return _FONT_URLS.sub(embed, (_KATEX / "katex.min.css").read_text(encoding="utf-8"))
-
-
-def math_html(expression: str) -> str:
-    """Return KaTeX's HTML for one piece of LaTeX, drawn inline with `KATEX_OPTIONS`.
-
-    `expression` is LaTeX alone, with no `$` around it. The HTML is what the
-    page's KaTeX draws for the same piece, from the same vendored build and
-    the same options, so it is inline math and never display math.
-
-    Raises `ValueError` with KaTeX's reason, worded as `calculation_problems`
-    words it, when KaTeX cannot draw `expression`.
-    """
-    reason = _reason(expression)
-    if reason is not None:
-        raise ValueError(reason)
-    return _engine().call("draw", expression)
 
 
 def calculation_problems(calculation: str) -> list[BrokenLatex]:
@@ -158,7 +141,7 @@ def _reason(expression: str) -> str | None:
 
 @lru_cache(maxsize=1)
 def _engine() -> MiniRacer:
-    """Return the one V8 engine with KaTeX, the check and the drawing function loaded, built on first use.
+    """Return the one V8 engine with KaTeX and the check loaded, built on first use.
 
     It is built on a thread with no event loop, so it runs on a loop of its
     own and outlives any loop running where it was first asked for.
@@ -166,6 +149,5 @@ def _engine() -> MiniRacer:
     with ThreadPoolExecutor(max_workers=1) as builder:
         engine = builder.submit(MiniRacer).result()
     engine.eval(katex_js())
-    engine.eval(_DRAW)
     engine.eval(_CHECK)
     return engine
