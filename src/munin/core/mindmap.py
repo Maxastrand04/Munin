@@ -1,4 +1,4 @@
-"""Rendering a JSON Outline into a Mindmap page, or into a Drawn Outline, with Timestamp links."""
+"""Rendering a JSON Outline into a Mindmap page with Timestamp links."""
 
 import base64
 import json
@@ -6,7 +6,6 @@ import re
 from dataclasses import dataclass
 from html import escape
 from pathlib import Path
-from typing import Literal
 
 from munin.core import pdf
 from munin.core.cache_ids import is_cache_id
@@ -17,7 +16,7 @@ from munin.core.errors import (
     UnknownDeckError,
 )
 from munin.core.language import Language, parse_language
-from munin.core.latex import KATEX_OPTIONS, katex_css, katex_js, math_html, prose_pieces
+from munin.core.latex import KATEX_OPTIONS, katex_css, katex_js
 from munin.core.outline import WORKED_TITLES, check_outline
 from munin.core.slides import deck_path, standalone_deck_path
 from munin.core.sources import Source, Video
@@ -80,200 +79,6 @@ class RenderResult:
     """
 
     page: Path
-
-
-@dataclass(frozen=True)
-class ProseRun:
-    """One stretch of prose that is all plain text or one piece of math.
-
-    `kind` is `"text"` or `"math"`. For text, `content` is the text exactly as
-    the Outline holds it, line breaks included, with each `\\$` turned into
-    `$`, as the page shows it. For math, `content` is KaTeX's HTML for the
-    piece between one pair of `$`, as `math_html` gives it.
-    """
-
-    kind: Literal["text", "math"]
-    content: str
-
-
-@dataclass(frozen=True)
-class TimestampLink:
-    """One stamp as a Timestamp link: `text` as `display_stamp` shows it, and `url` opening the Source at that second."""
-
-    text: str
-    url: str
-
-
-@dataclass(frozen=True)
-class WorkedStep:
-    """One step of an example's or exercise's solution.
-
-    `calculation` is KaTeX's HTML for the step's calculation, drawn inline.
-    `reason` is the step's reason as runs, and `()` when the reason is empty.
-    """
-
-    calculation: str
-    reason: tuple[ProseRun, ...]
-
-
-@dataclass(frozen=True)
-class WorkedBox:
-    """What an example's or exercise's box shows, as the page's box shows it.
-
-    `title` is the type name in the page language, such as `Exempel` or
-    `Exercise`, and `heading` is the title and N, such as `Exempel 2`, where N
-    counts each type separately in Outline order, from 1. `task` and `answer`
-    are runs, and `answer` is `()` when the answer is empty. `steps` follow the
-    Outline's order. `step_count`, `solution_toggle`, `answer_toggle` and
-    `no_solution` are the box's fixed wording in the page language, as
-    `render_mindmap` lists it.
-    """
-
-    title: str
-    heading: str
-    task: tuple[ProseRun, ...]
-    steps: tuple[WorkedStep, ...]
-    step_count: str
-    answer: tuple[ProseRun, ...]
-    solution_toggle: str
-    answer_toggle: str
-    no_solution: str
-
-
-@dataclass(frozen=True)
-class DrawnNode:
-    """One Outline node as the page draws it.
-
-    `id` is the node's index in Outline order, from 0, and `parent` is its
-    parent's `id`, or None for the main topic. `label` is exactly as the
-    Outline holds it, LaTeX and `\\$` included, with no example or exercise
-    prefix, which the drawing app adds from `worked.title`. `links` holds one
-    Timestamp link per stamp, in the Outline's order. `slides` are the node's
-    Slide numbers in Slide order. `term` is the label with runs of whitespace
-    made one space and case folded, which the page uses to find copies of a
-    term. `explanation` is runs, and `()` for an empty explanation or on an
-    example or exercise. `worked` is the box on an example or exercise, and
-    None on any other node.
-    """
-
-    id: int
-    parent: int | None
-    type: str
-    label: str
-    links: tuple[TimestampLink, ...]
-    slides: tuple[int, ...]
-    term: str
-    explanation: tuple[ProseRun, ...]
-    worked: WorkedBox | None
-
-
-@dataclass(frozen=True)
-class DrawnOutline:
-    """A checked Outline as the data another app draws a Mindmap from, with every Timestamp link resolved and all math already HTML.
-
-    `title` is the main topic's label. `source_url` is the address the page's
-    Source link opens. `language` is the page language, the Transcript's
-    Lecture language. `nodes` holds every node in Outline order, parents
-    before children. It carries Slide numbers and no Slide images.
-    """
-
-    title: str
-    source_url: str
-    language: Language
-    nodes: tuple[DrawnNode, ...]
-
-
-def render_drawn_outline(
-    transcript_id: str,
-    outline: dict | str,
-    *,
-    cache_dir: Path | None = None,
-) -> DrawnOutline:
-    """Check a JSON Outline against the Transcript exactly as `render_mindmap` does, and return it as a Drawn Outline instead of writing a page.
-
-    `outline` is taken as `render_mindmap` takes it, as a dict or as JSON
-    text. The nodes carry what the page's nodes carry: stamps become Timestamp
-    links to the Transcript's Source, and Slide numbers stay numbers. The
-    language is the Transcript's Lecture language, and a Transcript cached
-    before lecture languages existed is Swedish, which picks the box wording
-    as for the page.
-
-    Every `$...$` piece in an explanation, a task, a step reason or an answer
-    becomes a math run of KaTeX's inline HTML, and the prose around it text
-    runs. Each step's calculation becomes KaTeX's inline HTML whole. The
-    HTML comes from the same vendored KaTeX build and options the page and
-    the LaTeX check use. Labels stay text.
-
-    Nothing is written to disk, whatever the outcome.
-
-    `cache_dir` defaults to the per-user cache folder for Munin.
-
-    Raises what `render_mindmap` raises, in the same order and with the same
-    problems: `UnknownTranscriptError` when no cached Transcript has this ID,
-    before the Outline is read, then `OutlineSyntaxError` for text that is
-    not JSON, then `OutlineStructureError` listing every problem the check
-    finds.
-    """
-    cache_dir = cache_dir or default_cache_dir()
-    entry = cached_entry(transcript_id, cache_dir=cache_dir)
-    nodes = _checked_nodes(outline, entry, deck_path(transcript_id, cache_dir), entry.language)
-    return DrawnOutline(
-        title=nodes[0]["label"],
-        source_url=_source_url(entry.source),
-        language=entry.language,
-        nodes=tuple(_drawn_node(node) for node in nodes),
-    )
-
-
-def _prose_runs(prose: str) -> tuple[ProseRun, ...]:
-    """Split a prose part into text runs and math runs in order, with no empty text run.
-
-    Each closed `$...$` piece is math, drawn by `math_html`. Everything else is
-    text, with `\\$` turned into `$`. The check has already passed every piece,
-    so no display or open piece is left.
-    """
-    runs: list[ProseRun] = []
-    for piece in prose_pieces(prose):
-        if piece.kind == "math":
-            runs.append(ProseRun("math", math_html(piece.text[1:-1])))
-        else:
-            _add_text_run(runs, piece.text)
-    return tuple(runs)
-
-
-def _add_text_run(runs: list[ProseRun], text: str) -> None:
-    if text:
-        runs.append(ProseRun("text", text.replace("\\$", "$")))
-
-
-def _drawn_node(node: dict) -> DrawnNode:
-    return DrawnNode(
-        id=node["id"],
-        parent=node["parent"],
-        type=node["type"],
-        label=node["label"],
-        links=tuple(TimestampLink(link["text"], link["url"]) for link in node["links"]),
-        slides=tuple(node["slides"]),
-        term=node["term"],
-        explanation=_prose_runs(node["explanation"]),
-        worked=None if node["worked"] is None else _drawn_box(node["worked"]),
-    )
-
-
-def _drawn_box(box: dict) -> WorkedBox:
-    return WorkedBox(
-        title=box["title"],
-        heading=box["heading"],
-        task=_prose_runs(box["task"]),
-        steps=tuple(
-            WorkedStep(math_html(step["calculation"]), _prose_runs(step["reason"])) for step in box["steps"]
-        ),
-        step_count=box["step_count"],
-        answer=_prose_runs(box["answer"]),
-        solution_toggle=box["solution_toggle"],
-        answer_toggle=box["answer_toggle"],
-        no_solution=box["no_solution"],
-    )
 
 
 def render_mindmap(
