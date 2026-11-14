@@ -22,6 +22,7 @@ from munin.core import (
     UnknownTranscriptError,
     Video,
     Vocabulary,
+    pdf,
     read_deck,
     read_slides,
     render_deck_mindmap,
@@ -135,8 +136,9 @@ def links_in(page: Path) -> list[str]:
     return TIMESTAMP_LINK.findall(page.read_text(encoding="utf-8"))
 
 
-def encoded(slide: Slide) -> str:
-    return base64.b64encode(slide.image).decode()
+def page_image(deck: Path, number: int) -> str:
+    """Slide `number` of the PDF at `deck` as the Mindmap page embeds it, in base64."""
+    return base64.b64encode(pdf.page_png(deck, number)).decode()
 
 
 def problem_paths(transcript_id: str, outline, cache_dir: Path, tmp_path: Path) -> list[tuple[str, ...]]:
@@ -333,34 +335,34 @@ def slides_transcript(source: Path, deck: Path, cache_dir: Path) -> tuple[str, t
     return transcript_id, read_slides(transcript_id, deck, cache_dir=cache_dir)
 
 
-def test_slide_number_embeds_its_slide(slides_transcript, cache_dir: Path, tmp_path: Path):
+def test_slide_number_embeds_its_slide(slides_transcript, deck: Path, cache_dir: Path, tmp_path: Path):
     """A Slide number on a node embeds that Slide's image in the page."""
-    transcript_id, slides = slides_transcript
+    transcript_id, _ = slides_transcript
     page = render_page(transcript_id, lecture(term(slides=[2])), cache_dir=cache_dir, output_dir=tmp_path)
-    assert encoded(slides[1]) in page.read_text(encoding="utf-8")
+    assert page_image(deck, 2) in page.read_text(encoding="utf-8")
 
 
-def test_unlisted_slide_is_not_embedded(slides_transcript, cache_dir: Path, tmp_path: Path):
+def test_unlisted_slide_is_not_embedded(slides_transcript, deck: Path, cache_dir: Path, tmp_path: Path):
     """The page embeds no image of a Slide that no node lists."""
-    transcript_id, slides = slides_transcript
+    transcript_id, _ = slides_transcript
     page = render_page(transcript_id, lecture(term(slides=[2])), cache_dir=cache_dir, output_dir=tmp_path)
-    assert encoded(slides[2]) not in page.read_text(encoding="utf-8")
+    assert page_image(deck, 3) not in page.read_text(encoding="utf-8")
 
 
-def test_slide_on_two_nodes_is_embedded_once(slides_transcript, cache_dir: Path, tmp_path: Path):
+def test_slide_on_two_nodes_is_embedded_once(slides_transcript, deck: Path, cache_dir: Path, tmp_path: Path):
     """A Slide listed on two nodes appears in the page exactly once."""
-    transcript_id, slides = slides_transcript
+    transcript_id, _ = slides_transcript
     outline = lecture(term("Gauss", slides=[2]), term("Rang", slides=[2]))
     page = render_page(transcript_id, outline, cache_dir=cache_dir, output_dir=tmp_path)
-    assert page.read_text(encoding="utf-8").count(encoded(slides[1])) == 1
+    assert page.read_text(encoding="utf-8").count(page_image(deck, 2)) == 1
 
 
 def test_kthplay_slide_image_is_embedded(deck: Path, cache_dir: Path, tmp_path: Path):
     """A Slide a node lists on a KTH Play Transcript with a Deck is embedded in the page."""
     transcript_id = video_transcript_of(SLUG_URL, cache_dir)
-    slides = read_slides(transcript_id, deck, cache_dir=cache_dir)
+    read_slides(transcript_id, deck, cache_dir=cache_dir)
     page = render_page(transcript_id, lecture(term(slides=[2])), cache_dir=cache_dir, output_dir=tmp_path)
-    assert encoded(slides[1]) in page.read_text(encoding="utf-8")
+    assert page_image(deck, 2) in page.read_text(encoding="utf-8")
 
 
 def test_slide_number_in_an_explanation_is_not_checked(slides_transcript, cache_dir: Path, tmp_path: Path):
@@ -1061,11 +1063,11 @@ def test_deck_render_accepts_a_slide_node_with_no_slide_numbers(standalone_deck,
     assert page.is_file()
 
 
-def test_deck_render_embeds_a_numbered_slide(standalone_deck, cache_dir: Path, tmp_path: Path):
+def test_deck_render_embeds_a_numbered_slide(standalone_deck, deck: Path, cache_dir: Path, tmp_path: Path):
     """A Slide number in an Outline rendered against a standalone Deck embeds that Slide."""
     outline = lecture(term(slides=[3]))
     page = render_deck_mindmap(standalone_deck.deck_id, outline, cache_dir=cache_dir, output_dir=tmp_path).page
-    assert encoded(standalone_deck.slides[2]) in page.read_text(encoding="utf-8")
+    assert page_image(deck, 3) in page.read_text(encoding="utf-8")
 
 
 def test_deck_render_stamp_is_a_problem(standalone_deck, cache_dir: Path, tmp_path: Path):

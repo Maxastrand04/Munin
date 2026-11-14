@@ -103,6 +103,15 @@ _RENDER_DRAWN_OUTLINE = (
 """
 )
 
+SLIDE_BYTES_LIMIT = 12_000_000
+"""The most bytes of Slide text and base64 images `read_slides` and `read_deck` return.
+
+Claude Code drops an MCP server that writes a message over 16 MB, so this
+leaves room for the JSON around the Slides. See ADR-0028.
+"""
+
+_BYTES_PER_MB = 1_000_000
+
 _REPLY_STEP = (
     "Reply with only the page as a `file://` link, such as `file:///path/to/page.html`. "
     "Write nothing else: no Outline, no summary, no list of steps. "
@@ -116,6 +125,7 @@ def create_server(
     recognize: Recognize | None = None,
     output_dir: Path | None = None,
     download: Download | None = None,
+    slide_bytes_limit: int = SLIDE_BYTES_LIMIT,
 ) -> MCPServer:
     """Build the MCP server with eight tools and two prompts, passing its arguments to the core.
 
@@ -177,6 +187,10 @@ def create_server(
     `read_deck(deck: str)` reads a Deck on its own through the core's
     `read_deck` and returns a text block `Deck ID: <id>` first, then the same
     two blocks per Slide that `read_slides` returns.
+    When a Deck's Slide text and base64 images come to more than
+    `slide_bytes_limit` bytes, both tools return a tool error naming the
+    Slide count and size in MB instead of the Slides. `read_slides` has
+    attached the Deck by then.
     `render_deck_mindmap(deck_id: str, outline: dict | str, language: Language | None = None)`
     takes the Outline as `render_mindmap` does, passes `language` to the
     core, and returns the `RenderResult` fields as `render_mindmap` does. The
@@ -297,14 +311,14 @@ def create_server(
         """Attach a lecture's slide PDF to a Transcript and return every Slide's number, text and image."""
         with _core_errors_as_tool_errors():
             slides = read_slides(transcript_id, deck, cache_dir=cache_dir)
-        return _slide_blocks(slides)
+        return _slide_blocks(slides, slide_bytes_limit)
 
     @server.tool(name="read_deck")
     def read_deck_tool(deck: str) -> list[TextContent | Image]:
         """Read a lecture's slide PDF on its own, with no recording, and return its Deck ID and every Slide's number, text and image."""
         with _core_errors_as_tool_errors():
             result = read_deck(deck, cache_dir=cache_dir)
-        return [TextContent(type="text", text=f"Deck ID: {result.deck_id}"), *_slide_blocks(result.slides)]
+        return [TextContent(type="text", text=f"Deck ID: {result.deck_id}"), *_slide_blocks(result.slides, slide_bytes_limit)]
 
     @server.tool(name="render_deck_mindmap")
     def render_deck_mindmap_tool(deck_id: str, outline: dict | str, language: Language | None = None) -> RenderResult:
@@ -425,13 +439,32 @@ def _core_errors_as_tool_errors() -> Iterator[None]:
         raise ToolError(str(error)) from error
 
 
-def _slide_blocks(slides: tuple[Slide, ...]) -> list[TextContent | Image]:
-    """Return a `Slide N:` text block, then a PNG image block, for each Slide in order."""
+def _slide_blocks(slides: tuple[Slide, ...], limit: int) -> list[TextContent | Image]:
+    """Return a `Slide N:` text block, then a PNG image block, for each Slide in order.
+
+    Raises `ToolError` when the Slides' text and base64 images come to more than `limit` bytes.
+    """
+    _check_reply_size(slides, limit)
     blocks: list[TextContent | Image] = []
     for slide in slides:
         blocks.append(TextContent(type="text", text=f"Slide {slide.number}:\n{slide.text}"))
         blocks.append(Image(data=slide.image, format="png"))
     return blocks
+
+
+def _check_reply_size(slides: tuple[Slide, ...], limit: int) -> None:
+    """Raise `ToolError`, naming the Slide count and size in MB, when the Slides' text and base64 images come to more than `limit` bytes."""
+    size = sum(len(slide.text.encode()) + _base64_length(slide.image) for slide in slides)
+    if size > limit:
+        raise ToolError(
+            f"Deck too big for one reply: its {len(slides)} Slides come to {size / _BYTES_PER_MB:.1f} MB,"
+            f" over the {limit / _BYTES_PER_MB:.1f} MB limit. Split the PDF into smaller Decks and read each."
+        )
+
+
+def _base64_length(data: bytes) -> int:
+    """Return how many characters `data` takes as base64."""
+    return 4 * ((len(data) + 2) // 3)
 
 
 def _checked_language(language: str | None) -> Language | None:

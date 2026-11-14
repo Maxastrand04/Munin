@@ -18,7 +18,7 @@ class Slide:
 
     `number` counts from 1 in page order. `text` is the page's extracted text,
     empty for a page that is only an image. `image` is the page drawn as PNG
-    bytes.
+    bytes at one pixel per point, half the size the Mindmap page shows.
     """
 
     number: int
