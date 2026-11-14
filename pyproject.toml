@@ -1,7 +1,7 @@
 [project]
 name = "munin"
-version = "0.1.0"
-description = "Turn a recorded Swedish lecture into a mindmap that links back into the lecture."
+version = "1.0.0"
+description = "Turn a recorded Swedish or English lecture into a mindmap that links back into the lecture."
 readme = "README.md"
 requires-python = "==3.12.*"
 dependencies = [
